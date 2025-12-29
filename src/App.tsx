@@ -8,6 +8,7 @@ import Index from "./pages/Index";
 import MatchRules from "./pages/MatchRules";
 import MatchRuleDetail from "./pages/MatchRuleDetail";
 import MatchReview from "./pages/MatchReview";
+import MergeStrategies from "./pages/MergeStrategies";
 import History from "./pages/History";
 import Settings from "./pages/Settings";
 import Help from "./pages/Help";
@@ -27,6 +28,7 @@ const App = () => (
             <Route path="/match-rules" element={<MatchRules />} />
             <Route path="/match-rules/:id" element={<MatchRuleDetail />} />
             <Route path="/match-rules/:id/review/:matchId" element={<MatchReview />} />
+            <Route path="/merge-strategies" element={<MergeStrategies />} />
             <Route path="/history" element={<History />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/help" element={<Help />} />
