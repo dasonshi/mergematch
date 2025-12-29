@@ -9,6 +9,7 @@ import MatchRules from "./pages/MatchRules";
 import MatchRuleDetail from "./pages/MatchRuleDetail";
 import MatchReview from "./pages/MatchReview";
 import MergeStrategies from "./pages/MergeStrategies";
+import MergeStrategyForm from "./pages/MergeStrategyForm";
 import History from "./pages/History";
 import Settings from "./pages/Settings";
 import Help from "./pages/Help";
@@ -29,6 +30,8 @@ const App = () => (
             <Route path="/match-rules/:id" element={<MatchRuleDetail />} />
             <Route path="/match-rules/:id/review/:matchId" element={<MatchReview />} />
             <Route path="/merge-strategies" element={<MergeStrategies />} />
+            <Route path="/merge-strategies/new" element={<MergeStrategyForm />} />
+            <Route path="/merge-strategies/:id/edit" element={<MergeStrategyForm />} />
             <Route path="/history" element={<History />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/help" element={<Help />} />
