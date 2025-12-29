@@ -27,16 +27,43 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
+import { z } from "zod";
+
+const emailSchema = z.string().email("Please enter a valid email address");
 
 export default function Settings() {
   const { toast } = useToast();
   const [isAgencyPlan] = useState(false); // Toggle this to show Agency plan features
+  const [isProPlan] = useState(false); // Toggle this to show Pro plan features
   
   const [preferences, setPreferences] = useState({
     showIndividualMergeWarning: true,
     showBulkMergeWarning: true,
     showRestoreWarning: true,
   });
+
+  const [notifications, setNotifications] = useState({
+    dailySummary: true,
+    newDuplicatesAlert: true,
+    weeklyReport: true,
+    autoMergeCompletion: false,
+  });
+
+  const [notificationEmail, setNotificationEmail] = useState("user@agency.com");
+  const [emailError, setEmailError] = useState<string | null>(null);
+
+  const handleSaveNotifications = () => {
+    const result = emailSchema.safeParse(notificationEmail);
+    if (!result.success) {
+      setEmailError(result.error.errors[0].message);
+      return;
+    }
+    setEmailError(null);
+    toast({
+      title: "Notification settings saved",
+      description: "Your notification preferences have been updated.",
+    });
+  };
 
   const handleResetWarnings = () => {
     setPreferences({
@@ -171,8 +198,94 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      {/* Preferences Section */}
+      {/* Notifications Section */}
       <Card className="animate-fade-in border-border/50 shadow-sm" style={{ animationDelay: "100ms" }}>
+        <CardHeader>
+          <CardTitle>Notifications</CardTitle>
+          <CardDescription>Configure email notifications for your account</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="space-y-2">
+            <Label className="text-base">Email Notifications</Label>
+            <div className="space-y-3">
+              <div className="flex items-center space-x-2">
+                <Checkbox 
+                  id="daily-summary" 
+                  checked={notifications.dailySummary}
+                  onCheckedChange={(checked) => 
+                    setNotifications(prev => ({ ...prev, dailySummary: checked as boolean }))
+                  }
+                />
+                <label htmlFor="daily-summary" className="text-sm cursor-pointer">
+                  Daily summary of pending matches
+                </label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox 
+                  id="new-duplicates" 
+                  checked={notifications.newDuplicatesAlert}
+                  onCheckedChange={(checked) => 
+                    setNotifications(prev => ({ ...prev, newDuplicatesAlert: checked as boolean }))
+                  }
+                />
+                <label htmlFor="new-duplicates" className="text-sm cursor-pointer">
+                  Alert when new duplicates are found
+                </label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox 
+                  id="weekly-report" 
+                  checked={notifications.weeklyReport}
+                  onCheckedChange={(checked) => 
+                    setNotifications(prev => ({ ...prev, weeklyReport: checked as boolean }))
+                  }
+                />
+                <label htmlFor="weekly-report" className="text-sm cursor-pointer">
+                  Weekly merge activity report
+                </label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox 
+                  id="auto-merge" 
+                  checked={notifications.autoMergeCompletion}
+                  disabled={!isProPlan}
+                  onCheckedChange={(checked) => 
+                    setNotifications(prev => ({ ...prev, autoMergeCompletion: checked as boolean }))
+                  }
+                />
+                <label 
+                  htmlFor="auto-merge" 
+                  className={`text-sm cursor-pointer ${!isProPlan ? 'text-muted-foreground' : ''}`}
+                >
+                  Alert on auto-merge completion {!isProPlan && <span className="text-muted-foreground">(Pro+ only)</span>}
+                </label>
+              </div>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="notification-email">Notification Email</Label>
+            <Input 
+              id="notification-email" 
+              type="email"
+              value={notificationEmail}
+              onChange={(e) => {
+                setNotificationEmail(e.target.value);
+                setEmailError(null);
+              }}
+              className={emailError ? "border-destructive" : ""}
+            />
+            {emailError && (
+              <p className="text-sm text-destructive">{emailError}</p>
+            )}
+          </div>
+          <Button onClick={handleSaveNotifications}>
+            Save Notification Settings
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Preferences Section */}
+      <Card className="animate-fade-in border-border/50 shadow-sm" style={{ animationDelay: "150ms" }}>
         <CardHeader>
           <CardTitle>Preferences</CardTitle>
         </CardHeader>

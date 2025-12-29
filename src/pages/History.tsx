@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Search, Eye, RotateCcw, ArrowRight } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
@@ -39,22 +39,31 @@ interface HistoryItem {
   when: string;
 }
 
-const mockHistory: HistoryItem[] = [
+interface HistoryItemData extends HistoryItem {
+  objectType: "contacts" | "companies";
+  date: Date;
+}
+
+const mockHistory: HistoryItemData[] = [
   {
     id: "h1",
     masterName: "John Smith",
     mergedFrom: "Jon Smith",
     ruleId: "rule-1",
-    ruleName: "Email+Phone",
+    ruleName: "Email + Phone Match",
     when: "1h ago",
+    objectType: "contacts",
+    date: new Date(Date.now() - 1 * 60 * 60 * 1000),
   },
   {
     id: "h2",
     masterName: "jane@test.com",
     mergedFrom: "jane.t@test",
     ruleId: "rule-1",
-    ruleName: "Email+Phone",
+    ruleName: "Email + Phone Match",
     when: "2h ago",
+    objectType: "contacts",
+    date: new Date(Date.now() - 2 * 60 * 60 * 1000),
   },
   {
     id: "h3",
@@ -62,16 +71,20 @@ const mockHistory: HistoryItem[] = [
     mergedFrom: "2 duplicates",
     duplicateCount: 2,
     ruleId: "rule-2",
-    ruleName: "Domain Match",
+    ruleName: "Company Domain Match",
     when: "3h ago",
+    objectType: "companies",
+    date: new Date(Date.now() - 3 * 60 * 60 * 1000),
   },
   {
     id: "h4",
     masterName: "Mike Johnson",
     mergedFrom: "M. Johnson",
     ruleId: "rule-1",
-    ruleName: "Email+Phone",
+    ruleName: "Email + Phone Match",
     when: "5h ago",
+    objectType: "contacts",
+    date: new Date(Date.now() - 5 * 60 * 60 * 1000),
   },
   {
     id: "h5",
@@ -79,49 +92,57 @@ const mockHistory: HistoryItem[] = [
     mergedFrom: "2 duplicates",
     duplicateCount: 2,
     ruleId: "rule-3",
-    ruleName: "Phone Match",
+    ruleName: "Phone Number Match",
     when: "Yesterday",
+    objectType: "contacts",
+    date: new Date(Date.now() - 24 * 60 * 60 * 1000),
   },
   {
     id: "h6",
     masterName: "Bob Wilson",
     mergedFrom: "Robert Wilson",
     ruleId: "rule-1",
-    ruleName: "Email+Phone",
+    ruleName: "Email + Phone Match",
     when: "Yesterday",
+    objectType: "contacts",
+    date: new Date(Date.now() - 26 * 60 * 60 * 1000),
   },
   {
     id: "h7",
     masterName: "test@example.com",
     mergedFrom: "test2@example",
     ruleId: "rule-1",
-    ruleName: "Email+Phone",
+    ruleName: "Email + Phone Match",
     when: "Dec 23",
+    objectType: "contacts",
+    date: new Date("2024-12-23"),
   },
   {
     id: "h8",
     masterName: "Widget Inc",
     mergedFrom: "Widget LLC",
     ruleId: "rule-2",
-    ruleName: "Domain Match",
+    ruleName: "Company Domain Match",
     when: "Dec 23",
+    objectType: "companies",
+    date: new Date("2024-12-23"),
   },
 ];
 
-const matchRules = [
+const matchRulesOptions = [
   { id: "all", name: "All Rules" },
-  { id: "rule-1", name: "Email+Phone" },
-  { id: "rule-2", name: "Domain Match" },
-  { id: "rule-3", name: "Phone Match" },
+  { id: "rule-1", name: "Email + Phone Match" },
+  { id: "rule-2", name: "Company Domain Match" },
+  { id: "rule-3", name: "Phone Number Match" },
 ];
 
-const objectTypes = [
+const objectTypesOptions = [
   { id: "all", name: "All Objects" },
   { id: "contacts", name: "Contacts" },
   { id: "companies", name: "Companies" },
 ];
 
-const dateRanges = [
+const dateRangesOptions = [
   { id: "7", name: "Last 7 days" },
   { id: "30", name: "Last 30 days" },
   { id: "90", name: "Last 90 days" },
@@ -134,9 +155,58 @@ export default function History() {
   const [objectFilter, setObjectFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("30");
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [restoreItem, setRestoreItem] = useState<HistoryItem | null>(null);
 
-  const totalItems = 312;
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Filter logic
+  const filteredHistory = mockHistory.filter((item) => {
+    // Rule filter
+    if (ruleFilter !== "all" && item.ruleId !== ruleFilter) {
+      return false;
+    }
+
+    // Object filter
+    if (objectFilter !== "all" && item.objectType !== objectFilter) {
+      return false;
+    }
+
+    // Date filter
+    if (dateFilter !== "all") {
+      const days = parseInt(dateFilter);
+      const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+      if (item.date < cutoffDate) {
+        return false;
+      }
+    }
+
+    // Search filter
+    if (debouncedSearch) {
+      const search = debouncedSearch.toLowerCase();
+      const matchesSearch = 
+        item.masterName.toLowerCase().includes(search) ||
+        item.mergedFrom.toLowerCase().includes(search);
+      if (!matchesSearch) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  const clearFilters = () => {
+    setRuleFilter("all");
+    setObjectFilter("all");
+    setDateFilter("30");
+    setSearchQuery("");
+  };
 
   const handleRestore = () => {
     if (!restoreItem) return;
@@ -155,11 +225,11 @@ export default function History() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <span className="text-sm text-muted-foreground">Filter:</span>
         <Select value={ruleFilter} onValueChange={setRuleFilter}>
-          <SelectTrigger className="w-[160px]">
+          <SelectTrigger className="w-[180px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {matchRules.map((rule) => (
+            {matchRulesOptions.map((rule) => (
               <SelectItem key={rule.id} value={rule.id}>
                 {rule.name}
               </SelectItem>
@@ -172,7 +242,7 @@ export default function History() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {objectTypes.map((obj) => (
+            {objectTypesOptions.map((obj) => (
               <SelectItem key={obj.id} value={obj.id}>
                 {obj.name}
               </SelectItem>
@@ -185,7 +255,7 @@ export default function History() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {dateRanges.map((range) => (
+            {dateRangesOptions.map((range) => (
               <SelectItem key={range.id} value={range.id}>
                 {range.name}
               </SelectItem>
@@ -201,65 +271,82 @@ export default function History() {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9"
           />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              ×
+            </button>
+          )}
         </div>
       </div>
 
       {/* History Table */}
-      <div className="border rounded-lg">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Master</TableHead>
-              <TableHead>Merged From</TableHead>
-              <TableHead>Rule</TableHead>
-              <TableHead>When</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {mockHistory.map((item) => (
-              <TableRow key={item.id}>
-                <TableCell className="font-medium">{item.masterName}</TableCell>
-                <TableCell className="text-muted-foreground">
-                  ← {item.duplicateCount ? `${item.duplicateCount} duplicates` : item.mergedFrom}
-                </TableCell>
-                <TableCell>
-                  <Link
-                    to={`/match-rules/${item.ruleId}`}
-                    className="inline-flex items-center gap-1 text-primary hover:underline"
-                  >
-                    {item.ruleName}
-                    <ArrowRight className="h-3 w-3" />
-                  </Link>
-                </TableCell>
-                <TableCell className="text-muted-foreground">{item.when}</TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-1">
-                    <Button variant="ghost" size="sm" asChild>
-                      <Link to={`/match-rules/${item.ruleId}/review/${item.id}?readonly=true`}>
-                        <Eye className="h-4 w-4 mr-1" />
-                        View
-                      </Link>
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setRestoreItem(item)}
-                    >
-                      <RotateCcw className="h-4 w-4 mr-1" />
-                      Restore
-                    </Button>
-                  </div>
-                </TableCell>
+      {filteredHistory.length === 0 ? (
+        <div className="border rounded-lg p-8 text-center">
+          <p className="text-muted-foreground mb-4">No merges found matching your filters</p>
+          <Button variant="outline" onClick={clearFilters}>
+            Clear Filters
+          </Button>
+        </div>
+      ) : (
+        <div className="border rounded-lg">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Master</TableHead>
+                <TableHead>Merged From</TableHead>
+                <TableHead>Rule</TableHead>
+                <TableHead>When</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+            </TableHeader>
+            <TableBody>
+              {filteredHistory.map((item) => (
+                <TableRow key={item.id}>
+                  <TableCell className="font-medium">{item.masterName}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    ← {item.duplicateCount ? `${item.duplicateCount} duplicates` : item.mergedFrom}
+                  </TableCell>
+                  <TableCell>
+                    <Link
+                      to={`/match-rules/${item.ruleId}`}
+                      className="inline-flex items-center gap-1 text-primary hover:underline"
+                    >
+                      {item.ruleName}
+                      <ArrowRight className="h-3 w-3" />
+                    </Link>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{item.when}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button variant="ghost" size="sm" asChild>
+                        <Link to={`/match-rules/${item.ruleId}/review/${item.id}?readonly=true`}>
+                          <Eye className="h-4 w-4 mr-1" />
+                          View
+                        </Link>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setRestoreItem(item)}
+                      >
+                        <RotateCcw className="h-4 w-4 mr-1" />
+                        Restore
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
       {/* Footer */}
       <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>Showing {mockHistory.length} of {totalItems}</span>
+        <span>Showing {filteredHistory.length} of {mockHistory.length}</span>
         <Button variant="outline" size="sm">
           Load More
         </Button>
