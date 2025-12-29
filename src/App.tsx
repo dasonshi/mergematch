@@ -7,6 +7,7 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import Index from "./pages/Index";
 import MatchRules from "./pages/MatchRules";
 import MatchRuleDetail from "./pages/MatchRuleDetail";
+import MatchReview from "./pages/MatchReview";
 import History from "./pages/History";
 import Settings from "./pages/Settings";
 import Help from "./pages/Help";
@@ -25,6 +26,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/match-rules" element={<MatchRules />} />
             <Route path="/match-rules/:id" element={<MatchRuleDetail />} />
+            <Route path="/match-rules/:id/review/:matchId" element={<MatchReview />} />
             <Route path="/history" element={<History />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/help" element={<Help />} />
