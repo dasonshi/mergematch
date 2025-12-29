@@ -79,9 +79,11 @@ export default function MatchRuleDetail() {
             {ruleData.name}
           </h1>
         </div>
-        <Button variant="outline">
-          <Edit className="mr-2 h-4 w-4" />
-          Edit Rule
+        <Button variant="outline" asChild>
+          <Link to={`/match-rules/${id}/edit`}>
+            <Edit className="mr-2 h-4 w-4" />
+            Edit Rule
+          </Link>
         </Button>
       </div>
 
@@ -208,7 +210,9 @@ export default function MatchRuleDetail() {
                       </div>
                     </div>
                     <div className="flex justify-end gap-2">
-                      <Button variant="outline" size="sm">Review</Button>
+                      <Button variant="outline" size="sm" asChild>
+                        <Link to={`/match-rules/${id}/review/${match.id}`}>Review</Link>
+                      </Button>
                       <Button size="sm">Merge</Button>
                     </div>
                   </>
@@ -223,7 +227,9 @@ export default function MatchRuleDetail() {
                     <Separator className="mb-3" />
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-muted-foreground">{match.count} records in this match group</span>
-                      <Button variant="outline" size="sm">Review</Button>
+                      <Button variant="outline" size="sm" asChild>
+                        <Link to={`/match-rules/${id}/review/${match.id}`}>Review</Link>
+                      </Button>
                     </div>
                   </>
                 )}

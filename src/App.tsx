@@ -7,6 +7,7 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import Index from "./pages/Index";
 import MatchRules from "./pages/MatchRules";
 import MatchRuleDetail from "./pages/MatchRuleDetail";
+import MatchRuleForm from "./pages/MatchRuleForm";
 import MatchReview from "./pages/MatchReview";
 import MergeStrategies from "./pages/MergeStrategies";
 import MergeStrategyForm from "./pages/MergeStrategyForm";
@@ -27,7 +28,9 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/match-rules" element={<MatchRules />} />
+            <Route path="/match-rules/new" element={<MatchRuleForm />} />
             <Route path="/match-rules/:id" element={<MatchRuleDetail />} />
+            <Route path="/match-rules/:id/edit" element={<MatchRuleForm />} />
             <Route path="/match-rules/:id/review/:matchId" element={<MatchReview />} />
             <Route path="/merge-strategies" element={<MergeStrategies />} />
             <Route path="/merge-strategies/new" element={<MergeStrategyForm />} />
