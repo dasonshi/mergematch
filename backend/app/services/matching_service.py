@@ -1,0 +1,329 @@
+"""
+Matching engine for duplicate detection.
+"""
+from typing import List, Dict, Any, Optional
+from difflib import SequenceMatcher
+import re
+import uuid
+
+from app.core.ghl.client import GHLClient
+from app.db.supabase import get_supabase
+
+
+def normalize_phone(phone: str) -> str:
+    """Normalize phone to digits only."""
+    if not phone:
+        return ""
+    return re.sub(r"[^\d]", "", phone)
+
+
+def normalize_email(email: str) -> str:
+    """Normalize email to lowercase."""
+    if not email:
+        return ""
+    return email.lower().strip()
+
+
+def get_email_domain(email: str) -> str:
+    """Extract domain from email."""
+    if not email or "@" not in email:
+        return ""
+    return email.split("@")[1].lower()
+
+
+def fuzzy_match(s1: str, s2: str, threshold: float = 0.85) -> tuple[bool, float]:
+    """
+    Fuzzy string matching using SequenceMatcher.
+    Returns (is_match, similarity_score).
+    """
+    if not s1 or not s2:
+        return False, 0.0
+
+    s1_lower = s1.lower().strip()
+    s2_lower = s2.lower().strip()
+
+    ratio = SequenceMatcher(None, s1_lower, s2_lower).ratio()
+    return ratio >= threshold, ratio
+
+
+def exact_match(s1: str, s2: str) -> tuple[bool, float]:
+    """Exact string match (case-insensitive)."""
+    if not s1 or not s2:
+        return False, 0.0
+
+    is_match = s1.lower().strip() == s2.lower().strip()
+    return is_match, 1.0 if is_match else 0.0
+
+
+def phone_match(p1: str, p2: str) -> tuple[bool, float]:
+    """Match phone numbers (normalized to digits)."""
+    n1 = normalize_phone(p1)
+    n2 = normalize_phone(p2)
+
+    if not n1 or not n2:
+        return False, 0.0
+
+    # Handle phone numbers with/without country code
+    if len(n1) != len(n2):
+        # Try matching last 10 digits (US numbers)
+        if n1[-10:] == n2[-10:] and len(n1) >= 10 and len(n2) >= 10:
+            return True, 0.95
+
+    is_match = n1 == n2
+    return is_match, 1.0 if is_match else 0.0
+
+
+def email_domain_match(e1: str, e2: str) -> tuple[bool, float]:
+    """Match email domains."""
+    d1 = get_email_domain(e1)
+    d2 = get_email_domain(e2)
+
+    if not d1 or not d2:
+        return False, 0.0
+
+    is_match = d1 == d2
+    return is_match, 1.0 if is_match else 0.0
+
+
+def get_field_value(record: dict, field: str) -> str:
+    """Get field value from a record, handling nested fields."""
+    if not record:
+        return ""
+
+    # Handle common GHL field mappings
+    field_mappings = {
+        "email": ["email", "emails"],
+        "phone": ["phone", "phoneNumber"],
+        "name": ["name", "contactName", "firstName"],
+        "firstName": ["firstName", "name"],
+        "lastName": ["lastName"],
+        "company": ["companyName", "company"],
+    }
+
+    # Try mapped fields first
+    if field in field_mappings:
+        for mapped_field in field_mappings[field]:
+            value = record.get(mapped_field)
+            if value:
+                # Handle list fields (like emails)
+                if isinstance(value, list) and len(value) > 0:
+                    return str(value[0])
+                return str(value)
+
+    # Try direct field access
+    value = record.get(field)
+    if value:
+        if isinstance(value, list) and len(value) > 0:
+            return str(value[0])
+        return str(value)
+
+    return ""
+
+
+def compare_records(
+    record_a: dict,
+    record_b: dict,
+    match_fields: List[dict],
+) -> tuple[bool, float, dict]:
+    """
+    Compare two records using the specified match fields.
+    Returns (is_match, confidence_score, field_scores).
+    """
+    field_scores = {}
+    total_weight = 0.0
+    weighted_score = 0.0
+    all_and_fields_match = True
+    any_or_field_matches = False
+
+    for field_config in match_fields:
+        field = field_config.get("field", "")
+        algorithm = field_config.get("algorithm", "exact")
+        weight = float(field_config.get("weight", 1.0))
+        operator = field_config.get("operator", "AND")
+
+        val_a = get_field_value(record_a, field)
+        val_b = get_field_value(record_b, field)
+
+        # Skip if either value is empty
+        if not val_a or not val_b:
+            field_scores[field] = {"match": False, "score": 0.0, "skipped": True}
+            if operator == "AND":
+                all_and_fields_match = False
+            continue
+
+        # Apply matching algorithm
+        if algorithm == "exact":
+            is_match, score = exact_match(val_a, val_b)
+        elif algorithm == "fuzzy":
+            is_match, score = fuzzy_match(val_a, val_b)
+        elif algorithm == "phone":
+            is_match, score = phone_match(val_a, val_b)
+        elif algorithm == "email_domain":
+            is_match, score = email_domain_match(val_a, val_b)
+        else:
+            # Default to exact
+            is_match, score = exact_match(val_a, val_b)
+
+        field_scores[field] = {"match": is_match, "score": score}
+
+        # Track AND/OR logic
+        if operator == "AND":
+            if not is_match:
+                all_and_fields_match = False
+        else:  # OR
+            if is_match:
+                any_or_field_matches = True
+
+        # Accumulate weighted score
+        total_weight += weight
+        weighted_score += score * weight
+
+    # Calculate overall confidence
+    confidence = (weighted_score / total_weight * 100) if total_weight > 0 else 0.0
+
+    # Determine if it's a match based on logic
+    # For now: all AND fields must match, OR any OR field matches
+    has_and_fields = any(f.get("operator", "AND") == "AND" for f in match_fields)
+    has_or_fields = any(f.get("operator", "AND") == "OR" for f in match_fields)
+
+    if has_and_fields and has_or_fields:
+        is_overall_match = all_and_fields_match or any_or_field_matches
+    elif has_or_fields:
+        is_overall_match = any_or_field_matches
+    else:
+        is_overall_match = all_and_fields_match
+
+    return is_overall_match, confidence, field_scores
+
+
+async def run_scan(
+    ghl_location_id: str,
+    rule_id: str,
+    access_token: str,
+    tenant_id: str,
+    internal_location_id: str,
+    limit: int = 100,
+) -> dict:
+    """
+    Run a duplicate scan for a given rule.
+
+    Returns dict with matches_found, records_scanned, and match details.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    supabase = get_supabase()
+
+    # Get the rule configuration
+    rule_result = supabase.table("match_rules").select("*").eq(
+        "id", rule_id
+    ).eq("location_id", internal_location_id).single().execute()
+
+    if not rule_result.data:
+        return {"error": "Rule not found", "matches_found": 0, "records_scanned": 0}
+
+    rule = rule_result.data
+    match_fields = rule.get("match_fields", [])
+    source_object = rule.get("source_object", "contacts")
+    review_threshold = float(rule.get("review_threshold", 0.70)) * 100  # Convert to percentage
+    auto_merge_threshold = float(rule.get("auto_merge_threshold", 0.95)) * 100
+
+    # Fetch records from GHL
+    records = []
+    async with GHLClient(access_token, ghl_location_id) as client:
+        if source_object == "contacts":
+            result = await client.get_contacts(limit=limit)
+            records = result.get("contacts", [])
+        elif source_object == "companies":
+            result = await client.search_companies(limit=limit)
+            records = result.get("companies", [])
+
+    logger.info(f"Scan: Fetched {len(records)} {source_object}")
+    if records:
+        # Log sample record structure
+        sample = records[0]
+        logger.info(f"Sample record keys: {list(sample.keys())}")
+        logger.info(f"Sample email field: {sample.get('email')}")
+        logger.info(f"Sample phone field: {sample.get('phone')}")
+
+    if len(records) < 2:
+        return {
+            "matches_found": 0,
+            "records_scanned": len(records),
+            "message": "Not enough records to compare"
+        }
+
+    # Compare all pairs
+    matches_found = []
+    compared_pairs = set()
+
+    for i, record_a in enumerate(records):
+        for j, record_b in enumerate(records):
+            if i >= j:
+                continue
+
+            # Skip already compared pairs
+            pair_key = tuple(sorted([record_a.get("id", i), record_b.get("id", j)]))
+            if pair_key in compared_pairs:
+                continue
+            compared_pairs.add(pair_key)
+
+            is_match, confidence, field_scores = compare_records(
+                record_a, record_b, match_fields
+            )
+
+            # Log some comparisons for debugging
+            if len(compared_pairs) <= 5:
+                logger.info(f"Comparison {len(compared_pairs)}: is_match={is_match}, confidence={confidence:.1f}%, threshold={review_threshold}")
+                logger.info(f"  Field scores: {field_scores}")
+
+            if is_match and confidence >= review_threshold:
+                matches_found.append({
+                    "record_a": record_a,
+                    "record_b": record_b,
+                    "confidence": round(confidence, 2),
+                    "field_scores": field_scores,
+                    "auto_merge": confidence >= auto_merge_threshold,
+                })
+
+    # Store matches in database
+    stored_matches = []
+    for match in matches_found:
+        match_id = str(uuid.uuid4())
+
+        # Determine status based on confidence
+        status = "pending"
+        if match["auto_merge"]:
+            status = "auto_approved"
+
+        match_data = {
+            "id": match_id,
+            "tenant_id": tenant_id,
+            "location_id": internal_location_id,
+            "rule_id": rule_id,
+            "record_a_id": match["record_a"].get("id", ""),
+            "record_a_type": source_object[:-1],  # contacts -> contact
+            "record_a_data": match["record_a"],
+            "record_b_id": match["record_b"].get("id", ""),
+            "record_b_type": source_object[:-1],
+            "record_b_data": match["record_b"],
+            "confidence_score": match["confidence"] / 100,  # Store as decimal
+            "field_scores": match["field_scores"],
+            "status": status,
+        }
+
+        try:
+            result = supabase.table("match_pairs").insert(match_data).execute()
+            if result.data:
+                stored_matches.append(result.data[0])
+        except Exception as e:
+            # Skip duplicates (same record pair already matched)
+            print(f"Error storing match: {e}")
+
+    return {
+        "matches_found": len(matches_found),
+        "matches_stored": len(stored_matches),
+        "records_scanned": len(records),
+        "auto_approved": sum(1 for m in matches_found if m["auto_merge"]),
+        "pending_review": sum(1 for m in matches_found if not m["auto_merge"]),
+    }

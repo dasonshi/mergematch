@@ -1,0 +1,438 @@
+# https://marketplace.gohighlevel.com/docs/ghl/invoices/update-invoice-template-late-fees-configuration
+
+# Update template late fees configuration
+
+PATCH 
+
+## https://services.leadconnectorhq.com/invoices/template/:templateId/late-fees-configuration
+
+API to update template late fees configuration by template id
+
+### Requirements
+
+#### Auth Method(s)
+
+`OAuth Access Token``Private Integration Token`
+
+#### Token Type(s)
+
+`Sub-Account Token``Agency Token`
+
+## Request[​](#request "Direct link to Request")
+
+### Header Parameters
+
+**Version** stringrequired
+
+**Possible values:** \[`2021-07-28`\]
+
+API Version
+
+### Path Parameters
+
+**templateId** stringrequired
+
+Template Id
+
+Example: 6578278e879ad2646715ba9c
+
+*   application/json
+
+### Body**required**
+
+**altId** stringrequired
+
+location Id / company Id based on altType
+
+Example:`6578278e879ad2646715ba9c`
+
+**altType** stringrequired
+
+Alt Type
+
+**Possible values:** \[`location`\]
+
+Example:`location`
+
+**lateFeesConfiguration** object
+
+late fees configuration
+
+**enable** booleanrequired
+
+Enable late fees
+
+Example:`true`
+
+**value** numberrequired
+
+Late Fees Value
+
+Example:`10`
+
+**type** stringrequired
+
+Late Fees Type
+
+**Possible values:** \[`fixed`, `percentage`\]
+
+Example:`fixed`
+
+**frequency** objectrequired
+
+Late Fees Frequency
+
+**intervalCount** number
+
+Late fees interval count
+
+Example:`10`
+
+**interval** stringrequired
+
+Late fees interval
+
+**Possible values:** \[`minute`, `hour`, `day`, `week`, `month`, `one_time`\]
+
+Example:`day`
+
+**grace** object
+
+Late Fees Grace
+
+**intervalCount** numberrequired
+
+Late fees grace interval count
+
+Example:`10`
+
+**interval** stringrequired
+
+Late fees grace interval
+
+**Possible values:** \[`day`\]
+
+Example:`day`
+
+**maxLateFees** object
+
+Max late fees payable
+
+**type** stringrequired
+
+**Possible values:** \[`fixed`\]
+
+Example:`fixed`
+
+**value** numberrequired
+
+10
+
+Example:`Max late fees to pay`
+
+## Responses[​](#responses "Direct link to Responses")
+
+*   200
+*   400
+*   401
+*   422
+
+Successful response
+
+*   application/json
+
+*   Schema
+*   Example (auto)
+
+**Schema**
+
+**\_id** stringrequired
+
+Template Id
+
+Example:`6578278e879ad2646715ba9c`
+
+**altId** stringrequired
+
+Location Id or Agency Id
+
+Example:`6578278e879ad2646715ba9c`
+
+**altType** stringrequired
+
+**Possible values:** \[`location`\]
+
+**name** stringrequired
+
+Name of the Template
+
+Example:`New Template`
+
+**businessDetails** object
+
+Business Details
+
+**logoUrl** string
+
+Business Logo URL
+
+Example:`https://example.com/logo.png`
+
+**name** string
+
+Business Name
+
+Example:`ABC Corp.`
+
+**phoneNo** string
+
+Business Phone Number
+
+Example:`+1-214-559-6993`
+
+**address** object
+
+Business Address
+
+**addressLine1** string
+
+Address Line 1
+
+Example:`9931 Beechwood`
+
+**addressLine2** string
+
+Address Line 2
+
+Example:`Beechwood`
+
+**city** string
+
+City
+
+Example:`St. Houston`
+
+**state** string
+
+State
+
+Example:`TX`
+
+**countryCode** string
+
+Country Code
+
+Example:`US`
+
+**postalCode** string
+
+Postal Code
+
+Example:`559-6993`
+
+**website** string
+
+Business Website Link
+
+Example:`wwww.example.com`
+
+**customValues** string\[\]
+
+Custom Values
+
+**currency** stringrequired
+
+Currency
+
+Example:`USD`
+
+**discount** object
+
+Discount
+
+**value** number
+
+Discount Value
+
+**Default value:** `0`
+
+Example:`10`
+
+**type** stringrequired
+
+Discount type
+
+**Possible values:** \[`percentage`, `fixed`\]
+
+**Default value:** `percentage`
+
+Example:`percentage`
+
+**validOnProductIds** string\[\]
+
+Product Ids on which discount is applicable
+
+Example:`[ '6579751d56f60276e5bd4154' ]`
+
+**items** string\[\]required
+
+Invoice Items
+
+Example:`[{"taxes":[],"_id":"c6tZZU0rJBf30ZXx9Gli","productId":"c6tZZU0rJBf30ZXx9Gli","priceId":"c6tZZU0rJBf30ZXx9Gli","currency":"USD","name":"Macbook Pro","qty":1,"amount":999}]`
+
+**invoiceNumberPrefix** string
+
+prefix for invoice number
+
+Example:`INV-`
+
+**total** numberrequired
+
+Total Amount
+
+Example:`999`
+
+**createdAt** stringrequired
+
+created at
+
+Example:`2023-12-12T09:27:42.355Z`
+
+**updatedAt** stringrequired
+
+updated at
+
+Example:`2023-12-12T09:27:42.355Z`
+
+```
+{  "_id": "6578278e879ad2646715ba9c",  "altId": "6578278e879ad2646715ba9c",  "altType": "location",  "name": "New Template",  "businessDetails": {    "name": "Alex",    "address": {      "addressLine1": "9931 Beechwood",      "city": "St. Houston",      "state": "TX",      "countryCode": "USA",      "postalCode": "559-6993"    },    "phoneNo": "+1-214-559-6993",    "website": "www.example.com"  },  "currency": "USD",  "discount": {    "type": "percentage",    "value": 0  },  "items": [    {      "taxes": [],      "_id": "c6tZZU0rJBf30ZXx9Gli",      "productId": "c6tZZU0rJBf30ZXx9Gli",      "priceId": "c6tZZU0rJBf30ZXx9Gli",      "currency": "USD",      "name": "Macbook Pro",      "qty": 1,      "amount": 999    }  ],  "invoiceNumberPrefix": "INV-",  "total": 999,  "createdAt": "2023-12-12T09:27:42.355Z",  "updatedAt": "2023-12-12T09:27:42.355Z"}
+```
+
+Bad Request
+
+*   application/json
+
+*   Schema
+*   Example (auto)
+
+**Schema**
+
+**statusCode** number
+
+Example:`400`
+
+**message** string
+
+Example:`Bad Request`
+
+```
+{  "statusCode": 400,  "message": "Bad Request"}
+```
+
+Unauthorized
+
+*   application/json
+
+*   Schema
+*   Example (auto)
+
+**Schema**
+
+**statusCode** number
+
+Example:`401`
+
+**message** string
+
+Example:`Invalid token: access token is invalid`
+
+**error** string
+
+Example:`Unauthorized`
+
+```
+{  "statusCode": 401,  "message": "Invalid token: access token is invalid",  "error": "Unauthorized"}
+```
+
+Unprocessable Entity
+
+*   application/json
+
+*   Schema
+*   Example (auto)
+
+**Schema**
+
+**statusCode** number
+
+Example:`422`
+
+**message** string\[\]
+
+Example:`["Unprocessable Entity"]`
+
+**error** string
+
+Example:`Unprocessable Entity`
+
+```
+{  "statusCode": 422,  "message": [    "Unprocessable Entity"  ],  "error": "Unprocessable Entity"}
+```
+
+## Share your feedback
+
+★★★★★
+
+#### Authorization: Authorization
+
+**name:** [Authorization](/docs/ghl/invoices/invoice-api#authentication)**type:** http**scheme:** bearer**bearerFormat:** JWT**in:** header**description:** Use the Access Token generated with user type as Sub-Account (OR) Private Integration Token of Sub-Account.
+
+*   curl
+*   nodejs
+*   python
+*   php
+*   java
+*   go
+*   ruby
+*   powershell
+
+*   CURL
+
+```
+curl -L -X PATCH 'https://services.leadconnectorhq.com/invoices/template/:templateId/late-fees-configuration' \-H 'Content-Type: application/json' \-H 'Accept: application/json' \-H 'Authorization: Bearer <TOKEN>' \-d '{  "altId": "6578278e879ad2646715ba9c",  "altType": "location",  "lateFeesConfiguration": {    "enable": true,    "value": 10,    "type": "fixed",    "frequency": {      "intervalCount": 10,      "interval": "day"    },    "grace": {      "intervalCount": 10,      "interval": "day"    },    "maxLateFees": {      "type": "fixed",      "value": "Max late fees to pay"    }  }}'
+```
+
+Request Collapse all
+
+Base URL
+
+Edit
+
+https://services.leadconnectorhq.com
+
+Auth
+
+Security Scheme
+
+Location-AccessAgency-Access
+
+Bearer Token
+
+Parameters
+
+templateId — pathrequired
+
+Version — headerrequired
+
+\---2021-07-28
+
+Body required
+
+{
+  "altId": "6578278e879ad2646715ba9c",  "altType": "location",  "lateFeesConfiguration": {    "enable": true,    "value": 10,    "type": "fixed",    "frequency": {      "intervalCount": 10,      "interval": "day"    },    "grace": {      "intervalCount": 10,      "interval": "day"    },    "maxLateFees": {      "type": "fixed",      "value": "Max late fees to pay"    }  }
+}
+Send API Request
+
+ResponseClear
+
+Click the `Send API Request` button above and see the response here!
