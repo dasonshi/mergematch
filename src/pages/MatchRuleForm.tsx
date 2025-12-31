@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Plus, Trash2, Lock, Info, Crown } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Lock, Info, Crown, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -18,48 +18,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
-
-// Mock data for editing
-const mockRules: Record<string, {
-  name: string;
-  object: string;
-  fields: { name: string; matchType: string }[];
-  logic: string;
-  strategy: string;
-  schedule: string;
-}> = {
-  "1": {
-    name: "Email + Phone Match",
-    object: "contacts",
-    fields: [
-      { name: "email", matchType: "exact" },
-      { name: "phone", matchType: "fuzzy" },
-    ],
-    logic: "all",
-    strategy: "standard",
-    schedule: "daily6am",
-  },
-  "2": {
-    name: "Company Domain Match",
-    object: "companies",
-    fields: [
-      { name: "domain", matchType: "exact" },
-    ],
-    logic: "all",
-    strategy: "recent",
-    schedule: "manual",
-  },
-  "3": {
-    name: "Phone Number Match",
-    object: "contacts",
-    fields: [
-      { name: "phone", matchType: "exact" },
-    ],
-    logic: "all",
-    strategy: "standard",
-    schedule: "daily6am",
-  },
-};
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { api, MatchRule, MatchField } from "@/lib/api";
+import { useLocation } from "@/contexts/LocationContext";
 
 const objectTypes = [
   { id: "contacts", name: "Contacts", tier: "free", available: true },
@@ -93,11 +54,11 @@ const strategies = [
 ];
 
 const frequencies = [
-  { id: "manual", name: "Manual only" },
-  { id: "daily", name: "Daily" },
-  { id: "weekly", name: "Weekly" },
-  { id: "biweekly", name: "Every 2 weeks" },
-  { id: "monthly", name: "Monthly" },
+  { id: "manual", name: "Manual only", tier: "free", available: true },
+  { id: "daily", name: "Daily", tier: "starter", available: false },
+  { id: "weekly", name: "Weekly", tier: "starter", available: false },
+  { id: "biweekly", name: "Every 2 weeks", tier: "starter", available: false },
+  { id: "monthly", name: "Monthly", tier: "starter", available: false },
 ];
 
 const daysOfWeek = [
@@ -138,9 +99,9 @@ export default function MatchRuleForm() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { locationId, isAuthenticated } = useLocation();
   const isEditing = !!id;
-
-  const existingRule = id ? mockRules[id] : null;
 
   const [ruleName, setRuleName] = useState("");
   const [objectType, setObjectType] = useState("contacts");
@@ -153,17 +114,66 @@ export default function MatchRuleForm() {
   const [scheduleDayOfWeek, setScheduleDayOfWeek] = useState("1"); // Monday
   const [scheduleDayOfMonth, setScheduleDayOfMonth] = useState("1"); // 1st
 
+  // Fetch existing rule when editing
+  const { data: existingRule, isLoading: ruleLoading } = useQuery({
+    queryKey: ['rule', id],
+    queryFn: () => api.getMatchRule(id!),
+    enabled: isEditing && isAuthenticated && !!locationId,
+  });
+
+  // Create mutation
+  const createMutation = useMutation({
+    mutationFn: (rule: Partial<MatchRule>) => api.createMatchRule(rule),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rules'] });
+      toast({
+        title: "Rule created",
+        description: `"${ruleName}" has been created successfully.`,
+      });
+      navigate("/match-rules");
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error creating rule",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Update mutation
+  const updateMutation = useMutation({
+    mutationFn: (rule: Partial<MatchRule>) => api.updateMatchRule(id!, rule),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rules'] });
+      queryClient.invalidateQueries({ queryKey: ['rule', id] });
+      toast({
+        title: "Rule updated",
+        description: `"${ruleName}" has been updated successfully.`,
+      });
+      navigate(`/match-rules/${id}`);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error updating rule",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Populate form when editing
   useEffect(() => {
     if (existingRule) {
       setRuleName(existingRule.name);
-      setObjectType(existingRule.object);
-      // Migrate old fields format to new format with operators
-      setFields(existingRule.fields.map((f, i) => ({
-        ...f,
-        operator: (f as any).operator || "AND"
+      setObjectType(existingRule.source_object);
+      setFields(existingRule.match_fields.map((f: MatchField) => ({
+        name: f.field,
+        matchType: f.algorithm,
+        operator: f.operator || "AND"
       })));
-      setStrategy(existingRule.strategy);
-      setSchedule(existingRule.schedule);
+      setStrategy(existingRule.merge_strategy || "standard");
+      setFrequency(existingRule.schedule_frequency || "manual");
     }
   }, [existingRule]);
 
@@ -213,7 +223,7 @@ export default function MatchRuleForm() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!ruleName.trim()) {
       toast({
         title: "Validation error",
@@ -232,15 +242,39 @@ export default function MatchRuleForm() {
       return;
     }
 
-    toast({
-      title: isEditing ? "Rule updated" : "Rule created",
-      description: isEditing 
-        ? `"${ruleName}" has been updated successfully.`
-        : `"${ruleName}" has been created successfully.`,
-    });
+    // Build the rule payload
+    const rulePayload: Partial<MatchRule> = {
+      name: ruleName,
+      source_object: objectType,
+      match_fields: fields.map(f => ({
+        field: f.name,
+        algorithm: f.matchType,
+        weight: 1.0,
+        operator: f.operator,
+      })),
+      merge_strategy: strategy,
+      schedule_frequency: frequency,
+      auto_merge_threshold: 95,
+      review_threshold: 70,
+      is_active: true,
+    };
 
-    navigate(isEditing ? `/match-rules/${id}` : "/match-rules");
+    if (isEditing) {
+      updateMutation.mutate(rulePayload);
+    } else {
+      createMutation.mutate(rulePayload);
+    }
   };
+
+  const isSaving = createMutation.isPending || updateMutation.isPending;
+
+  if (isEditing && ruleLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   const handleCancel = () => {
     navigate(isEditing ? `/match-rules/${id}` : "/match-rules");
@@ -255,7 +289,7 @@ export default function MatchRuleForm() {
           className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
-          {isEditing ? existingRule?.name || "Match Rule" : "Match Rules"}
+          {isEditing ? (existingRule?.name || "Match Rule") : "Match Rules"}
         </Link>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground lg:text-3xl">
           {isEditing ? "Edit Match Rule" : "Create Match Rule"}
@@ -574,14 +608,37 @@ export default function MatchRuleForm() {
             {/* Frequency Selection */}
             <div className="space-y-2">
               <Label>Frequency</Label>
-              <Select value={frequency} onValueChange={setFrequency}>
+              <Select
+                value={frequency}
+                onValueChange={(val) => {
+                  const selected = frequencies.find(f => f.id === val);
+                  if (selected?.available) {
+                    setFrequency(val);
+                  } else {
+                    toast({
+                      title: "Upgrade Required",
+                      description: "Scheduled scans require Starter plan or higher.",
+                    });
+                  }
+                }}
+              >
                 <SelectTrigger className="w-full sm:w-[200px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {frequencies.map((f) => (
-                    <SelectItem key={f.id} value={f.id}>
-                      {f.name}
+                    <SelectItem
+                      key={f.id}
+                      value={f.id}
+                      disabled={!f.available}
+                      className={!f.available ? "opacity-60" : ""}
+                    >
+                      <span className="flex items-center gap-2">
+                        {f.name}
+                        {!f.available && (
+                          <Lock className="h-3 w-3 text-muted-foreground" />
+                        )}
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -672,10 +729,11 @@ export default function MatchRuleForm() {
 
         {/* Footer Actions */}
         <div className="flex justify-between items-center pt-4 border-t">
-          <Button type="button" variant="outline" onClick={handleCancel}>
+          <Button type="button" variant="outline" onClick={handleCancel} disabled={isSaving}>
             Cancel
           </Button>
-          <Button type="submit">
+          <Button type="submit" disabled={isSaving}>
+            {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {isEditing ? "Save Changes" : "Create Rule"}
           </Button>
         </div>

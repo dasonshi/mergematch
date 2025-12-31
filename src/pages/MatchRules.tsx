@@ -1,56 +1,75 @@
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ClipboardList, Plus, ArrowRight, FileText } from "lucide-react";
+import { ClipboardList, Plus, ArrowRight, FileText, Loader2 } from "lucide-react";
 import { Link } from "react-router-dom";
-
-// Mock data - in real app this would come from API/state
-const matchRules = [
-  {
-    id: "1",
-    name: "Email + Phone Match",
-    object: "Contacts",
-    strategy: "Standard Contact Merge",
-    schedule: "Daily 6am",
-    lastScan: "2h ago",
-    pending: 47,
-    totalMerged: 312,
-  },
-  {
-    id: "2",
-    name: "Company Domain Match",
-    object: "Companies",
-    strategy: "Most Recent Wins",
-    schedule: "Manual only",
-    lastScan: "1d ago",
-    pending: 12,
-    totalMerged: 45,
-  },
-  {
-    id: "3",
-    name: "Phone Number Match",
-    object: "Contacts",
-    strategy: "Standard Contact Merge",
-    schedule: "Daily 6am",
-    lastScan: "2h ago",
-    pending: 5,
-    totalMerged: 89,
-  },
-];
-
-// Set to empty array to test empty state
-const rules = matchRules;
+import { useQuery } from "@tanstack/react-query";
+import { api, MatchRule, MatchPair } from "@/lib/api";
+import { useLocation } from "@/contexts/LocationContext";
 
 export default function MatchRules() {
+  const { locationId, isAuthenticated, isLoading: authLoading, error: authError } = useLocation();
+
+  // Fetch match rules
+  const { data: rulesData, isLoading: rulesLoading } = useQuery({
+    queryKey: ['rules', locationId],
+    queryFn: () => api.getMatchRules(),
+    enabled: isAuthenticated && !!locationId,
+  });
+
+  // Fetch pending matches to count per rule
+  const { data: matchesData } = useQuery({
+    queryKey: ['matches', 'pending', locationId],
+    queryFn: () => api.getMatches('pending'),
+    enabled: isAuthenticated && !!locationId,
+  });
+
+  const rules = rulesData?.data ?? [];
+  const pendingMatches = matchesData?.data ?? [];
+
+  // Count pending matches per rule
+  const pendingByRule = pendingMatches.reduce((acc: Record<string, number>, match: MatchPair) => {
+    const ruleId = (match as any).rule_id;
+    if (ruleId) {
+      acc[ruleId] = (acc[ruleId] || 0) + 1;
+    }
+    return acc;
+  }, {});
+
+  if (authLoading || rulesLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (authError) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+        <p className="text-destructive">{authError}</p>
+        <Button asChild>
+          <a href={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/auth/install`}>
+            Connect to GoHighLevel
+          </a>
+        </Button>
+      </div>
+    );
+  }
+
   if (rules.length === 0) {
     return (
       <div className="space-y-6 pt-12 lg:pt-0">
         <PageHeader title="Match Rules">
           <div className="flex gap-2">
-            <Button variant="outline">View Merge Strategies</Button>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              New Match Rule
+            <Button variant="outline" asChild>
+              <Link to="/merge-strategies">View Merge Strategies</Link>
+            </Button>
+            <Button asChild>
+              <Link to="/match-rules/new">
+                <Plus className="mr-2 h-4 w-4" />
+                New Match Rule
+              </Link>
             </Button>
           </div>
         </PageHeader>
@@ -63,9 +82,11 @@ export default function MatchRules() {
           <p className="text-muted-foreground mb-6 max-w-sm">
             Create your first match rule to start detecting duplicates.
           </p>
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            Create Rule
+          <Button asChild>
+            <Link to="/match-rules/new">
+              <Plus className="mr-2 h-4 w-4" />
+              Create Rule
+            </Link>
           </Button>
         </div>
       </div>
@@ -76,16 +97,20 @@ export default function MatchRules() {
     <div className="space-y-6 pt-12 lg:pt-0">
       <PageHeader title="Match Rules">
         <div className="flex gap-2">
-          <Button variant="outline">View Merge Strategies</Button>
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            New Match Rule
+          <Button variant="outline" asChild>
+            <Link to="/merge-strategies">View Merge Strategies</Link>
+          </Button>
+          <Button asChild>
+            <Link to="/match-rules/new">
+              <Plus className="mr-2 h-4 w-4" />
+              New Match Rule
+            </Link>
           </Button>
         </div>
       </PageHeader>
 
       <div className="grid gap-4">
-        {rules.map((rule) => (
+        {rules.map((rule: MatchRule) => (
           <Card key={rule.id} className="hover:shadow-md transition-shadow">
             <CardContent className="p-5">
               <Link
@@ -101,33 +126,33 @@ export default function MatchRules() {
                 <div className="flex flex-wrap gap-x-6 gap-y-1">
                   <span>
                     <span className="text-muted-foreground">Object:</span>{" "}
-                    <span className="font-medium">{rule.object}</span>
+                    <span className="font-medium capitalize">{rule.source_object}</span>
                   </span>
                   <span>
                     <span className="text-muted-foreground">Strategy:</span>{" "}
-                    <span className="font-medium">{rule.strategy}</span>
+                    <span className="font-medium">{rule.merge_strategy || 'Default'}</span>
                   </span>
                 </div>
 
                 <div className="flex flex-wrap gap-x-6 gap-y-1">
                   <span>
                     <span className="text-muted-foreground">Schedule:</span>{" "}
-                    <span className="font-medium">{rule.schedule}</span>
+                    <span className="font-medium">{rule.schedule_frequency}</span>
                   </span>
                   <span>
-                    <span className="text-muted-foreground">Last scan:</span>{" "}
-                    <span className="font-medium">{rule.lastScan}</span>
+                    <span className="text-muted-foreground">Status:</span>{" "}
+                    <span className="font-medium">{rule.is_active ? 'Active' : 'Inactive'}</span>
                   </span>
                 </div>
 
                 <div className="flex flex-wrap gap-x-6 gap-y-1">
                   <span>
                     <span className="text-muted-foreground">Pending:</span>{" "}
-                    <span className="font-medium">{rule.pending} matches</span>
+                    <span className="font-medium">{pendingByRule[rule.id] || 0} matches</span>
                   </span>
                   <span>
-                    <span className="text-muted-foreground">Total merged:</span>{" "}
-                    <span className="font-medium">{rule.totalMerged}</span>
+                    <span className="text-muted-foreground">Thresholds:</span>{" "}
+                    <span className="font-medium">Auto: {rule.auto_merge_threshold}% / Review: {rule.review_threshold}%</span>
                   </span>
                 </div>
               </div>

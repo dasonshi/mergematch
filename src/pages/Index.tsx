@@ -1,43 +1,96 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { RefreshCw, ArrowRight, Plus, Check, ClipboardList, FolderOpen, Building2, Users } from "lucide-react";
+import { RefreshCw, ArrowRight, Plus, Check, ClipboardList, FolderOpen, Building2, Users, Loader2 } from "lucide-react";
 import { Link } from "react-router-dom";
-
-// Mock data - in real app this would come from API/state
-const locationName = "Acme Agency";
-const locationId = "loc_abc123";
-
-const quickStats = {
-  pending: { count: 40, rules: 3 },
-  mergedThisWeek: 53,
-  totalRecords: 14051,
-  contacts: 12847,
-  companies: 1204,
-};
-
-const activeRules = [
-  { id: "1", name: "Email + Phone Match", object: "Contacts", schedule: "Runs daily at 6am", lastScan: "2h ago", pending: 23 },
-  { id: "2", name: "Company Domain Match", object: "Companies", schedule: "Manual only", lastScan: "1d ago", pending: 12 },
-  { id: "3", name: "Phone Number Match", object: "Contacts", schedule: "Runs daily at 6am", lastScan: "2h ago", pending: 5 },
-];
-
-const recentActivity = [
-  { id: "1", master: "John Smith", merged: "Jon Smith", when: "2:34 PM" },
-  { id: "2", master: "jane@acme.com", merged: "jane.d@acme", when: "1:12 PM" },
-  { id: "3", master: "Acme Corp", merged: "2 duplicates", when: "Yesterday" },
-  { id: "4", master: "mike@test.com", merged: "mikey@test", when: "Yesterday" },
-];
+import { useQuery } from "@tanstack/react-query";
+import { api, MatchRule, Merge, MatchPair } from "@/lib/api";
+import { useLocation } from "@/contexts/LocationContext";
 
 export default function Dashboard() {
+  const { locationId, isAuthenticated, isLoading: authLoading, error: authError } = useLocation();
+
+  // Fetch contacts count
+  const { data: contactsData } = useQuery({
+    queryKey: ['contacts', locationId],
+    queryFn: () => api.getContacts(1),
+    enabled: isAuthenticated && !!locationId,
+  });
+
+  // Fetch companies count
+  const { data: companiesData } = useQuery({
+    queryKey: ['companies', locationId],
+    queryFn: () => api.getCompanies(1),
+    enabled: isAuthenticated && !!locationId,
+  });
+
+  // Fetch match rules
+  const { data: rulesData, isLoading: rulesLoading } = useQuery({
+    queryKey: ['rules', locationId],
+    queryFn: () => api.getMatchRules(),
+    enabled: isAuthenticated && !!locationId,
+  });
+
+  // Fetch pending matches
+  const { data: matchesData } = useQuery({
+    queryKey: ['matches', 'pending', locationId],
+    queryFn: () => api.getMatches('pending'),
+    enabled: isAuthenticated && !!locationId,
+  });
+
+  // Fetch recent merges
+  const { data: mergesData } = useQuery({
+    queryKey: ['merges', locationId],
+    queryFn: () => api.getMerges(10),
+    enabled: isAuthenticated && !!locationId,
+  });
+
+  // Calculate stats from real data
+  const contactsCount = contactsData?.meta?.total ?? 0;
+  const companiesCount = companiesData?.total ?? 0;
+  const rules = rulesData?.data ?? [];
+  const pendingMatches = matchesData?.data ?? [];
+  const recentMerges = mergesData?.data ?? [];
+
+  // Count pending matches per rule
+  const pendingByRule = pendingMatches.reduce((acc: Record<string, number>, match: MatchPair) => {
+    const ruleId = (match as any).rule_id;
+    if (ruleId) {
+      acc[ruleId] = (acc[ruleId] || 0) + 1;
+    }
+    return acc;
+  }, {});
+
+  const rulesWithPending = rules.filter((r: MatchRule) => pendingByRule[r.id] > 0).length;
+
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (authError) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+        <p className="text-destructive">{authError}</p>
+        <Button asChild>
+          <a href={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/auth/install`}>
+            Connect to GoHighLevel
+          </a>
+        </Button>
+      </div>
+    );
+  }
   return (
     <div className="space-y-8 pt-12 lg:pt-0">
       {/* Header */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Welcome back! 👋</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Welcome back!</h1>
           <p className="text-muted-foreground text-sm">
-            {locationName} • {locationId}
+            Location: {locationId}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -64,10 +117,10 @@ export default function Dashboard() {
               <div className="flex-1 space-y-1">
                 <p className="text-sm font-medium text-muted-foreground">Pending Review</p>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-bold">{quickStats.pending.count}</span>
+                  <span className="text-3xl font-bold">{pendingMatches.length}</span>
                   <span className="text-sm text-muted-foreground">matches</span>
                 </div>
-                <p className="text-sm text-muted-foreground">across {quickStats.pending.rules} rules</p>
+                <p className="text-sm text-muted-foreground">across {rulesWithPending} rules</p>
               </div>
             </div>
             <Button variant="link" className="mt-4 p-0 h-auto text-primary" asChild>
@@ -84,12 +137,12 @@ export default function Dashboard() {
                 <Check className="h-6 w-6 text-success" />
               </div>
               <div className="flex-1 space-y-1">
-                <p className="text-sm font-medium text-muted-foreground">Merged This Week</p>
+                <p className="text-sm font-medium text-muted-foreground">Recent Merges</p>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-bold">{quickStats.mergedThisWeek}</span>
+                  <span className="text-3xl font-bold">{recentMerges.length}</span>
                   <span className="text-sm text-muted-foreground">duplicates</span>
                 </div>
-                <p className="text-sm text-muted-foreground">removed</p>
+                <p className="text-sm text-muted-foreground">merged</p>
               </div>
             </div>
             <Button variant="link" className="mt-4 p-0 h-auto text-primary" asChild>
@@ -108,17 +161,17 @@ export default function Dashboard() {
               <div className="flex-1 space-y-1">
                 <p className="text-sm font-medium text-muted-foreground">Total Records</p>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-bold">{quickStats.totalRecords.toLocaleString()}</span>
+                  <span className="text-3xl font-bold">{(contactsCount + companiesCount).toLocaleString()}</span>
                   <span className="text-sm text-muted-foreground">synced</span>
                 </div>
                 <div className="flex gap-4 text-sm text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <Users className="h-3.5 w-3.5" />
-                    Contacts: {quickStats.contacts.toLocaleString()}
+                    Contacts: {contactsCount.toLocaleString()}
                   </span>
                   <span className="flex items-center gap-1">
                     <Building2 className="h-3.5 w-3.5" />
-                    Companies: {quickStats.companies.toLocaleString()}
+                    Companies: {companiesCount.toLocaleString()}
                   </span>
                 </div>
               </div>
@@ -139,35 +192,72 @@ export default function Dashboard() {
           </Button>
         </CardHeader>
         <CardContent className="space-y-3">
-          {activeRules.map((rule) => (
-            <Link
-              key={rule.id}
-              to={`/match-rules/${rule.id}`}
-              className="flex items-center justify-between p-4 rounded-lg border hover:bg-muted/50 transition-colors group"
-            >
-              <div className="flex items-start gap-3">
-                <div className="rounded-md bg-muted p-2">
-                  {rule.object === "Contacts" ? (
-                    <Users className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <Building2 className="h-4 w-4 text-muted-foreground" />
-                  )}
-                </div>
-                <div>
-                  <h3 className="font-medium group-hover:text-primary transition-colors">{rule.name}</h3>
-                  <p className="text-sm text-muted-foreground">
-                    {rule.object} • {rule.schedule} • Last: {rule.lastScan}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Badge variant="secondary" className="font-medium">
-                  {rule.pending} pending
-                </Badge>
-                <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
-              </div>
-            </Link>
-          ))}
+          {rulesLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : rules.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <p>No match rules yet.</p>
+              <Button variant="link" className="mt-2" asChild>
+                <Link to="/match-rules/new">Create your first rule</Link>
+              </Button>
+            </div>
+          ) : (
+            rules.map((rule: MatchRule) => {
+              const lastScan = rule.last_scan_at ? new Date(rule.last_scan_at) : null;
+              const formatLastScan = () => {
+                if (!lastScan) return 'Never';
+                const now = new Date();
+                const diffMs = now.getTime() - lastScan.getTime();
+                const diffMins = Math.floor(diffMs / 60000);
+                const diffHours = Math.floor(diffMs / 3600000);
+                const diffDays = Math.floor(diffMs / 86400000);
+                if (diffMins < 1) return 'Just now';
+                if (diffMins < 60) return `${diffMins}m ago`;
+                if (diffHours < 24) return `${diffHours}h ago`;
+                if (diffDays < 7) return `${diffDays}d ago`;
+                return lastScan.toLocaleDateString();
+              };
+
+              return (
+                <Link
+                  key={rule.id}
+                  to={`/match-rules/${rule.id}`}
+                  className="flex items-center justify-between p-4 rounded-lg border hover:bg-muted/50 transition-colors group"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-md bg-muted p-2">
+                      {rule.source_object === "contacts" ? (
+                        <Users className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <Building2 className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </div>
+                    <div>
+                      <h3 className="font-medium group-hover:text-primary transition-colors">{rule.name}</h3>
+                      <p className="text-sm text-muted-foreground">
+                        {rule.source_object} • {rule.schedule_frequency} • {rule.is_active ? 'Active' : 'Inactive'}
+                      </p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-xs text-muted-foreground">
+                        <span>Strategy: <span className="font-medium">{rule.merge_strategy || 'standard'}</span></span>
+                        <span>Last scan: <span className="font-medium">{formatLastScan()}</span></span>
+                        {rule.schedule_frequency !== 'manual' && (
+                          <span>Next run: <span className="font-medium">Scheduled</span></span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="font-medium">
+                      {pendingByRule[rule.id] || 0} pending
+                    </Badge>
+                    <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                  </div>
+                </Link>
+              );
+            }))
+          )}
         </CardContent>
       </Card>
 
@@ -181,28 +271,34 @@ export default function Dashboard() {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {recentActivity.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center justify-between py-2 border-b last:border-0"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="rounded-full bg-success/10 p-1.5">
-                    <Check className="h-3.5 w-3.5 text-success" />
+            {recentMerges.length === 0 ? (
+              <p className="text-center py-4 text-muted-foreground">No merges yet</p>
+            ) : (
+              recentMerges.map((merge: Merge) => (
+                <div
+                  key={merge.id}
+                  className="flex items-center justify-between py-2 border-b last:border-0"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-full bg-success/10 p-1.5">
+                      <Check className="h-3.5 w-3.5 text-success" />
+                    </div>
+                    <div>
+                      <span className="font-medium">Merged record</span>
+                      <span className="text-muted-foreground"> ← {merge.duplicate_record_id.slice(0, 8)}...</span>
+                    </div>
                   </div>
-                  <div>
-                    <span className="font-medium">Merged {item.master}</span>
-                    <span className="text-muted-foreground"> ← {item.merged}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-muted-foreground">
+                      {new Date(merge.created_at).toLocaleDateString()}
+                    </span>
+                    <Button variant="ghost" size="sm" asChild>
+                      <Link to="/history">View</Link>
+                    </Button>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm text-muted-foreground">{item.when}</span>
-                  <Button variant="ghost" size="sm" asChild>
-                    <Link to="/history">View</Link>
-                  </Button>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </CardContent>
       </Card>

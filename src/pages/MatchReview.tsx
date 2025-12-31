@@ -1,149 +1,210 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Star, AlertTriangle, FileText, CheckSquare, DollarSign } from "lucide-react";
+import { Link, useParams, useNavigate } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, Star, AlertTriangle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { useLocation } from "@/contexts/LocationContext";
+import { useToast } from "@/hooks/use-toast";
+import { api } from "@/lib/api";
 
-// Mock data for the match
-const mockMatch = {
-  id: "match-1",
-  ruleId: "rule-1",
-  ruleName: "Email + Phone Match",
-  confidence: 98,
-  records: [
-    {
-      id: "rec-1",
-      isMaster: true,
-      name: "John Smith",
-      fields: {
-        firstName: "John",
-        lastName: "Smith",
-        email: "john@acme.com",
-        phone: null,
-        company: "Acme Inc",
-        tags: "lead, hot",
-        created: "Jan 15, 2024",
-        updated: "Dec 20, 2024",
-      },
-    },
-    {
-      id: "rec-2",
-      isMaster: false,
-      name: "Jon Smith",
-      fields: {
-        firstName: "Jon",
-        lastName: "Smith",
-        email: "jon.smith@acme",
-        phone: "+1 555-0123",
-        company: null,
-        tags: "prospect",
-        created: "Mar 22, 2024",
-        updated: "Dec 24, 2024",
-      },
-    },
-  ],
-  relatedRecords: {
-    notes: 3,
-    tasks: 1,
-    taskDue: "due tomorrow",
-    opportunities: 2,
-    opportunitiesValue: "$5,400",
-  },
-};
-
-type FieldKey = keyof typeof mockMatch.records[0]["fields"];
-
-const fieldLabels: Record<FieldKey, string> = {
+// Fields to display and their labels
+const fieldLabels: Record<string, string> = {
   firstName: "First Name",
   lastName: "Last Name",
   email: "Email",
   phone: "Phone",
-  company: "Company",
+  companyName: "Company",
   tags: "Tags",
-  created: "Created",
-  updated: "Updated",
+  address1: "Address",
+  city: "City",
+  state: "State",
+  postalCode: "Postal Code",
 };
 
-const metadataFields: FieldKey[] = ["created", "updated"];
+const metadataFields = ["dateAdded", "dateUpdated"];
 
 export default function MatchReview() {
-  const { id } = useParams();
-  const match = mockMatch;
+  const { id: ruleId, matchId } = useParams();
+  const navigate = useNavigate();
+  const { locationId, isLoading: authLoading } = useLocation();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
-  // Track which record is selected for each field
-  // Default to master record for all fields, except pick non-empty from duplicate if master is empty
+  // Fetch match details
+  const { data: match, isLoading: matchLoading } = useQuery({
+    queryKey: ["match", matchId, locationId],
+    queryFn: async () => {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/v1/matches/${matchId}?location_id=${locationId}`
+      );
+      if (!response.ok) throw new Error("Failed to fetch match");
+      return response.json();
+    },
+    enabled: !!locationId && !!matchId,
+  });
+
+  // Fetch rule details for the back link
+  const { data: rule } = useQuery({
+    queryKey: ["rule", ruleId, locationId],
+    queryFn: () => api.getMatchRule(ruleId!),
+    enabled: !!locationId && !!ruleId,
+  });
+
+  // Merge mutation
+  const mergeMutation = useMutation({
+    mutationFn: async (data: { matchId: string; masterId: string; selections: Record<string, string> }) => {
+      return api.executeMerge(data.matchId, data.masterId, data.selections);
+    },
+    onSuccess: () => {
+      toast({
+        title: "Merge Successful",
+        description: "The contacts have been merged successfully.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["matches"] });
+      queryClient.invalidateQueries({ queryKey: ["merges"] });
+      navigate(`/match-rules/${ruleId}`);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Merge Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Build record data from match
+  const recordA = match?.record_a_data || {};
+  const recordB = match?.record_b_data || {};
+  const recordAId = match?.record_a_id || "a";
+  const recordBId = match?.record_b_id || "b";
+  const confidence = Math.round((match?.confidence_score || 0) * 100);
+
+  // Determine which fields to show
+  const allFields = new Set([...Object.keys(recordA), ...Object.keys(recordB)]);
+  const displayFields = Object.keys(fieldLabels).filter(f => allFields.has(f));
+
+  // Track selections - default to record A (master) unless empty
   const getDefaultSelections = () => {
-    const selections: Record<FieldKey, string> = {} as Record<FieldKey, string>;
-    const fieldKeys = Object.keys(match.records[0].fields) as FieldKey[];
-
-    fieldKeys.forEach((field) => {
-      if (metadataFields.includes(field)) {
-        selections[field] = "metadata";
-        return;
-      }
-
-      const masterRecord = match.records.find((r) => r.isMaster);
-      const masterValue = masterRecord?.fields[field];
-
-      if (masterValue) {
-        selections[field] = masterRecord!.id;
-      } else {
-        // Find first non-empty value
-        const recordWithValue = match.records.find((r) => r.fields[field]);
-        selections[field] = recordWithValue?.id || masterRecord!.id;
-      }
+    const selections: Record<string, string> = {};
+    displayFields.forEach((field) => {
+      const valueA = recordA[field];
+      const valueB = recordB[field];
+      // Default to A if it has a value, otherwise B
+      selections[field] = valueA ? "a" : (valueB ? "b" : "a");
     });
-
     return selections;
   };
 
-  const [selections, setSelections] = useState<Record<FieldKey, string>>(getDefaultSelections);
+  const [selections, setSelections] = useState<Record<string, string>>({});
   const [hideWarning, setHideWarning] = useState(false);
+  const [masterId, setMasterId] = useState<string>("a");
 
-  const handleCellClick = (field: FieldKey, recordId: string) => {
-    if (metadataFields.includes(field)) return;
-    setSelections((prev) => ({ ...prev, [field]: recordId }));
+  // Initialize selections when match loads
+  if (match && Object.keys(selections).length === 0) {
+    const defaults = getDefaultSelections();
+    setSelections(defaults);
+  }
+
+  const handleCellClick = (field: string, source: "a" | "b") => {
+    setSelections((prev) => ({ ...prev, [field]: source }));
   };
 
-  const getResultValue = (field: FieldKey) => {
-    if (metadataFields.includes(field)) return "(metadata)";
-    const selectedRecordId = selections[field];
-    const record = match.records.find((r) => r.id === selectedRecordId);
-    return record?.fields[field] || "(empty)";
+  const handleMasterChange = (newMaster: "a" | "b") => {
+    setMasterId(newMaster);
   };
 
-  const duplicateRecord = match.records.find((r) => !r.isMaster);
+  const getResultValue = (field: string) => {
+    const source = selections[field];
+    const value = source === "a" ? recordA[field] : recordB[field];
+    if (Array.isArray(value)) return value.join(", ");
+    return value || "(empty)";
+  };
+
+  const handleMerge = () => {
+    const actualMasterId = masterId === "a" ? recordAId : recordBId;
+    mergeMutation.mutate({
+      matchId: matchId!,
+      masterId: actualMasterId,
+      selections,
+    });
+  };
+
+  if (authLoading || matchLoading || !match) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const duplicateName = masterId === "a"
+    ? `${recordB.firstName || ''} ${recordB.lastName || ''}`.trim() || "Record B"
+    : `${recordA.firstName || ''} ${recordA.lastName || ''}`.trim() || "Record A";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pt-12 lg:pt-0">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-1">
           <Link
-            to={`/match-rules/${id}`}
+            to={`/match-rules/${ruleId}`}
             className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
-            {match.ruleName}
+            {rule?.name || "Match Rule"}
           </Link>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground lg:text-3xl">
             Review Match
           </h1>
         </div>
         <Badge variant="secondary" className="text-base px-4 py-1.5 w-fit">
-          {match.confidence}% confidence
+          {confidence}% confidence
         </Badge>
       </div>
+
+      {/* Master Selection */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Select Master Record
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-4">
+            <Button
+              variant={masterId === "a" ? "default" : "outline"}
+              onClick={() => handleMasterChange("a")}
+              className="flex-1"
+            >
+              <Star className={cn("h-4 w-4 mr-2", masterId === "a" && "fill-current")} />
+              {recordA.firstName} {recordA.lastName}
+            </Button>
+            <Button
+              variant={masterId === "b" ? "default" : "outline"}
+              onClick={() => handleMasterChange("b")}
+              className="flex-1"
+            >
+              <Star className={cn("h-4 w-4 mr-2", masterId === "b" && "fill-current")} />
+              {recordB.firstName} {recordB.lastName}
+            </Button>
+          </div>
+          <p className="text-sm text-muted-foreground mt-2">
+            The master record will be kept. The duplicate will be deleted.
+          </p>
+        </CardContent>
+      </Card>
 
       {/* Field Comparison Table */}
       <Card>
         <CardHeader className="pb-3">
           <p className="text-sm text-muted-foreground">
-            Click any cell to select it as the value to keep.
+            Click any cell to select which value to keep for each field.
           </p>
         </CardHeader>
         <CardContent>
@@ -152,70 +213,97 @@ export default function MatchReview() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-32"></TableHead>
-                  {match.records.map((record) => (
-                    <TableHead key={record.id} className="min-w-40">
-                      <div className="flex items-center gap-2">
-                        {record.isMaster && <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />}
-                        <span className={record.isMaster ? "font-semibold" : ""}>
-                          {record.isMaster ? "MASTER" : "DUPLICATE 1"}
-                        </span>
-                      </div>
-                      <div className="text-sm font-normal text-muted-foreground mt-1">
-                        {record.name}
-                      </div>
-                    </TableHead>
-                  ))}
+                  <TableHead className="min-w-40">
+                    <div className="flex items-center gap-2">
+                      {masterId === "a" && <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />}
+                      <span className={masterId === "a" ? "font-semibold" : ""}>
+                        {masterId === "a" ? "MASTER" : "DUPLICATE"}
+                      </span>
+                    </div>
+                    <div className="text-sm font-normal text-muted-foreground mt-1">
+                      {recordA.firstName} {recordA.lastName}
+                    </div>
+                  </TableHead>
+                  <TableHead className="min-w-40">
+                    <div className="flex items-center gap-2">
+                      {masterId === "b" && <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />}
+                      <span className={masterId === "b" ? "font-semibold" : ""}>
+                        {masterId === "b" ? "MASTER" : "DUPLICATE"}
+                      </span>
+                    </div>
+                    <div className="text-sm font-normal text-muted-foreground mt-1">
+                      {recordB.firstName} {recordB.lastName}
+                    </div>
+                  </TableHead>
                   <TableHead className="min-w-40 bg-muted/50">
                     <span className="font-semibold">RESULT</span>
                   </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(Object.keys(fieldLabels) as FieldKey[]).map((field) => (
-                  <TableRow key={field}>
-                    <TableCell className="font-medium text-muted-foreground">
-                      {fieldLabels[field]}
-                    </TableCell>
-                    {match.records.map((record) => {
-                      const value = record.fields[field];
-                      const isSelected = selections[field] === record.id;
-                      const isMetadata = metadataFields.includes(field);
-                      const isEmpty = !value;
+                {displayFields.map((field) => {
+                  const valueA = recordA[field];
+                  const valueB = recordB[field];
+                  const displayValueA = Array.isArray(valueA) ? valueA.join(", ") : valueA;
+                  const displayValueB = Array.isArray(valueB) ? valueB.join(", ") : valueB;
 
-                      return (
-                        <TableCell
-                          key={record.id}
-                          className={cn(
-                            "transition-colors",
-                            !isMetadata && "cursor-pointer hover:bg-muted/50",
-                            isSelected && !isMetadata && "bg-primary/10"
+                  return (
+                    <TableRow key={field}>
+                      <TableCell className="font-medium text-muted-foreground">
+                        {fieldLabels[field] || field}
+                      </TableCell>
+                      <TableCell
+                        className={cn(
+                          "cursor-pointer hover:bg-muted/50 transition-colors",
+                          selections[field] === "a" && "bg-primary/10"
+                        )}
+                        onClick={() => handleCellClick(field, "a")}
+                      >
+                        <div className="flex items-center gap-2">
+                          {selections[field] === "a" && (
+                            <span className="text-primary font-medium">[</span>
                           )}
-                          onClick={() => handleCellClick(field, record.id)}
-                        >
-                          <div className="flex items-center gap-2">
-                            {isSelected && !isMetadata && (
-                              <span className="text-primary font-medium">[</span>
-                            )}
-                            <span className={cn(isEmpty && "text-muted-foreground italic")}>
-                              {isEmpty ? "(empty)" : value}
-                            </span>
-                            {isSelected && !isMetadata && (
-                              <>
-                                <span className="text-primary font-medium">]</span>
-                                <span className="text-primary">✓</span>
-                              </>
-                            )}
-                          </div>
-                        </TableCell>
-                      );
-                    })}
-                    <TableCell className="bg-muted/50 font-medium">
-                      <span className={cn(getResultValue(field) === "(empty)" && "text-muted-foreground italic")}>
-                        {getResultValue(field)}
-                      </span>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                          <span className={cn(!displayValueA && "text-muted-foreground italic")}>
+                            {displayValueA || "(empty)"}
+                          </span>
+                          {selections[field] === "a" && (
+                            <>
+                              <span className="text-primary font-medium">]</span>
+                              <span className="text-primary">✓</span>
+                            </>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell
+                        className={cn(
+                          "cursor-pointer hover:bg-muted/50 transition-colors",
+                          selections[field] === "b" && "bg-primary/10"
+                        )}
+                        onClick={() => handleCellClick(field, "b")}
+                      >
+                        <div className="flex items-center gap-2">
+                          {selections[field] === "b" && (
+                            <span className="text-primary font-medium">[</span>
+                          )}
+                          <span className={cn(!displayValueB && "text-muted-foreground italic")}>
+                            {displayValueB || "(empty)"}
+                          </span>
+                          {selections[field] === "b" && (
+                            <>
+                              <span className="text-primary font-medium">]</span>
+                              <span className="text-primary">✓</span>
+                            </>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="bg-muted/50 font-medium">
+                        <span className={cn(getResultValue(field) === "(empty)" && "text-muted-foreground italic")}>
+                          {getResultValue(field)}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
@@ -230,34 +318,6 @@ export default function MatchReview() {
         </CardContent>
       </Card>
 
-      {/* Related Records */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Related Records
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground mb-3">
-            From "{duplicateRecord?.name}" (will be copied to master):
-          </p>
-          <div className="flex flex-wrap gap-4">
-            <div className="flex items-center gap-2 text-sm">
-              <FileText className="h-4 w-4 text-muted-foreground" />
-              <span>{match.relatedRecords.notes} notes</span>
-            </div>
-            <div className="flex items-center gap-2 text-sm">
-              <CheckSquare className="h-4 w-4 text-muted-foreground" />
-              <span>{match.relatedRecords.tasks} task ({match.relatedRecords.taskDue})</span>
-            </div>
-            <div className="flex items-center gap-2 text-sm">
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-              <span>{match.relatedRecords.opportunities} opportunities ({match.relatedRecords.opportunitiesValue} total value)</span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Merge Warning */}
       <Card className="border-yellow-500/50 bg-yellow-500/5">
         <CardContent className="pt-6">
@@ -267,10 +327,10 @@ export default function MatchReview() {
               <div>
                 <h3 className="font-semibold text-foreground">MERGE WARNING</h3>
                 <p className="text-sm text-muted-foreground mt-1">
-                  "{duplicateRecord?.name}" will be <span className="font-semibold text-destructive">PERMANENTLY DELETED</span> from GoHighLevel.
+                  "{duplicateName}" will be <span className="font-semibold text-destructive">DELETED</span> from GoHighLevel.
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  Notes/tasks will be copied to master with new IDs.
+                  A snapshot will be saved for 30-day rollback.
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -291,10 +351,21 @@ export default function MatchReview() {
       {/* Footer Actions */}
       <div className="flex justify-between items-center pt-4 border-t">
         <Button variant="outline" asChild>
-          <Link to={`/match-rules/${id}`}>Cancel</Link>
+          <Link to={`/match-rules/${ruleId}`}>Cancel</Link>
         </Button>
-        <Button className="bg-green-600 hover:bg-green-700 text-white">
-          Confirm Merge
+        <Button
+          className="bg-green-600 hover:bg-green-700 text-white"
+          onClick={handleMerge}
+          disabled={mergeMutation.isPending}
+        >
+          {mergeMutation.isPending ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Merging...
+            </>
+          ) : (
+            "Confirm Merge"
+          )}
         </Button>
       </div>
     </div>

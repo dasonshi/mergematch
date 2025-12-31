@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ArrowLeft, Plus, Pencil, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, Pencil, Trash2, Lock, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
@@ -16,46 +16,19 @@ interface Strategy {
   usedBy: string[];
 }
 
-const mockStrategies: Strategy[] = [
-  {
-    id: "strategy-1",
-    name: "Standard Contact Merge",
-    objectType: "Contacts",
-    masterSelection: "Most complete",
-    conflictResolution: "Prefer master",
-    notes: "Copy all",
-    tasks: "Copy all",
-    opportunities: "Keep all",
-    usedBy: ["Email + Phone Match", "Name + Address Match"],
-  },
-  {
-    id: "strategy-2",
-    name: "Most Recent Wins",
-    objectType: "Contacts",
-    masterSelection: "Most recent activity",
-    conflictResolution: "Most recent",
-    notes: "Copy all",
-    tasks: "Copy all",
-    opportunities: "Keep all",
-    usedBy: [],
-  },
-  {
-    id: "strategy-3",
-    name: "Company Standard",
-    objectType: "Companies",
-    masterSelection: "Most complete",
-    conflictResolution: "Prefer master",
-    usedBy: ["Company Domain Match"],
-  },
-];
+// Custom strategies would be fetched from API - empty for now
+const customStrategies: Strategy[] = [];
 
-const unusedObjectTypes = ["Opportunities", "Custom Objects"];
+// User's current plan - would come from context/API
+const userPlan = "free"; // free | starter | professional
 
 export default function MergeStrategies() {
   const { toast } = useToast();
+  const canCreateCustomStrategy = userPlan !== "free";
 
-  const contactStrategies = mockStrategies.filter((s) => s.objectType === "Contacts");
-  const companyStrategies = mockStrategies.filter((s) => s.objectType === "Companies");
+  const contactStrategies = customStrategies.filter((s) => s.objectType === "Contacts");
+  const companyStrategies = customStrategies.filter((s) => s.objectType === "Companies");
+  const hasCustomStrategies = customStrategies.length > 0;
 
   const handleDelete = (strategy: Strategy) => {
     if (strategy.usedBy.length > 0) {
@@ -158,26 +131,49 @@ export default function MergeStrategies() {
             Merge Strategies
           </h1>
         </div>
-        <Button>
-          <Plus className="h-4 w-4 mr-2" />
+        <Button disabled={!canCreateCustomStrategy}>
+          {canCreateCustomStrategy ? (
+            <Plus className="h-4 w-4 mr-2" />
+          ) : (
+            <Lock className="h-4 w-4 mr-2" />
+          )}
           New Merge Strategy
         </Button>
       </div>
 
-      {/* Strategy Groups */}
-      {contactStrategies.length > 0 && (
-        <StrategyGroup title="Contacts" strategies={contactStrategies} />
-      )}
+      {/* Content */}
+      {hasCustomStrategies ? (
+        <>
+          {/* Strategy Groups */}
+          {contactStrategies.length > 0 && (
+            <StrategyGroup title="Contacts" strategies={contactStrategies} />
+          )}
 
-      {companyStrategies.length > 0 && (
-        <StrategyGroup title="Companies" strategies={companyStrategies} />
+          {companyStrategies.length > 0 && (
+            <StrategyGroup title="Companies" strategies={companyStrategies} />
+          )}
+        </>
+      ) : (
+        /* Empty State */
+        <Card className="border-dashed">
+          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="rounded-full bg-muted p-4 mb-4">
+              <Layers className="h-8 w-8 text-muted-foreground" />
+            </div>
+            <h3 className="text-lg font-semibold mb-2">No Custom Merge Strategies</h3>
+            <p className="text-muted-foreground max-w-md mb-6">
+              Custom merge strategies let you define exactly how records are combined during a merge.
+              The built-in strategies (Standard, Most Recent, etc.) are available in the Match Rule dropdown.
+            </p>
+            {!canCreateCustomStrategy && (
+              <div className="flex items-center gap-2 text-sm text-amber-600 bg-amber-50 px-4 py-2 rounded-lg">
+                <Lock className="h-4 w-4" />
+                <span>Upgrade to Starter or higher to create custom strategies</span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
-
-      {/* Footer Note */}
-      <div className="pt-4 border-t text-sm text-muted-foreground">
-        <p>No strategies for: {unusedObjectTypes.join(", ")}</p>
-        <p className="mt-1">(Create a Match Rule to add strategies for these objects)</p>
-      </div>
     </div>
   );
 }
