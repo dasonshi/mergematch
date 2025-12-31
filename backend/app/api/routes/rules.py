@@ -184,6 +184,13 @@ async def scan_rule(
             internal_location_id=internal_location_id,
             limit=limit,
         )
+
+        # Update last_scan_at on the rule
+        supabase = get_supabase()
+        supabase.table("match_rules").update({
+            "last_scan_at": "now()"
+        }).eq("id", rule_id).execute()
+
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Scan failed: {str(e)}")
