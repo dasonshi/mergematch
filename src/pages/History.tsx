@@ -38,6 +38,8 @@ interface MergeItem {
   status: string;
   created_at: string;
   match_pair_id?: string;
+  rule_id?: string;
+  rule_name?: string;
 }
 
 export default function History() {
@@ -130,6 +132,7 @@ export default function History() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>Rule</TableHead>
                 <TableHead>Master Record</TableHead>
                 <TableHead>Duplicate</TableHead>
                 <TableHead>Status</TableHead>
@@ -140,6 +143,18 @@ export default function History() {
             <TableBody>
               {merges.map((item: MergeItem) => (
                 <TableRow key={item.id}>
+                  <TableCell>
+                    {item.rule_id ? (
+                      <Link
+                        to={`/match-rules/${item.rule_id}`}
+                        className="text-primary hover:underline font-medium"
+                      >
+                        {item.rule_name || "Unknown"}
+                      </Link>
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
+                  </TableCell>
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-sm">{item.master_record_id?.slice(0, 12)}...</span>
