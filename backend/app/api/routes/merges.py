@@ -22,7 +22,7 @@ async def list_merges(
     limit: int = 50,
     offset: int = 0,
 ):
-    """List merge history."""
+    """List merge history with rule info."""
     tokens = await get_location_tokens(location_id)
     if not tokens:
         raise HTTPException(status_code=401, detail="Location not authenticated")
@@ -30,9 +30,23 @@ async def list_merges(
     internal_location_id = tokens["location_id"]
 
     supabase = get_supabase()
-    result = supabase.table("merges").select("*").eq("location_id", internal_location_id).order("created_at", desc=True).range(offset, offset + limit - 1).execute()
 
-    return {"data": result.data, "total": len(result.data)}
+    # Get merges with rule info through match_pairs
+    result = supabase.table("merges").select(
+        "*, match_pairs(rule_id, match_rules(id, name))"
+    ).eq("location_id", internal_location_id).order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+
+    # Flatten the rule info for easier frontend consumption
+    data = []
+    for merge in result.data:
+        merge_data = {**merge}
+        match_pair = merge_data.pop("match_pairs", None)
+        if match_pair and match_pair.get("match_rules"):
+            merge_data["rule_id"] = match_pair["match_rules"]["id"]
+            merge_data["rule_name"] = match_pair["match_rules"]["name"]
+        data.append(merge_data)
+
+    return {"data": data, "total": len(data)}
 
 
 @router.post("/")
