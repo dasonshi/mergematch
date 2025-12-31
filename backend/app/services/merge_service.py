@@ -143,6 +143,15 @@ async def execute_merge(
         raise
 
 
+# Fields that GHL accepts for contact creation
+ALLOWED_CREATE_FIELDS = {
+    "firstName", "lastName", "name", "email", "gender", "phone",
+    "address1", "city", "state", "postalCode", "website", "timezone",
+    "dnd", "dndSettings", "inboundDndSettings", "tags", "customFields",
+    "source", "country", "companyName", "assignedTo", "dateOfBirth",
+}
+
+
 async def rollback_merge(
     merge_id: str,
     access_token: str,
@@ -180,10 +189,14 @@ async def rollback_merge(
 
     try:
         async with GHLClient(access_token, ghl_location_id) as client:
-            # Recreate the deleted duplicate contact
-            # Remove fields that GHL won't accept on create
-            restore_data = {k: v for k, v in duplicate_snapshot.items()
-                          if k not in ["id", "dateAdded", "dateUpdated", "locationId"]}
+            # Only include fields that GHL accepts for contact creation
+            restore_data = {
+                k: v for k, v in duplicate_snapshot.items()
+                if k in ALLOWED_CREATE_FIELDS and v is not None
+            }
+
+            # locationId is required and must be added
+            restore_data["locationId"] = ghl_location_id
 
             logger.info(f"Creating contact with data: {restore_data}")
             restored_contact = await client.create_contact(restore_data)
