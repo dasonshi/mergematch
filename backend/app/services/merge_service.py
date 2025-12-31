@@ -204,10 +204,11 @@ async def rollback_merge(
 
             logger.info(f"Restored contact created with ID: {restored_id}")
 
-        # Update merge status
+        # Update merge status and store the new restored record ID
         supabase.table("merges").update({
             "status": "rolled_back",
             "rolled_back_at": "now()",
+            "restored_record_id": restored_id,
         }).eq("id", merge_id).execute()
 
         # Update match pair status back to pending
