@@ -110,55 +110,82 @@ export default function MatchRules() {
       </PageHeader>
 
       <div className="grid gap-4">
-        {rules.map((rule: MatchRule) => (
-          <Card key={rule.id} className="hover:shadow-md transition-shadow">
-            <CardContent className="p-5">
-              <Link
-                to={`/match-rules/${rule.id}`}
-                className="flex items-center gap-2 text-lg font-semibold text-primary hover:underline mb-3"
-              >
-                <FileText className="h-5 w-5" />
-                {rule.name}
-                <ArrowRight className="h-4 w-4" />
-              </Link>
+        {rules.map((rule: MatchRule) => {
+          const lastScan = rule.last_scan_at ? new Date(rule.last_scan_at) : null;
+          const formatLastScan = () => {
+            if (!lastScan) return 'Never';
+            const now = new Date();
+            const diffMs = now.getTime() - lastScan.getTime();
+            const diffMins = Math.floor(diffMs / 60000);
+            const diffHours = Math.floor(diffMs / 3600000);
+            const diffDays = Math.floor(diffMs / 86400000);
+            if (diffMins < 1) return 'Just now';
+            if (diffMins < 60) return `${diffMins}m ago`;
+            if (diffHours < 24) return `${diffHours}h ago`;
+            if (diffDays < 7) return `${diffDays}d ago`;
+            return lastScan.toLocaleDateString();
+          };
 
-              <div className="grid gap-2 text-sm">
-                <div className="flex flex-wrap gap-x-6 gap-y-1">
-                  <span>
-                    <span className="text-muted-foreground">Object:</span>{" "}
-                    <span className="font-medium capitalize">{rule.source_object}</span>
-                  </span>
-                  <span>
-                    <span className="text-muted-foreground">Strategy:</span>{" "}
-                    <span className="font-medium">{rule.merge_strategy || 'Default'}</span>
-                  </span>
-                </div>
+          return (
+            <Card key={rule.id} className="hover:shadow-md transition-shadow">
+              <CardContent className="p-5">
+                <Link
+                  to={`/match-rules/${rule.id}`}
+                  className="flex items-center gap-2 text-lg font-semibold text-primary hover:underline mb-3"
+                >
+                  <FileText className="h-5 w-5" />
+                  {rule.name}
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
 
-                <div className="flex flex-wrap gap-x-6 gap-y-1">
-                  <span>
-                    <span className="text-muted-foreground">Schedule:</span>{" "}
-                    <span className="font-medium">{rule.schedule_frequency}</span>
-                  </span>
-                  <span>
-                    <span className="text-muted-foreground">Status:</span>{" "}
-                    <span className="font-medium">{rule.is_active ? 'Active' : 'Inactive'}</span>
-                  </span>
-                </div>
+                <div className="grid gap-2 text-sm">
+                  <div className="flex flex-wrap gap-x-6 gap-y-1">
+                    <span>
+                      <span className="text-muted-foreground">Object:</span>{" "}
+                      <span className="font-medium capitalize">{rule.source_object}</span>
+                    </span>
+                    <span>
+                      <span className="text-muted-foreground">Strategy:</span>{" "}
+                      <span className="font-medium">{rule.merge_strategy || 'standard'}</span>
+                    </span>
+                    <span>
+                      <span className="text-muted-foreground">Status:</span>{" "}
+                      <span className="font-medium">{rule.is_active ? 'Active' : 'Inactive'}</span>
+                    </span>
+                  </div>
 
-                <div className="flex flex-wrap gap-x-6 gap-y-1">
-                  <span>
-                    <span className="text-muted-foreground">Pending:</span>{" "}
-                    <span className="font-medium">{pendingByRule[rule.id] || 0} matches</span>
-                  </span>
-                  <span>
-                    <span className="text-muted-foreground">Thresholds:</span>{" "}
-                    <span className="font-medium">Auto: {rule.auto_merge_threshold}% / Review: {rule.review_threshold}%</span>
-                  </span>
+                  <div className="flex flex-wrap gap-x-6 gap-y-1">
+                    <span>
+                      <span className="text-muted-foreground">Last scan:</span>{" "}
+                      <span className="font-medium">{formatLastScan()}</span>
+                    </span>
+                    <span>
+                      <span className="text-muted-foreground">Schedule:</span>{" "}
+                      <span className="font-medium">{rule.schedule_frequency}</span>
+                    </span>
+                    {rule.schedule_frequency !== 'manual' && (
+                      <span>
+                        <span className="text-muted-foreground">Next run:</span>{" "}
+                        <span className="font-medium">Scheduled</span>
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap gap-x-6 gap-y-1">
+                    <span>
+                      <span className="text-muted-foreground">Pending:</span>{" "}
+                      <span className="font-medium">{pendingByRule[rule.id] || 0} matches</span>
+                    </span>
+                    <span>
+                      <span className="text-muted-foreground">Thresholds:</span>{" "}
+                      <span className="font-medium">Auto: {Math.round(rule.auto_merge_threshold * 100)}% / Review: {Math.round(rule.review_threshold * 100)}%</span>
+                    </span>
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
     </div>
   );

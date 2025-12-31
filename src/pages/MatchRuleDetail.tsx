@@ -2,15 +2,7 @@ import { Link, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Edit, Search, Play, Lightbulb, Loader2 } from "lucide-react";
+import { ArrowLeft, Edit, Search, Play, Loader2 } from "lucide-react";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
@@ -61,6 +53,33 @@ export default function MatchRuleDetail() {
     },
   });
 
+  // Quick merge mutation (uses record A as master with all its values)
+  const quickMergeMutation = useMutation({
+    mutationFn: async (match: any) => {
+      const recordA = match.record_a_data || {};
+      // Default all fields to "a" (master)
+      const fields = ["firstName", "lastName", "email", "phone", "companyName", "tags", "address1", "city", "state", "postalCode"];
+      const selections: Record<string, string> = {};
+      fields.forEach(f => { selections[f] = "a"; });
+      return api.executeMerge(match.id, match.record_a_id, selections);
+    },
+    onSuccess: () => {
+      toast({
+        title: "Merge Successful",
+        description: "The contacts have been merged.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["matches"] });
+      queryClient.invalidateQueries({ queryKey: ["merges"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Merge Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const pendingMatches = matchesData?.data || [];
   const mergeHistory = mergesData?.data || [];
 
@@ -86,8 +105,8 @@ export default function MatchRuleDetail() {
 
   return (
     <div className="space-y-6 pt-12 lg:pt-0">
-      {/* Page Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      {/* Page Header with Actions */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
           <Link
             to="/match-rules"
@@ -100,23 +119,51 @@ export default function MatchRuleDetail() {
             {rule.name}
           </h1>
         </div>
-        <Button variant="outline" asChild>
-          <Link to={`/match-rules/${id}/edit`}>
-            <Edit className="mr-2 h-4 w-4" />
-            Edit Rule
-          </Link>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            onClick={() => scanMutation.mutate()}
+            disabled={scanMutation.isPending}
+          >
+            {scanMutation.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Search className="mr-2 h-4 w-4" />
+            )}
+            {scanMutation.isPending ? "Scanning..." : "Scan Now"}
+          </Button>
+          <Button variant="secondary">
+            <Play className="mr-2 h-4 w-4" />
+            Merge All
+          </Button>
+          <Button variant="outline" asChild>
+            <Link to={`/match-rules/${id}/edit`}>
+              <Edit className="mr-2 h-4 w-4" />
+              Edit Rule
+            </Link>
+          </Button>
+          <Button variant="outline" asChild>
+            <Link to="/merge-strategies/new">
+              New Strategy
+            </Link>
+          </Button>
+        </div>
       </div>
 
-      {/* Rule Configuration Section */}
+      {/* Rule Summary Card */}
       <Card>
-        <CardContent className="p-5 space-y-4">
-          <div className="grid gap-2 text-sm">
-            <div className="flex flex-wrap gap-x-6 gap-y-1">
-              <span>
-                <span className="text-muted-foreground">Object:</span>{" "}
-                <span className="font-medium capitalize">{rule.source_object}</span>
-              </span>
+        <CardContent className="p-5">
+          <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+            <div>
+              <span className="text-muted-foreground">Object:</span>{" "}
+              <span className="font-medium capitalize">{rule.source_object}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Strategy:</span>{" "}
+              <span className="font-medium capitalize">{rule.merge_strategy || 'standard'}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Status:</span>{" "}
+              <span className="font-medium">{rule.is_active ? 'Active' : 'Inactive'}</span>
             </div>
             <div>
               <span className="text-muted-foreground">Fields:</span>{" "}
@@ -131,81 +178,17 @@ export default function MatchRuleDetail() {
             <div>
               <span className="text-muted-foreground">Thresholds:</span>{" "}
               <span className="font-medium">
-                Auto-merge: {Math.round(rule.auto_merge_threshold * 100)}% | Review: {Math.round(rule.review_threshold * 100)}%
+                Auto: {Math.round(rule.auto_merge_threshold * 100)}% | Review: {Math.round(rule.review_threshold * 100)}%
               </span>
             </div>
-          </div>
-
-          <Separator />
-
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-sm text-muted-foreground">Merge Strategy:</span>
-            <Select defaultValue="standard">
-              <SelectTrigger className="w-[220px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="standard">Standard Contact Merge</SelectItem>
-                <SelectItem value="recent">Most Recent Wins</SelectItem>
-                <SelectItem value="new">+ Create New...</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button variant="outline" size="sm">
-              Edit Strategy
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Bulk Actions Section */}
-      <Card>
-        <CardContent className="p-5 space-y-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              onClick={() => scanMutation.mutate()}
-              disabled={scanMutation.isPending}
-            >
-              {scanMutation.isPending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Search className="mr-2 h-4 w-4" />
-              )}
-              {scanMutation.isPending ? "Scanning..." : "Scan Now"}
-            </Button>
-            <Button variant="secondary">
-              <Play className="mr-2 h-4 w-4" />
-              Merge All
-            </Button>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">Schedule:</span>
-              <Select defaultValue="daily6am">
-                <SelectTrigger className="w-[140px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="daily6am">Daily 6am</SelectItem>
-                  <SelectItem value="daily12pm">Daily 12pm</SelectItem>
-                  <SelectItem value="weekly">Weekly</SelectItem>
-                  <SelectItem value="manual">Manual only</SelectItem>
-                </SelectContent>
-              </Select>
+            <div>
+              <span className="text-muted-foreground">Schedule:</span>{" "}
+              <span className="font-medium capitalize">{rule.schedule_frequency || "manual"}</span>
             </div>
-          </div>
-
-          <div className="text-sm space-y-1">
-            <p className="text-muted-foreground">
-              Pending matches: <span className="text-foreground font-medium">{pendingMatches.length}</span>
-            </p>
-            <p className="text-muted-foreground">
-              Schedule: <span className="text-foreground capitalize">{rule.schedule_frequency || "manual"}</span>
-            </p>
-            <p className="text-muted-foreground flex items-center gap-1">
-              <Lightbulb className="h-4 w-4 text-warning" />
-              Scheduled scans require Starter plan or higher.{" "}
-              <Link to="/settings" className="text-primary hover:underline font-medium">
-                Upgrade
-              </Link>
-            </p>
+            <div>
+              <span className="text-muted-foreground">Pending:</span>{" "}
+              <span className="font-medium">{pendingMatches.length} matches</span>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -262,7 +245,13 @@ export default function MatchRuleDetail() {
                       <Button variant="outline" size="sm" asChild>
                         <Link to={`/match-rules/${id}/review/${match.id}`}>Review</Link>
                       </Button>
-                      <Button size="sm">Merge</Button>
+                      <Button
+                        size="sm"
+                        onClick={() => quickMergeMutation.mutate(match)}
+                        disabled={quickMergeMutation.isPending}
+                      >
+                        {quickMergeMutation.isPending ? "Merging..." : "Merge"}
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
