@@ -157,9 +157,9 @@ export default function MergeDetail() {
                 <span className="font-medium">
                   {duplicateSnapshot?.firstName} {duplicateSnapshot?.lastName}
                 </span>
-                {merge.status === "rolled_back" && (
+                {merge.status === "rolled_back" && merge.restored_record_id && (
                   <a
-                    href={getGhlContactUrl(merge.duplicate_record_id)}
+                    href={getGhlContactUrl(merge.restored_record_id)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
@@ -169,7 +169,11 @@ export default function MergeDetail() {
                 )}
               </div>
               <p className="text-xs text-muted-foreground font-mono mt-1">
-                ID: {merge.duplicate_record_id}
+                {merge.status === "rolled_back" && merge.restored_record_id ? (
+                  <>New ID: {merge.restored_record_id}</>
+                ) : (
+                  <>ID: {merge.duplicate_record_id}</>
+                )}
               </p>
             </div>
           </div>

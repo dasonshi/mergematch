@@ -34,6 +34,7 @@ interface MergeItem {
   id: string;
   master_record_id: string;
   duplicate_record_id: string;
+  restored_record_id?: string;
   status: string;
   created_at: string;
   match_pair_id?: string;
@@ -158,9 +159,9 @@ export default function History() {
                   <TableCell className="text-muted-foreground">
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-sm">← {item.duplicate_record_id?.slice(0, 12)}...</span>
-                      {item.status === "rolled_back" && (
+                      {item.status === "rolled_back" && item.restored_record_id && (
                         <a
-                          href={getGhlContactUrl(locationId!, item.duplicate_record_id)}
+                          href={getGhlContactUrl(locationId!, item.restored_record_id)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-primary hover:text-primary/80"
