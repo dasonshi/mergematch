@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Eye, RotateCcw, Loader2 } from "lucide-react";
+import { Eye, RotateCcw, Loader2, ExternalLink } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +24,11 @@ import { Badge } from "@/components/ui/badge";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
+
+// Build GHL contact URL
+const getGhlContactUrl = (locationId: string, contactId: string) => {
+  return `https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${contactId}`;
+};
 
 interface MergeItem {
   id: string;
@@ -134,11 +139,37 @@ export default function History() {
             <TableBody>
               {merges.map((item: MergeItem) => (
                 <TableRow key={item.id}>
-                  <TableCell className="font-medium font-mono text-sm">
-                    {item.master_record_id?.slice(0, 12)}...
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-sm">{item.master_record_id?.slice(0, 12)}...</span>
+                      {item.status === "completed" && (
+                        <a
+                          href={getGhlContactUrl(locationId!, item.master_record_id)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:text-primary/80"
+                          title="View in GHL"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                      )}
+                    </div>
                   </TableCell>
-                  <TableCell className="text-muted-foreground font-mono text-sm">
-                    ← {item.duplicate_record_id?.slice(0, 12)}...
+                  <TableCell className="text-muted-foreground">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-sm">← {item.duplicate_record_id?.slice(0, 12)}...</span>
+                      {item.status === "rolled_back" && (
+                        <a
+                          href={getGhlContactUrl(locationId!, item.duplicate_record_id)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:text-primary/80"
+                          title="View restored record in GHL"
+                        >
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>
                     {getStatusBadge(item.status)}
@@ -148,9 +179,11 @@ export default function History() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="sm" disabled>
-                        <Eye className="h-4 w-4 mr-1" />
-                        View
+                      <Button variant="ghost" size="sm" asChild>
+                        <Link to={`/history/${item.id}`}>
+                          <Eye className="h-4 w-4 mr-1" />
+                          View
+                        </Link>
                       </Button>
                       {item.status === "completed" && (
                         <Button
