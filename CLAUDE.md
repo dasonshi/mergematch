@@ -24,12 +24,12 @@
 - Ruff for linting
 - Pytest for testing
 
-### Frontend (Next.js/TypeScript)
-- App Router (Next.js 14)
-- Server Components by default
+### Frontend (Vite/React/TypeScript)
+- Vite for build tooling
+- React Router for routing
 - TanStack Query for data fetching
-- Zustand for client state
-- Tailwind CSS for styling
+- Tailwind CSS + shadcn/ui for styling
+- Deployed on Vercel
 
 ### Database
 - All tables have `tenant_id` for multi-tenancy
@@ -45,22 +45,24 @@ cd backend
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 
-# Frontend
-cd frontend
+# Frontend (from repo root)
 npm install
 npm run dev
 
-# Docker (full stack)
-docker-compose -f docker-compose.dev.yml up
+# Build & Deploy
+npm run build
+npx vercel --prod
 ```
 
 ## Current Phase
 
-**Pre-Build**: Reviewing documentation before Sprint 0
+**Active Development** - Core features implemented, in review/polish phase
 
-**Next Steps**:
-1. Complete PRD review (Sections 8-11 remaining)
-2. Review Gap Specifications
-3. Review Technical Design
-4. Review Implementation Guide
-5. Begin Sprint 0 scaffolding
+## Task Tracking
+
+See **[TODO.md](./TODO.md)** for:
+- Services to implement (email notifications)
+- Pages to review (with descriptions)
+- Backend APIs to review
+- Database schema review
+- Future enhancements
