@@ -1,11 +1,15 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { api } from '@/lib/api';
 
+type Plan = 'free' | 'starter' | 'pro' | 'enterprise';
+
 interface LocationContextType {
   locationId: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
+  plan: Plan;
+  canUseStrategies: boolean;
 }
 
 const LocationContext = createContext<LocationContextType>({
@@ -13,6 +17,8 @@ const LocationContext = createContext<LocationContextType>({
   isAuthenticated: false,
   isLoading: true,
   error: null,
+  plan: 'free',
+  canUseStrategies: false,
 });
 
 export function LocationProvider({ children }: { children: ReactNode }) {
@@ -20,6 +26,10 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [plan, setPlan] = useState<Plan>('free');
+
+  // Plans that can use custom merge strategies
+  const canUseStrategies = plan !== 'free';
 
   useEffect(() => {
     // Check URL params for location_id (from OAuth callback)
@@ -45,6 +55,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         const result = await api.checkAuth();
         if (result?.authenticated) {
           setIsAuthenticated(true);
+          setPlan((result.plan as Plan) || 'free');
         } else {
           setError('Not authenticated. Please install the app from GHL.');
         }
@@ -52,6 +63,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         // In development, allow unauthenticated access for testing
         if (import.meta.env.DEV) {
           setIsAuthenticated(true);
+          setPlan('pro'); // Dev mode gets pro features
         } else {
           setError('Authentication failed.');
         }
@@ -69,7 +81,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <LocationContext.Provider value={{ locationId, isAuthenticated, isLoading, error }}>
+    <LocationContext.Provider value={{ locationId, isAuthenticated, isLoading, error, plan, canUseStrategies }}>
       {children}
     </LocationContext.Provider>
   );

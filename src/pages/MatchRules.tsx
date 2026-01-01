@@ -8,7 +8,7 @@ import { api, MatchRule, MatchPair } from "@/lib/api";
 import { useLocation } from "@/contexts/LocationContext";
 
 export default function MatchRules() {
-  const { locationId, isAuthenticated, isLoading: authLoading, error: authError } = useLocation();
+  const { locationId, isAuthenticated, isLoading: authLoading, error: authError, canUseStrategies } = useLocation();
 
   // Fetch match rules
   const { data: rulesData, isLoading: rulesLoading } = useQuery({
@@ -62,9 +62,15 @@ export default function MatchRules() {
       <div className="space-y-6 pt-12 lg:pt-0">
         <PageHeader title="Match Rules">
           <div className="flex gap-2">
-            <Button variant="outline" asChild>
-              <Link to="/merge-strategies">View Merge Strategies</Link>
-            </Button>
+            {canUseStrategies ? (
+              <Button variant="outline" asChild>
+                <Link to="/merge-strategies">View Merge Strategies</Link>
+              </Button>
+            ) : (
+              <Button variant="outline" disabled title="Upgrade to access merge strategies">
+                View Merge Strategies
+              </Button>
+            )}
             <Button asChild>
               <Link to="/match-rules/new">
                 <Plus className="mr-2 h-4 w-4" />
@@ -97,9 +103,15 @@ export default function MatchRules() {
     <div className="space-y-6 pt-12 lg:pt-0">
       <PageHeader title="Match Rules">
         <div className="flex gap-2">
-          <Button variant="outline" asChild>
-            <Link to="/merge-strategies">View Merge Strategies</Link>
-          </Button>
+          {canUseStrategies ? (
+            <Button variant="outline" asChild>
+              <Link to="/merge-strategies">View Merge Strategies</Link>
+            </Button>
+          ) : (
+            <Button variant="outline" disabled title="Upgrade to access merge strategies">
+              View Merge Strategies
+            </Button>
+          )}
           <Button asChild>
             <Link to="/match-rules/new">
               <Plus className="mr-2 h-4 w-4" />

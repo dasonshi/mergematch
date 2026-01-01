@@ -10,7 +10,7 @@ import { api } from "@/lib/api";
 
 export default function MatchRuleDetail() {
   const { id } = useParams();
-  const { locationId, isLoading: authLoading } = useLocation();
+  const { locationId, isLoading: authLoading, canUseStrategies } = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [matchesExpanded, setMatchesExpanded] = useState(true);
@@ -156,11 +156,17 @@ export default function MatchRuleDetail() {
               Edit Rule
             </Link>
           </Button>
-          <Button variant="outline" asChild>
-            <Link to="/merge-strategies/new">
+          {canUseStrategies ? (
+            <Button variant="outline" asChild>
+              <Link to="/merge-strategies/new">
+                New Strategy
+              </Link>
+            </Button>
+          ) : (
+            <Button variant="outline" disabled title="Upgrade to create custom strategies">
               New Strategy
-            </Link>
-          </Button>
+            </Button>
+          )}
         </div>
       </div>
 
