@@ -120,6 +120,7 @@ async def get_current_location(location_id: str = Query(...)):
 
     return {
         "location_id": location_id,
+        "location_name": tokens.get("location_name", "Unknown Location"),
         "tenant_id": str(tokens["tenant_id"]),
         "authenticated": True,
         "plan": tokens.get("plan", "free"),

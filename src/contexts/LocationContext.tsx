@@ -5,6 +5,7 @@ type Plan = 'free' | 'starter' | 'pro' | 'enterprise';
 
 interface LocationContextType {
   locationId: string | null;
+  locationName: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
@@ -14,6 +15,7 @@ interface LocationContextType {
 
 const LocationContext = createContext<LocationContextType>({
   locationId: null,
+  locationName: null,
   isAuthenticated: false,
   isLoading: true,
   error: null,
@@ -23,6 +25,7 @@ const LocationContext = createContext<LocationContextType>({
 
 export function LocationProvider({ children }: { children: ReactNode }) {
   const [locationId, setLocationId] = useState<string | null>(null);
+  const [locationName, setLocationName] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +59,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         if (result?.authenticated) {
           setIsAuthenticated(true);
           setPlan((result.plan as Plan) || 'free');
+          setLocationName(result.location_name || null);
         } else {
           setError('Not authenticated. Please install the app from GHL.');
         }
@@ -81,7 +85,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <LocationContext.Provider value={{ locationId, isAuthenticated, isLoading, error, plan, canUseStrategies }}>
+    <LocationContext.Provider value={{ locationId, locationName, isAuthenticated, isLoading, error, plan, canUseStrategies }}>
       {children}
     </LocationContext.Provider>
   );

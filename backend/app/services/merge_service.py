@@ -49,6 +49,17 @@ async def execute_merge(
         duplicate_data = record_a_data
         duplicate_id = record_a_id
 
+    # Build master record name for display
+    master_record_name = ""
+    if master_data.get("firstName") or master_data.get("lastName"):
+        master_record_name = f"{master_data.get('firstName', '')} {master_data.get('lastName', '')}".strip()
+    elif master_data.get("name"):
+        master_record_name = master_data.get("name")
+    elif master_data.get("email"):
+        master_record_name = master_data.get("email")
+    else:
+        master_record_name = "Unknown"
+
     # Build the merged data based on field selections
     merged_fields = {}
     for field, source in field_selections.items():
@@ -74,6 +85,7 @@ async def execute_merge(
         "location_id": internal_location_id,
         "match_pair_id": match_id,
         "master_record_id": master_record_id,
+        "master_record_name": master_record_name,
         "master_record_type": match.data.get("record_a_type", "contact"),
         "duplicate_record_id": duplicate_id,
         "field_selections": field_selections,

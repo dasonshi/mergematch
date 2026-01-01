@@ -101,6 +101,7 @@ async def get_location_tokens(location_id: str) -> Optional[dict]:
         "expires_at": location["token_expires_at"],
         "tenant_id": location["tenant_id"],
         "location_id": location["id"],
+        "location_name": location.get("name", "Unknown Location"),
         "plan": tenant.get("plan", "free"),
         "billing_status": tenant.get("billing_status", "active"),
     }

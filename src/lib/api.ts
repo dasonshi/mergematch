@@ -88,6 +88,10 @@ class ApiClient {
     return this.fetch<{ matches_found: number; records_scanned: number; matches_stored: number }>(`/v1/rules/${id}/scan?limit=${limit}`, { method: 'POST' });
   }
 
+  async toggleRuleStatus(id: string) {
+    return this.fetch<{ id: string; is_active: boolean }>(`/v1/rules/${id}/toggle`, { method: 'PATCH' });
+  }
+
   // Matches
   async getMatches(status?: string, ruleId?: string) {
     const params = new URLSearchParams();
@@ -124,7 +128,7 @@ class ApiClient {
   async checkAuth() {
     const locationId = this.getLocationId();
     if (!locationId) return null;
-    return this.fetch<{ location_id: string; tenant_id: string; authenticated: boolean }>(`/auth/me`);
+    return this.fetch<{ location_id: string; location_name: string; tenant_id: string; authenticated: boolean; plan: string; billing_status: string }>(`/auth/me`);
   }
 }
 
@@ -186,9 +190,11 @@ export interface MatchPair {
 export interface Merge {
   id: string;
   master_record_id: string;
+  master_record_name?: string;
   duplicate_record_id: string;
   status: string;
   created_at: string;
+  rule_name?: string;
 }
 
 export const api = new ApiClient();

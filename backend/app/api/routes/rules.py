@@ -161,6 +161,31 @@ async def delete_rule(
     return {"deleted": True}
 
 
+@router.patch("/{rule_id}/toggle")
+async def toggle_rule_status(
+    rule_id: str,
+    location_id: str = Query(..., description="GHL Location ID"),
+):
+    """Toggle a rule's active status."""
+    tokens = await get_location_tokens(location_id)
+    if not tokens:
+        raise HTTPException(status_code=401, detail="Location not authenticated")
+
+    internal_location_id = tokens["location_id"]
+    supabase = get_supabase()
+
+    # Get current status
+    current = supabase.table("match_rules").select("is_active").eq("id", rule_id).eq("location_id", internal_location_id).single().execute()
+    if not current.data:
+        raise HTTPException(status_code=404, detail="Rule not found")
+
+    new_status = not current.data["is_active"]
+
+    result = supabase.table("match_rules").update({"is_active": new_status}).eq("id", rule_id).execute()
+
+    return {"id": rule_id, "is_active": new_status}
+
+
 @router.post("/{rule_id}/scan")
 async def scan_rule(
     rule_id: str,

@@ -29,13 +29,23 @@
 - React Router for routing
 - TanStack Query for data fetching
 - Tailwind CSS + shadcn/ui for styling
-- Deployed on Vercel
 
 ### Database
 - All tables have `tenant_id` for multi-tenancy
 - RLS policies on all tables
 - Soft deletes where applicable
 - Timestamps: `created_at`, `updated_at`
+
+## Deployment
+
+| Service | Platform | URL |
+|---------|----------|-----|
+| Frontend | Vercel | https://merge-match.vercel.app |
+| Backend | Render | (auto-deploys from main branch) |
+| Database | Supabase | (connected via MCP) |
+
+**Deploy frontend:** `npm run build && npx vercel --prod`
+**Deploy backend:** Push to main branch (Render auto-deploys)
 
 ## Development Commands
 
