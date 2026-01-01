@@ -85,20 +85,24 @@ async def get_location_tokens(location_id: str) -> Optional[dict]:
     """Get decrypted tokens for a location."""
     supabase = get_supabase()
 
-    result = supabase.table("locations").select("*").eq(
-        "ghl_location_id", location_id
-    ).single().execute()
+    # Join with tenants to get plan info
+    result = supabase.table("locations").select(
+        "*, tenants(id, plan, billing_status)"
+    ).eq("ghl_location_id", location_id).single().execute()
 
     if not result.data:
         return None
 
     location = result.data
+    tenant = location.get("tenants", {})
     return {
         "access_token": decrypt_token(location["access_token_encrypted"]),
         "refresh_token": decrypt_token(location["refresh_token_encrypted"]),
         "expires_at": location["token_expires_at"],
         "tenant_id": location["tenant_id"],
         "location_id": location["id"],
+        "plan": tenant.get("plan", "free"),
+        "billing_status": tenant.get("billing_status", "active"),
     }
 
 

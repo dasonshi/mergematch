@@ -122,4 +122,6 @@ async def get_current_location(location_id: str = Query(...)):
         "location_id": location_id,
         "tenant_id": str(tokens["tenant_id"]),
         "authenticated": True,
+        "plan": tokens.get("plan", "free"),
+        "billing_status": tokens.get("billing_status", "active"),
     }
