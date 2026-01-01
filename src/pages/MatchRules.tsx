@@ -121,83 +121,68 @@ export default function MatchRules() {
         </div>
       </PageHeader>
 
-      <div className="grid gap-4">
-        {rules.map((rule: MatchRule) => {
-          const lastScan = rule.last_scan_at ? new Date(rule.last_scan_at) : null;
-          const formatLastScan = () => {
-            if (!lastScan) return 'Never';
-            const now = new Date();
-            const diffMs = now.getTime() - lastScan.getTime();
-            const diffMins = Math.floor(diffMs / 60000);
-            const diffHours = Math.floor(diffMs / 3600000);
-            const diffDays = Math.floor(diffMs / 86400000);
-            if (diffMins < 1) return 'Just now';
-            if (diffMins < 60) return `${diffMins}m ago`;
-            if (diffHours < 24) return `${diffHours}h ago`;
-            if (diffDays < 7) return `${diffDays}d ago`;
-            return lastScan.toLocaleDateString();
-          };
+      <div className="border rounded-lg overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/50">
+            <tr className="border-b">
+              <th className="text-left py-3 px-4 font-medium text-muted-foreground">Name</th>
+              <th className="text-left py-3 px-4 font-medium text-muted-foreground">Object</th>
+              <th className="text-left py-3 px-4 font-medium text-muted-foreground">Strategy</th>
+              <th className="text-left py-3 px-4 font-medium text-muted-foreground">Status</th>
+              <th className="text-left py-3 px-4 font-medium text-muted-foreground">Last Scan</th>
+              <th className="text-left py-3 px-4 font-medium text-muted-foreground">Schedule</th>
+              <th className="text-right py-3 px-4 font-medium text-muted-foreground">Pending</th>
+              <th className="text-right py-3 px-4 font-medium text-muted-foreground">Thresholds</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rules.map((rule: MatchRule) => {
+              const lastScan = rule.last_scan_at ? new Date(rule.last_scan_at) : null;
+              const formatLastScan = () => {
+                if (!lastScan) return 'Never';
+                const now = new Date();
+                const diffMs = now.getTime() - lastScan.getTime();
+                const diffMins = Math.floor(diffMs / 60000);
+                const diffHours = Math.floor(diffMs / 3600000);
+                const diffDays = Math.floor(diffMs / 86400000);
+                if (diffMins < 1) return 'Just now';
+                if (diffMins < 60) return `${diffMins}m ago`;
+                if (diffHours < 24) return `${diffHours}h ago`;
+                if (diffDays < 7) return `${diffDays}d ago`;
+                return lastScan.toLocaleDateString();
+              };
 
-          return (
-            <Card key={rule.id} className="hover:shadow-md transition-shadow">
-              <CardContent className="p-5">
-                <Link
-                  to={`/match-rules/${rule.id}`}
-                  className="flex items-center gap-2 text-lg font-semibold text-primary hover:underline mb-3"
-                >
-                  <FileText className="h-5 w-5" />
-                  {rule.name}
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-
-                <div className="grid gap-2 text-sm">
-                  <div className="flex flex-wrap gap-x-6 gap-y-1">
-                    <span>
-                      <span className="text-muted-foreground">Object:</span>{" "}
-                      <span className="font-medium capitalize">{rule.source_object}</span>
+              return (
+                <tr key={rule.id} className="border-b last:border-0 hover:bg-muted/30">
+                  <td className="py-3 px-4">
+                    <Link
+                      to={`/match-rules/${rule.id}`}
+                      className="flex items-center gap-2 font-medium text-primary hover:underline"
+                    >
+                      <FileText className="h-4 w-4" />
+                      {rule.name}
+                      <ArrowRight className="h-3 w-3" />
+                    </Link>
+                  </td>
+                  <td className="py-3 px-4 capitalize">{rule.source_object}</td>
+                  <td className="py-3 px-4">{rule.merge_strategy || 'standard'}</td>
+                  <td className="py-3 px-4">
+                    <span className={rule.is_active ? 'text-green-600' : 'text-muted-foreground'}>
+                      {rule.is_active ? 'Active' : 'Inactive'}
                     </span>
-                    <span>
-                      <span className="text-muted-foreground">Strategy:</span>{" "}
-                      <span className="font-medium">{rule.merge_strategy || 'standard'}</span>
-                    </span>
-                    <span>
-                      <span className="text-muted-foreground">Status:</span>{" "}
-                      <span className="font-medium">{rule.is_active ? 'Active' : 'Inactive'}</span>
-                    </span>
-                  </div>
-
-                  <div className="flex flex-wrap gap-x-6 gap-y-1">
-                    <span>
-                      <span className="text-muted-foreground">Last scan:</span>{" "}
-                      <span className="font-medium">{formatLastScan()}</span>
-                    </span>
-                    <span>
-                      <span className="text-muted-foreground">Schedule:</span>{" "}
-                      <span className="font-medium">{rule.schedule_frequency}</span>
-                    </span>
-                    {rule.schedule_frequency !== 'manual' && (
-                      <span>
-                        <span className="text-muted-foreground">Next run:</span>{" "}
-                        <span className="font-medium">Scheduled</span>
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex flex-wrap gap-x-6 gap-y-1">
-                    <span>
-                      <span className="text-muted-foreground">Pending:</span>{" "}
-                      <span className="font-medium">{pendingByRule[rule.id] || 0} matches</span>
-                    </span>
-                    <span>
-                      <span className="text-muted-foreground">Thresholds:</span>{" "}
-                      <span className="font-medium">Auto: {Math.round(rule.auto_merge_threshold * 100)}% / Review: {Math.round(rule.review_threshold * 100)}%</span>
-                    </span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
+                  </td>
+                  <td className="py-3 px-4">{formatLastScan()}</td>
+                  <td className="py-3 px-4 capitalize">{rule.schedule_frequency}</td>
+                  <td className="py-3 px-4 text-right font-medium">{pendingByRule[rule.id] || 0}</td>
+                  <td className="py-3 px-4 text-right text-xs">
+                    <span className="text-muted-foreground">Auto:</span> {Math.round(rule.auto_merge_threshold * 100)}%{' '}
+                    <span className="text-muted-foreground">Review:</span> {Math.round(rule.review_threshold * 100)}%
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );
