@@ -1,9 +1,9 @@
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Edit, Search, Play, Loader2 } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { ArrowLeft, Edit, Search, Play, Loader2, ChevronDown, ChevronUp } from "lucide-react";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
@@ -13,6 +13,8 @@ export default function MatchRuleDetail() {
   const { locationId, isLoading: authLoading } = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [matchesExpanded, setMatchesExpanded] = useState(true);
+  const [mergingIds, setMergingIds] = useState<Set<string>>(new Set());
 
   // Fetch rule details
   const { data: rule, isLoading: ruleLoading, isPending: rulePending } = useQuery({
@@ -57,26 +59,38 @@ export default function MatchRuleDetail() {
   // Quick merge mutation (uses record A as master with all its values)
   const quickMergeMutation = useMutation({
     mutationFn: async (match: any) => {
-      const recordA = match.record_a_data || {};
       // Default all fields to "a" (master)
       const fields = ["firstName", "lastName", "email", "phone", "companyName", "tags", "address1", "city", "state", "postalCode"];
       const selections: Record<string, string> = {};
       fields.forEach(f => { selections[f] = "a"; });
       return api.executeMerge(match.id, match.record_a_id, selections);
     },
-    onSuccess: () => {
+    onMutate: (match) => {
+      setMergingIds(prev => new Set(prev).add(match.id));
+    },
+    onSuccess: (_, match) => {
       toast({
         title: "Merge Successful",
         description: "The contacts have been merged.",
       });
+      setMergingIds(prev => {
+        const next = new Set(prev);
+        next.delete(match.id);
+        return next;
+      });
       queryClient.invalidateQueries({ queryKey: ["matches"] });
       queryClient.invalidateQueries({ queryKey: ["merges"] });
     },
-    onError: (error: Error) => {
+    onError: (error: Error, match) => {
       toast({
         title: "Merge Failed",
         description: error.message,
         variant: "destructive",
+      });
+      setMergingIds(prev => {
+        const next = new Set(prev);
+        next.delete(match.id);
+        return next;
       });
     },
   });
@@ -195,76 +209,89 @@ export default function MatchRuleDetail() {
       </Card>
 
       {/* Pending Matches Section */}
-      <div className="space-y-4">
-        <h2 className="text-lg font-semibold">PENDING MATCHES ({pendingMatches.length})</h2>
+      <div className="space-y-2">
+        <button
+          onClick={() => setMatchesExpanded(!matchesExpanded)}
+          className="flex items-center gap-2 text-lg font-semibold hover:text-primary transition-colors w-full text-left"
+        >
+          {matchesExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+          PENDING MATCHES ({pendingMatches.length})
+        </button>
 
-        {matchesLoading ? (
-          <div className="flex items-center justify-center h-32">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : pendingMatches.length === 0 ? (
-          <Card>
-            <CardContent className="p-8 text-center">
-              <p className="text-muted-foreground">No pending matches found.</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                Click "Scan Now" to search for duplicates.
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid gap-4">
-            {pendingMatches.map((match: any) => {
-              const recordA = match.record_a_data || {};
-              const recordB = match.record_b_data || {};
-              const confidence = Math.round((match.confidence_score || 0) * 100);
+        {matchesExpanded && (
+          <>
+            {matchesLoading ? (
+              <div className="flex items-center justify-center h-20">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : pendingMatches.length === 0 ? (
+              <Card>
+                <CardContent className="p-4 text-center">
+                  <p className="text-muted-foreground text-sm">No pending matches. Click "Scan Now" to search.</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="max-h-80 overflow-y-auto border rounded-lg">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted/50 sticky top-0">
+                    <tr className="border-b">
+                      <th className="text-left py-2 px-3 font-medium text-muted-foreground">Record A</th>
+                      <th className="text-left py-2 px-3 font-medium text-muted-foreground">Record B</th>
+                      <th className="text-center py-2 px-3 font-medium text-muted-foreground">Score</th>
+                      <th className="text-right py-2 px-3 font-medium text-muted-foreground">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendingMatches.map((match: any) => {
+                      const recordA = match.record_a_data || {};
+                      const recordB = match.record_b_data || {};
+                      const confidence = Math.round((match.confidence_score || 0) * 100);
+                      const isMerging = mergingIds.has(match.id);
 
-              return (
-                <Card key={match.id}>
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="font-semibold">
-                        {recordA.name || recordA.email || recordA.firstName || "Record A"}{" "}
-                        <span className="text-muted-foreground">←</span>{" "}
-                        {recordB.name || recordB.email || recordB.firstName || "Record B"}
-                      </span>
-                      <span className="text-sm font-medium text-primary">{confidence}% confidence</span>
-                    </div>
-                    <Separator className="mb-3" />
-                    <div className="grid grid-cols-2 gap-4 text-sm mb-4">
-                      <div className="space-y-1">
-                        <p>{recordA.email || <span className="text-muted-foreground">(no email)</span>}</p>
-                        <p>{recordA.phone || recordA.phoneNumber || <span className="text-muted-foreground">(no phone)</span>}</p>
-                        <p>{recordA.companyName || <span className="text-muted-foreground">(no company)</span>}</p>
-                      </div>
-                      <div className="space-y-1 border-l pl-4">
-                        <p>{recordB.email || <span className="text-muted-foreground">(no email)</span>}</p>
-                        <p>{recordB.phone || recordB.phoneNumber || <span className="text-muted-foreground">(no phone)</span>}</p>
-                        <p>{recordB.companyName || <span className="text-muted-foreground">(no company)</span>}</p>
-                      </div>
-                    </div>
-                    <div className="flex justify-end gap-2">
-                      <Button variant="outline" size="sm" asChild>
-                        <Link to={`/match-rules/${id}/review/${match.id}`}>Review</Link>
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => quickMergeMutation.mutate(match)}
-                        disabled={quickMergeMutation.isPending}
-                      >
-                        {quickMergeMutation.isPending ? "Merging..." : "Merge"}
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        )}
-
-        {pendingMatches.length > 0 && (
-          <p className="text-sm text-muted-foreground">
-            Showing {pendingMatches.length} matches
-          </p>
+                      return (
+                        <tr key={match.id} className="border-b last:border-0 hover:bg-muted/30">
+                          <td className="py-2 px-3">
+                            <div className="font-medium truncate max-w-[200px]">
+                              {recordA.firstName || recordA.name || recordA.email || "—"}
+                            </div>
+                            <div className="text-xs text-muted-foreground truncate max-w-[200px]">
+                              {recordA.email || recordA.phone || ""}
+                            </div>
+                          </td>
+                          <td className="py-2 px-3">
+                            <div className="font-medium truncate max-w-[200px]">
+                              {recordB.firstName || recordB.name || recordB.email || "—"}
+                            </div>
+                            <div className="text-xs text-muted-foreground truncate max-w-[200px]">
+                              {recordB.email || recordB.phone || ""}
+                            </div>
+                          </td>
+                          <td className="py-2 px-3 text-center">
+                            <span className="text-primary font-medium">{confidence}%</span>
+                          </td>
+                          <td className="py-2 px-3 text-right">
+                            <div className="flex justify-end gap-1">
+                              <Button variant="ghost" size="sm" className="h-7 px-2" asChild>
+                                <Link to={`/match-rules/${id}/review/${match.id}`}>Review</Link>
+                              </Button>
+                              <Button
+                                size="sm"
+                                className="h-7 px-2"
+                                onClick={() => quickMergeMutation.mutate(match)}
+                                disabled={isMerging}
+                              >
+                                {isMerging ? <Loader2 className="h-3 w-3 animate-spin" /> : "Merge"}
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
         )}
       </div>
 
