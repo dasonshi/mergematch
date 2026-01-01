@@ -1,29 +1,39 @@
-import { NavLink, useLocation } from "react-router-dom";
-import { 
-  LayoutDashboard, 
-  List, 
-  History, 
-  Settings, 
+import { NavLink, useLocation as useRouterLocation } from "react-router-dom";
+import {
+  LayoutDashboard,
+  GitMerge,
+  History,
+  Settings,
   HelpCircle,
   ArrowUpRight,
   Menu,
-  X
+  X,
+  Lock
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
+import { useLocation } from "@/contexts/LocationContext";
 
-const navItems = [
+interface NavItem {
+  title: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  requiresPlan?: boolean;
+}
+
+const navItems: NavItem[] = [
   { title: "Dashboard", href: "/", icon: LayoutDashboard },
-  { title: "Match Rules", href: "/match-rules", icon: List },
+  { title: "Merge Strategies", href: "/merge-strategies", icon: GitMerge, requiresPlan: true },
   { title: "History", href: "/history", icon: History },
   { title: "Settings", href: "/settings", icon: Settings },
   { title: "Help", href: "/help", icon: HelpCircle },
 ];
 
 export function AppSidebar() {
-  const location = useLocation();
+  const routerLocation = useRouterLocation();
+  const { canUseStrategies, plan } = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const SidebarContent = () => (
@@ -44,7 +54,24 @@ export function AppSidebar() {
       {/* Navigation */}
       <nav className="flex-1 space-y-1 px-3 py-4">
         {navItems.map((item) => {
-          const isActive = location.pathname === item.href;
+          const isActive = routerLocation.pathname === item.href ||
+            (item.href !== "/" && routerLocation.pathname.startsWith(item.href));
+          const isLocked = item.requiresPlan && !canUseStrategies;
+
+          if (isLocked) {
+            return (
+              <div
+                key={item.href}
+                className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-muted cursor-not-allowed opacity-60"
+                title="Upgrade to access this feature"
+              >
+                <item.icon className="h-4 w-4 shrink-0" />
+                <span className="flex-1">{item.title}</span>
+                <Lock className="h-3 w-3" />
+              </div>
+            );
+          }
+
           return (
             <NavLink
               key={item.href}
@@ -72,19 +99,21 @@ export function AppSidebar() {
 
       {/* Plan Badge & Upgrade */}
       <div className="p-4 space-y-3">
-        <Badge 
-          variant="outline" 
-          className="w-full justify-center border-sidebar-border bg-sidebar-accent/50 text-sidebar-foreground py-1.5"
+        <Badge
+          variant="outline"
+          className="w-full justify-center border-sidebar-border bg-sidebar-accent/50 text-sidebar-foreground py-1.5 capitalize"
         >
-          Starter Plan
+          {plan} Plan
         </Badge>
-        <Button 
-          variant="ghost" 
-          className="w-full justify-center gap-1 text-sidebar-primary hover:text-sidebar-primary hover:bg-sidebar-accent"
-        >
-          Upgrade
-          <ArrowUpRight className="h-3.5 w-3.5" />
-        </Button>
+        {plan === 'free' && (
+          <Button
+            variant="ghost"
+            className="w-full justify-center gap-1 text-sidebar-primary hover:text-sidebar-primary hover:bg-sidebar-accent"
+          >
+            Upgrade
+            <ArrowUpRight className="h-3.5 w-3.5" />
+          </Button>
+        )}
       </div>
     </div>
   );

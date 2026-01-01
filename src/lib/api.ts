@@ -8,6 +8,7 @@ interface ApiOptions {
 
 class ApiClient {
   private locationId: string | null = null;
+  private onUnauthorized: (() => void) | null = null;
 
   setLocationId(id: string) {
     this.locationId = id;
@@ -19,6 +20,10 @@ class ApiClient {
       this.locationId = localStorage.getItem('location_id');
     }
     return this.locationId;
+  }
+
+  setOnUnauthorized(callback: () => void) {
+    this.onUnauthorized = callback;
   }
 
   async fetch<T>(endpoint: string, options: ApiOptions = {}): Promise<T> {
@@ -41,6 +46,12 @@ class ApiClient {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
+
+      // Handle 401 Unauthorized - token expired
+      if (response.status === 401 && this.onUnauthorized) {
+        this.onUnauthorized();
+      }
+
       throw new Error(error.detail || `API error: ${response.status}`);
     }
 

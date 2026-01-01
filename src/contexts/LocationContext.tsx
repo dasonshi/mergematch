@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react';
 import { api } from '@/lib/api';
 
 type Plan = 'free' | 'starter' | 'pro' | 'enterprise';
+type ConnectionStatus = 'connecting' | 'connected' | 'token_expired' | 'disconnected' | 'error';
 
 interface LocationContextType {
   locationId: string | null;
@@ -11,6 +12,9 @@ interface LocationContextType {
   error: string | null;
   plan: Plan;
   canUseStrategies: boolean;
+  connectionStatus: ConnectionStatus;
+  markTokenExpired: () => void;
+  reconnect: () => void;
 }
 
 const LocationContext = createContext<LocationContextType>({
@@ -21,6 +25,9 @@ const LocationContext = createContext<LocationContextType>({
   error: null,
   plan: 'free',
   canUseStrategies: false,
+  connectionStatus: 'connecting',
+  markTokenExpired: () => {},
+  reconnect: () => {},
 });
 
 export function LocationProvider({ children }: { children: ReactNode }) {
@@ -30,62 +37,91 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [plan, setPlan] = useState<Plan>('free');
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
 
-  // Plans that can use custom merge strategies
   const canUseStrategies = plan !== 'free';
 
+  const markTokenExpired = useCallback(() => {
+    setConnectionStatus('token_expired');
+    setError('Token expired. Please reconnect to GoHighLevel.');
+  }, []);
+
+  const checkAuth = useCallback(async () => {
+    setIsLoading(true);
+    setConnectionStatus('connecting');
+    try {
+      const result = await api.checkAuth();
+      if (result?.authenticated) {
+        setIsAuthenticated(true);
+        setPlan((result.plan as Plan) || 'free');
+        setLocationName(result.location_name || null);
+        setConnectionStatus('connected');
+        setError(null);
+      } else {
+        setConnectionStatus('disconnected');
+        setError('Not authenticated. Please install the app from GHL.');
+      }
+    } catch (err) {
+      if (import.meta.env.DEV) {
+        setIsAuthenticated(true);
+        setPlan('pro');
+        setConnectionStatus('connected');
+      } else {
+        setConnectionStatus('error');
+        setError('Authentication failed.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const reconnect = useCallback(() => {
+    const installUrl = `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/auth/install`;
+    window.location.href = installUrl;
+  }, []);
+
   useEffect(() => {
-    // Check URL params for location_id (from OAuth callback)
     const params = new URLSearchParams(window.location.search);
     const urlLocationId = params.get('location_id');
 
     if (urlLocationId) {
       api.setLocationId(urlLocationId);
       setLocationId(urlLocationId);
-      // Clean up URL
       window.history.replaceState({}, '', window.location.pathname);
     } else {
-      // Try to get from localStorage
       const storedId = api.getLocationId();
       if (storedId) {
         setLocationId(storedId);
       }
     }
 
-    // Verify authentication
-    const checkAuth = async () => {
-      try {
-        const result = await api.checkAuth();
-        if (result?.authenticated) {
-          setIsAuthenticated(true);
-          setPlan((result.plan as Plan) || 'free');
-          setLocationName(result.location_name || null);
-        } else {
-          setError('Not authenticated. Please install the app from GHL.');
-        }
-      } catch {
-        // In development, allow unauthenticated access for testing
-        if (import.meta.env.DEV) {
-          setIsAuthenticated(true);
-          setPlan('pro'); // Dev mode gets pro features
-        } else {
-          setError('Authentication failed.');
-        }
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     if (api.getLocationId()) {
       checkAuth();
     } else {
       setIsLoading(false);
+      setConnectionStatus('disconnected');
       setError('No location ID. Please install the app from GHL.');
     }
-  }, []);
+  }, [checkAuth]);
+
+  // Set up global 401 handler
+  useEffect(() => {
+    api.setOnUnauthorized(markTokenExpired);
+  }, [markTokenExpired]);
 
   return (
-    <LocationContext.Provider value={{ locationId, locationName, isAuthenticated, isLoading, error, plan, canUseStrategies }}>
+    <LocationContext.Provider value={{
+      locationId,
+      locationName,
+      isAuthenticated,
+      isLoading,
+      error,
+      plan,
+      canUseStrategies,
+      connectionStatus,
+      markTokenExpired,
+      reconnect,
+    }}>
       {children}
     </LocationContext.Provider>
   );

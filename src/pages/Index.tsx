@@ -11,7 +11,7 @@ import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 
 export default function Dashboard() {
-  const { locationId, locationName, isAuthenticated, isLoading: authLoading, error: authError } = useLocation();
+  const { locationId, locationName, isAuthenticated, isLoading: authLoading, error: authError, connectionStatus, reconnect } = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -170,14 +170,39 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-success animate-pulse" />
-              <span className="text-sm text-muted-foreground">Connected</span>
-            </div>
-            <Button variant="outline" size="sm">
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Sync
-            </Button>
+            {connectionStatus === 'connected' && (
+              <div className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-success animate-pulse" />
+                <span className="text-sm text-muted-foreground">Connected</span>
+              </div>
+            )}
+            {connectionStatus === 'token_expired' && (
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-destructive" />
+                <span className="text-sm text-destructive">Token Expired</span>
+                <Button variant="outline" size="sm" onClick={reconnect}>
+                  Reconnect
+                </Button>
+              </div>
+            )}
+            {connectionStatus === 'connecting' && (
+              <div className="flex items-center gap-1.5">
+                <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">Connecting...</span>
+              </div>
+            )}
+            {(connectionStatus === 'disconnected' || connectionStatus === 'error') && (
+              <div className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-muted-foreground" />
+                <span className="text-sm text-muted-foreground">Disconnected</span>
+              </div>
+            )}
+            {connectionStatus === 'connected' && (
+              <Button variant="outline" size="sm">
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Sync
+              </Button>
+            )}
           </div>
         </div>
 

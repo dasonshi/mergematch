@@ -2,11 +2,10 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { LocationProvider } from "@/contexts/LocationContext";
 import { MainLayout } from "@/components/layout/MainLayout";
 import Index from "./pages/Index";
-import MatchRules from "./pages/MatchRules";
 import MatchRuleDetail from "./pages/MatchRuleDetail";
 import MatchRuleForm from "./pages/MatchRuleForm";
 import MatchReview from "./pages/MatchReview";
@@ -30,7 +29,8 @@ const App = () => (
           <MainLayout>
           <Routes>
             <Route path="/" element={<Index />} />
-            <Route path="/match-rules" element={<MatchRules />} />
+            {/* Redirect /match-rules to dashboard */}
+            <Route path="/match-rules" element={<Navigate to="/" replace />} />
             <Route path="/match-rules/new" element={<MatchRuleForm />} />
             <Route path="/match-rules/:id" element={<MatchRuleDetail />} />
             <Route path="/match-rules/:id/edit" element={<MatchRuleForm />} />
