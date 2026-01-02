@@ -34,10 +34,9 @@ async def ghl_webhook(
     """
     Receive webhooks from GoHighLevel.
 
-    Events we care about:
-    - contact.created / contact.updated
-    - company.created / company.updated
-    - opportunity.created / opportunity.updated
+    Handles both:
+    - Data webhooks: contact.created, company.created, etc.
+    - Marketplace webhooks: INSTALL, UNINSTALL, PLAN_CHANGE
     """
     body = await request.body()
 
@@ -50,11 +49,44 @@ async def ghl_webhook(
     event_type = payload.get("type")
     data = payload.get("data", {})
 
-    # Route based on event type
-    if event_type in ["contact.created", "contact.updated"]:
+    print(f"📨 GHL webhook: {event_type}")
+
+    # Handle marketplace lifecycle events
+    if event_type == "INSTALL":
+        result = await handle_app_install(
+            location_id=payload.get("locationId"),
+            company_id=payload.get("companyId"),
+            plan_id=payload.get("planId"),
+            trial_info=payload.get("trial"),
+            whitelabel_details=payload.get("whitelabelDetails"),
+            company_name=payload.get("companyName"),
+        )
+        print(f"   ✅ Install processed: {result}")
+        return {"received": True, "event": event_type, "result": result}
+
+    elif event_type == "UNINSTALL":
+        result = await handle_app_uninstall(
+            location_id=payload.get("locationId"),
+            company_id=payload.get("companyId"),
+        )
+        print(f"   ✅ Uninstall processed: {result}")
+        return {"received": True, "event": event_type, "result": result}
+
+    elif event_type == "PLAN_CHANGE":
+        result = await handle_plan_change(
+            location_id=payload.get("locationId"),
+            company_id=payload.get("companyId"),
+            current_plan_id=payload.get("currentPlanId"),
+            new_plan_id=payload.get("newPlanId"),
+        )
+        print(f"   ✅ Plan change processed: {result}")
+        return {"received": True, "event": event_type, "result": result}
+
+    # Handle data webhooks
+    elif event_type in ["contact.created", "contact.updated", "ContactCreate", "ContactUpdate"]:
         # TODO: Queue real-time duplicate check
         pass
-    elif event_type in ["company.created", "company.updated"]:
+    elif event_type in ["company.created", "company.updated", "RecordCreate", "RecordUpdate"]:
         # TODO: Queue company duplicate check
         pass
 

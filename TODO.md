@@ -1,5 +1,22 @@
 # MergeMatch TODO
 
+## Production URLs & Config
+
+| Service | URL |
+|---------|-----|
+| Frontend | https://merge-match.vercel.app |
+| Backend | https://mergematch.onrender.com |
+| GHL Marketplace Webhook | https://mergematch.onrender.com/webhooks/marketplace |
+
+### Render Env Vars (GHL Marketplace)
+
+```
+GHL_APP_ID=69527a942cc51c7766fe9927
+GHL_PLAN_MAPPING=6957cf22476864bd99d6a09c:free,6957cf775d95882a1bda4d6c:starter,6957cfe65d9588c6bbda4ebf:pro,6957d036476864bb8fd6a1cd:agency
+```
+
+---
+
 ## Services to Implement
 
 - [ ] **Email Notification Service** - Settings page has email notification toggles but no backend service exists yet
