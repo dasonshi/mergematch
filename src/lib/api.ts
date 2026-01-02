@@ -65,6 +65,10 @@ class ApiClient {
     return this.fetch<{ contacts: Contact[]; meta: any }>(`/v1/contacts/?${params}`);
   }
 
+  async getContactsStats() {
+    return this.fetch<{ total: number }>('/v1/contacts/stats');
+  }
+
   async getContact(id: string) {
     return this.fetch<Contact>(`/v1/contacts/${id}`);
   }
@@ -111,6 +115,10 @@ class ApiClient {
     return this.fetch<{ data: MatchPair[]; total: number }>(`/v1/matches/?${params}`);
   }
 
+  async getMatch(id: string) {
+    return this.fetch<MatchPair>(`/v1/matches/${id}`);
+  }
+
   async approveMatch(id: string) {
     return this.fetch<MatchPair>(`/v1/matches/${id}/approve`, { method: 'POST' });
   }
@@ -122,6 +130,10 @@ class ApiClient {
   // Merges
   async getMerges(limit = 50) {
     return this.fetch<{ data: Merge[]; total: number }>(`/v1/merges/?limit=${limit}`);
+  }
+
+  async getMerge(id: string) {
+    return this.fetch<Merge & { master_snapshot?: Record<string, unknown>; duplicate_snapshot?: Record<string, unknown>; field_selections?: Record<string, string>; rolled_back_at?: string; restored_record_id?: string; ghl_location_id?: string }>(`/v1/merges/${id}`);
   }
 
   async executeMerge(matchId: string, masterRecordId: string, fieldSelections: Record<string, string>) {

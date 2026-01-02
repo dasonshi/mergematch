@@ -17,8 +17,8 @@ export default function Dashboard() {
 
   // Fetch contacts count
   const { data: contactsData } = useQuery({
-    queryKey: ['contacts', locationId],
-    queryFn: () => api.getContacts(1),
+    queryKey: ['contacts-stats', locationId],
+    queryFn: () => api.getContactsStats(),
     enabled: isAuthenticated && !!locationId,
   });
 
@@ -103,8 +103,8 @@ export default function Dashboard() {
   });
 
   // Calculate stats from real data
-  const contactsCount = contactsData?.meta?.total ?? 0;
-  const companiesCount = companiesData?.total ?? 0;
+  const contactsCount = contactsData?.total ?? 0;
+  const companiesCount = companiesData?.total ?? companiesData?.count ?? companiesData?.companies?.length ?? 0;
   const rules = rulesData?.data ?? [];
   const pendingMatches = matchesData?.data ?? [];
   const recentMerges = mergesData?.data ?? [];
