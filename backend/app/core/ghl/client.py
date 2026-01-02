@@ -61,6 +61,23 @@ class GHLClient:
         response.raise_for_status()
         return response.json()
 
+    async def search_contacts(
+        self,
+        limit: int = 1,
+        filters: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """Search contacts with filters. Returns total count."""
+        body = {
+            "locationId": self.location_id,
+            "page": 1,
+            "pageLimit": limit,
+        }
+        if filters:
+            body["filters"] = filters
+        response = await self._client.post("/contacts/search", json=body)
+        response.raise_for_status()
+        return response.json()
+
     async def update_contact(self, contact_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Update a contact."""
         response = await self._client.put(f"/contacts/{contact_id}", json=data)

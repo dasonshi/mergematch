@@ -7,6 +7,27 @@ from app.core.ghl.client import GHLClient
 router = APIRouter()
 
 
+@router.get("/stats")
+async def get_contacts_stats(
+    location_id: str = Query(..., description="GHL Location ID"),
+):
+    """
+    Get contact count for the location using the search API.
+    """
+    tokens = await get_location_tokens(location_id)
+    if not tokens:
+        raise HTTPException(status_code=401, detail="Location not authenticated")
+
+    async with GHLClient(tokens["access_token"], location_id) as client:
+        try:
+            result = await client.search_contacts(limit=1)
+            return {
+                "total": result.get("total", 0),
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to fetch contact stats: {str(e)}")
+
+
 @router.get("/")
 async def list_contacts(
     location_id: str = Query(..., description="GHL Location ID"),
