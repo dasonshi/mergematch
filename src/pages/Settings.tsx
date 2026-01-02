@@ -28,13 +28,30 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
 import { z } from "zod";
+import { useLocation } from "@/contexts/LocationContext";
 
 const emailSchema = z.string().email("Please enter a valid email address");
 
 export default function Settings() {
   const { toast } = useToast();
-  const [isAgencyPlan] = useState(false); // Toggle this to show Agency plan features
-  const [isProPlan] = useState(false); // Toggle this to show Pro plan features
+  const {
+    locationId,
+    locationName,
+    connectionStatus,
+    plan,
+    reconnect,
+    isOnTrial,
+    trialEndsAt,
+    upgradeUrl,
+    features,
+  } = useLocation();
+
+  const isAgencyPlan = plan === 'agency';
+  const isProPlan = plan === 'pro' || plan === 'agency';
+  const canUpgrade = plan === 'free' || plan === 'starter';
+
+  // Format trial end date
+  const trialEndDate = trialEndsAt ? new Date(trialEndsAt).toLocaleDateString() : null;
   
   const [preferences, setPreferences] = useState({
     showIndividualMergeWarning: true,
@@ -117,25 +134,33 @@ export default function Settings() {
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">GoHighLevel Status:</span>
-                <span className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-success animate-pulse" />
-                  <span className="text-sm font-medium text-success">Connected</span>
-                </span>
+                {connectionStatus === 'connected' ? (
+                  <span className="flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-success animate-pulse" />
+                    <span className="text-sm font-medium text-success">Connected</span>
+                  </span>
+                ) : connectionStatus === 'token_expired' ? (
+                  <span className="flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-destructive" />
+                    <span className="text-sm font-medium text-destructive">Token Expired</span>
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-muted-foreground" />
+                    <span className="text-sm font-medium text-muted-foreground">Disconnected</span>
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">Location ID:</span>
-                <code className="text-sm font-mono bg-muted px-1.5 py-0.5 rounded">loc_abc123</code>
+                <code className="text-sm font-mono bg-muted px-1.5 py-0.5 rounded">{locationId || '—'}</code>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">Location Name:</span>
-                <span className="text-sm font-medium">Acme Marketing Agency</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Connected Since:</span>
-                <span className="text-sm">December 15, 2024</span>
+                <span className="text-sm font-medium">{locationName || '—'}</span>
               </div>
             </div>
-            <Button variant="outline">
+            <Button variant="outline" onClick={reconnect}>
               <RefreshCw className="mr-2 h-4 w-4" />
               Reconnect
             </Button>
@@ -152,49 +177,77 @@ export default function Settings() {
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">Current Plan:</span>
-              <span className="text-sm font-medium">Starter ($39/mo)</span>
+              <span className="text-sm font-medium capitalize">{plan}</span>
+              {isOnTrial && (
+                <span className="text-xs bg-warning/20 text-warning px-2 py-0.5 rounded-full">
+                  Trial
+                </span>
+              )}
             </div>
+            {isOnTrial && trialEndDate && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Trial ends:</span>
+                <span className="text-sm font-medium">{trialEndDate}</span>
+              </div>
+            )}
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">Billing:</span>
               <span className="text-sm">Managed via GHL Marketplace</span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">Next Billing:</span>
-              <span className="text-sm">January 15, 2025</span>
-            </div>
           </div>
 
-          {/* Upgrade CTA Card */}
-          <Card className="border-primary/30 bg-primary/5">
-            <CardContent className="pt-6">
-              <div className="flex items-start justify-between">
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <Rocket className="h-5 w-5 text-primary" />
-                    <span className="font-semibold">Upgrade to Pro ($59/mo)</span>
+          {/* Upgrade CTA Card - only show if can upgrade */}
+          {canUpgrade && (
+            <Card className="border-primary/30 bg-primary/5">
+              <CardContent className="pt-6">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Rocket className="h-5 w-5 text-primary" />
+                      <span className="font-semibold">
+                        {plan === 'free' ? 'Upgrade to Pro ($29/mo)' : 'Upgrade to Agency ($49/mo)'}
+                      </span>
+                    </div>
+                    <ul className="space-y-1.5 text-sm text-muted-foreground">
+                      {plan === 'free' ? (
+                        <>
+                          <li className="flex items-center gap-2">
+                            <span className="h-1 w-1 rounded-full bg-primary" />
+                            Unlimited merges
+                          </li>
+                          <li className="flex items-center gap-2">
+                            <span className="h-1 w-1 rounded-full bg-primary" />
+                            Scheduled scans & auto-merge
+                          </li>
+                          <li className="flex items-center gap-2">
+                            <span className="h-1 w-1 rounded-full bg-primary" />
+                            Company & opportunity matching
+                          </li>
+                        </>
+                      ) : (
+                        <>
+                          <li className="flex items-center gap-2">
+                            <span className="h-1 w-1 rounded-full bg-primary" />
+                            White-label branding
+                          </li>
+                          <li className="flex items-center gap-2">
+                            <span className="h-1 w-1 rounded-full bg-primary" />
+                            Priority support
+                          </li>
+                        </>
+                      )}
+                    </ul>
                   </div>
-                  <ul className="space-y-1.5 text-sm text-muted-foreground">
-                    <li className="flex items-center gap-2">
-                      <span className="h-1 w-1 rounded-full bg-primary" />
-                      Scheduled scans (hourly)
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <span className="h-1 w-1 rounded-full bg-primary" />
-                      Auto-merge high-confidence matches
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <span className="h-1 w-1 rounded-full bg-primary" />
-                      Opportunities & Custom Objects
-                    </li>
-                  </ul>
+                  <Button asChild>
+                    <a href={upgradeUrl || '#'} target="_blank" rel="noopener noreferrer">
+                      Upgrade Now
+                      <ExternalLink className="ml-2 h-4 w-4" />
+                    </a>
+                  </Button>
                 </div>
-                <Button>
-                  Upgrade Now
-                  <ExternalLink className="ml-2 h-4 w-4" />
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
         </CardContent>
       </Card>
 
@@ -245,19 +298,19 @@ export default function Settings() {
                 </label>
               </div>
               <div className="flex items-center space-x-2">
-                <Checkbox 
-                  id="auto-merge" 
+                <Checkbox
+                  id="auto-merge"
                   checked={notifications.autoMergeCompletion}
-                  disabled={!isProPlan}
-                  onCheckedChange={(checked) => 
+                  disabled={!features.auto_merge}
+                  onCheckedChange={(checked) =>
                     setNotifications(prev => ({ ...prev, autoMergeCompletion: checked as boolean }))
                   }
                 />
-                <label 
-                  htmlFor="auto-merge" 
-                  className={`text-sm cursor-pointer ${!isProPlan ? 'text-muted-foreground' : ''}`}
+                <label
+                  htmlFor="auto-merge"
+                  className={`text-sm cursor-pointer ${!features.auto_merge ? 'text-muted-foreground' : ''}`}
                 >
-                  Alert on auto-merge completion {!isProPlan && <span className="text-muted-foreground">(Pro+ only)</span>}
+                  Alert on auto-merge completion {!features.auto_merge && <span className="text-muted-foreground">(Pro+ only)</span>}
                 </label>
               </div>
             </div>
@@ -344,7 +397,7 @@ export default function Settings() {
           <CardDescription>Customize branding for your clients</CardDescription>
         </CardHeader>
         <CardContent>
-          {!isAgencyPlan ? (
+          {!features.white_label ? (
             <div className="flex items-start gap-3 p-4 bg-muted/50 rounded-lg">
               <Lightbulb className="h-5 w-5 text-warning shrink-0 mt-0.5" />
               <p className="text-sm text-muted-foreground">

@@ -130,7 +130,7 @@ export default function MatchRuleForm() {
         title: "Rule created",
         description: `"${ruleName}" has been created successfully.`,
       });
-      navigate("/match-rules");
+      navigate("/");
     },
     onError: (error: Error) => {
       toast({
@@ -277,7 +277,7 @@ export default function MatchRuleForm() {
   }
 
   const handleCancel = () => {
-    navigate(isEditing ? `/match-rules/${id}` : "/match-rules");
+    navigate(isEditing ? `/match-rules/${id}` : "/");
   };
 
   return (
@@ -285,11 +285,11 @@ export default function MatchRuleForm() {
       {/* Header */}
       <div className="space-y-1">
         <Link
-          to={isEditing ? `/match-rules/${id}` : "/match-rules"}
+          to={isEditing ? `/match-rules/${id}` : "/"}
           className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
-          {isEditing ? (existingRule?.name || "Match Rule") : "Match Rules"}
+          {isEditing ? (existingRule?.name || "Match Rule") : "Dashboard"}
         </Link>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground lg:text-3xl">
           {isEditing ? "Edit Match Rule" : "Create Match Rule"}

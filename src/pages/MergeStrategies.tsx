@@ -3,6 +3,7 @@ import { ArrowLeft, Plus, Pencil, Trash2, Lock, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { useLocation } from "@/contexts/LocationContext";
 
 interface Strategy {
   id: string;
@@ -19,12 +20,9 @@ interface Strategy {
 // Custom strategies would be fetched from API - empty for now
 const customStrategies: Strategy[] = [];
 
-// User's current plan - would come from context/API
-const userPlan = "free"; // free | starter | professional
-
 export default function MergeStrategies() {
   const { toast } = useToast();
-  const canCreateCustomStrategy = userPlan !== "free";
+  const { canUseStrategies } = useLocation();
 
   const contactStrategies = customStrategies.filter((s) => s.objectType === "Contacts");
   const companyStrategies = customStrategies.filter((s) => s.objectType === "Companies");
@@ -106,7 +104,7 @@ export default function MergeStrategies() {
 
   const StrategyGroup = ({ title, strategies }: { title: string; strategies: Strategy[] }) => (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold text-foreground uppercase tracking-wide">{title}</h2>
+      <h2 className="text-lg font-semibold text-foreground">{title}</h2>
       <div className="space-y-4">
         {strategies.map((strategy) => (
           <StrategyCard key={strategy.id} strategy={strategy} />
@@ -118,27 +116,32 @@ export default function MergeStrategies() {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pt-12 lg:pt-0">
         <div className="space-y-1">
           <Link
-            to="/match-rules"
+            to="/"
             className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
-            Match Rules
+            Dashboard
           </Link>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground lg:text-3xl">
             Merge Strategies
           </h1>
         </div>
-        <Button disabled={!canCreateCustomStrategy}>
-          {canCreateCustomStrategy ? (
-            <Plus className="h-4 w-4 mr-2" />
-          ) : (
+        {canUseStrategies ? (
+          <Button asChild>
+            <Link to="/merge-strategies/new">
+              <Plus className="h-4 w-4 mr-2" />
+              New Merge Strategy
+            </Link>
+          </Button>
+        ) : (
+          <Button disabled>
             <Lock className="h-4 w-4 mr-2" />
-          )}
-          New Merge Strategy
-        </Button>
+            New Merge Strategy
+          </Button>
+        )}
       </div>
 
       {/* Content */}
@@ -165,7 +168,7 @@ export default function MergeStrategies() {
               Custom merge strategies let you define exactly how records are combined during a merge.
               The built-in strategies (Standard, Most Recent, etc.) are available in the Match Rule dropdown.
             </p>
-            {!canCreateCustomStrategy && (
+            {!canUseStrategies && (
               <div className="flex items-center gap-2 text-sm text-amber-600 bg-amber-50 px-4 py-2 rounded-lg">
                 <Lock className="h-4 w-4" />
                 <span>Upgrade to Starter or higher to create custom strategies</span>

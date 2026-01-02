@@ -33,6 +33,7 @@ const getGhlContactUrl = (locationId: string, contactId: string) => {
 interface MergeItem {
   id: string;
   master_record_id: string;
+  master_record_name?: string;
   duplicate_record_id: string;
   restored_record_id?: string;
   status: string;
@@ -124,7 +125,7 @@ export default function History() {
         <div className="border rounded-lg p-8 text-center">
           <p className="text-muted-foreground mb-4">No merges have been performed yet</p>
           <Button variant="outline" asChild>
-            <Link to="/match-rules">Go to Match Rules</Link>
+            <Link to="/">Go to Dashboard</Link>
           </Button>
         </div>
       ) : (
@@ -157,7 +158,9 @@ export default function History() {
                   </TableCell>
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-sm">{item.master_record_id?.slice(0, 12)}...</span>
+                      <span>
+                        {item.master_record_name || `${item.master_record_id?.slice(0, 12)}...`}
+                      </span>
                       {item.status === "completed" && (
                         <a
                           href={getGhlContactUrl(locationId!, item.master_record_id)}

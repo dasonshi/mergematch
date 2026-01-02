@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { useLocation } from "@/contexts/LocationContext";
+import { api } from "@/lib/api";
 
 // Fields to display and their labels
 const fieldLabels: Record<string, string> = {
@@ -29,13 +30,7 @@ export default function MergeDetail() {
   // Fetch merge details with snapshots
   const { data: merge, isLoading } = useQuery({
     queryKey: ["merge", mergeId, locationId],
-    queryFn: async () => {
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/v1/merges/${mergeId}?location_id=${locationId}`
-      );
-      if (!response.ok) throw new Error("Failed to fetch merge");
-      return response.json();
-    },
+    queryFn: () => api.getMerge(mergeId!),
     enabled: !!locationId && !!mergeId,
   });
 
@@ -116,7 +111,7 @@ export default function MergeDetail() {
       {/* Merge Info Card */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          <CardTitle className="text-base font-semibold">
             Merge Information
           </CardTitle>
         </CardHeader>
@@ -189,7 +184,7 @@ export default function MergeDetail() {
       {/* Field Comparison Table */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          <CardTitle className="text-base font-semibold">
             Field Values at Time of Merge
           </CardTitle>
         </CardHeader>
@@ -202,7 +197,7 @@ export default function MergeDetail() {
                   <TableHead className="min-w-40">
                     <div className="flex items-center gap-2">
                       <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
-                      <span className="font-semibold">MASTER</span>
+                      <span className="font-semibold">Master</span>
                     </div>
                     <div className="text-sm font-normal text-muted-foreground mt-1">
                       {recordA?.firstName} {recordA?.lastName}
@@ -210,7 +205,7 @@ export default function MergeDetail() {
                   </TableHead>
                   <TableHead className="min-w-40">
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold">DUPLICATE</span>
+                      <span className="font-semibold">Duplicate</span>
                     </div>
                     <div className="text-sm font-normal text-muted-foreground mt-1">
                       {recordB?.firstName} {recordB?.lastName}
@@ -219,7 +214,7 @@ export default function MergeDetail() {
                   <TableHead className="min-w-40 bg-muted/50">
                     <div className="flex items-center gap-2">
                       <Check className="h-4 w-4 text-green-500" />
-                      <span className="font-semibold">RESULT</span>
+                      <span className="font-semibold">Result</span>
                     </div>
                   </TableHead>
                 </TableRow>

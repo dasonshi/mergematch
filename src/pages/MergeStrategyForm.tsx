@@ -86,7 +86,7 @@ export default function MergeStrategyForm() {
   };
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6 max-w-3xl pt-12 lg:pt-0">
       {/* Header */}
       <div className="space-y-1">
         <Link

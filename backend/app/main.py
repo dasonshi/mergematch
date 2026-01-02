@@ -1,16 +1,32 @@
-from fastapi import FastAPI
+"""
+MergeMatch API - Duplicate detection & merge platform for GoHighLevel
+"""
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
 from app.api.routes import auth, health, matches, rules, merges, jobs, webhooks, contacts, companies
+from app.core.security import validate_security_config
+
+
+# Rate limiter
+limiter = Limiter(key_func=get_remote_address)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     print(f"Starting MergeMatch API ({settings.ENVIRONMENT})")
+
+    # Validate security configuration
+    validate_security_config()
+
     yield
+
     # Shutdown
     print("Shutting down MergeMatch API")
 
@@ -24,7 +40,43 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS - allow localhost in development
+# Add rate limiter to app state
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+# Security headers middleware
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response: Response = await call_next(request)
+
+    # Prevent MIME type sniffing
+    response.headers["X-Content-Type-Options"] = "nosniff"
+
+    # Clickjacking protection - allow GHL iframe embedding
+    response.headers["Content-Security-Policy"] = (
+        "frame-ancestors 'self' https://app.gohighlevel.com https://*.gohighlevel.com"
+    )
+
+    # XSS protection (legacy, but still useful)
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+
+    # DNS prefetch control
+    response.headers["X-DNS-Prefetch-Control"] = "off"
+
+    # HSTS - Force HTTPS in production
+    if settings.ENVIRONMENT == "production":
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains; preload"
+        )
+
+    # Don't expose framework info
+    response.headers["X-Powered-By"] = ""
+
+    return response
+
+
+# CORS configuration
 cors_origins = [
     settings.FRONTEND_URL,
     "http://localhost:8081",
@@ -38,6 +90,7 @@ if settings.ENVIRONMENT == "production":
     cors_origins.extend([
         "https://mergematch.app",
         "https://www.mergematch.app",
+        "https://merge-match.vercel.app",
     ])
 
 app.add_middleware(
@@ -47,7 +100,9 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
 )
+
 
 # Routes
 app.include_router(health.router, tags=["Health"])
@@ -62,5 +117,6 @@ app.include_router(companies.router, prefix="/v1/companies", tags=["Companies"])
 
 
 @app.get("/")
-async def root():
+@limiter.limit("10/minute")
+async def root(request: Request):
     return {"message": "MergeMatch API", "docs": "/docs"}

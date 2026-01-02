@@ -1,15 +1,60 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 interface ApiOptions {
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
   body?: unknown;
   headers?: Record<string, string>;
 }
 
+interface TokenPair {
+  accessToken: string;
+  refreshToken: string;
+}
+
 class ApiClient {
-  private locationId: string | null = null;
+  private accessToken: string | null = null;
+  private refreshToken: string | null = null;
+  private locationId: string | null = null; // Legacy fallback
+  private refreshPromise: Promise<void> | null = null;
   private onUnauthorized: (() => void) | null = null;
 
+  constructor() {
+    // Load tokens from localStorage on init
+    this.accessToken = localStorage.getItem('access_token');
+    this.refreshToken = localStorage.getItem('refresh_token');
+    this.locationId = localStorage.getItem('location_id'); // Legacy
+  }
+
+  // JWT Token Management
+  setTokens(tokens: TokenPair) {
+    this.accessToken = tokens.accessToken;
+    this.refreshToken = tokens.refreshToken;
+    localStorage.setItem('access_token', tokens.accessToken);
+    localStorage.setItem('refresh_token', tokens.refreshToken);
+  }
+
+  getAccessToken(): string | null {
+    return this.accessToken;
+  }
+
+  getRefreshToken(): string | null {
+    return this.refreshToken;
+  }
+
+  clearTokens() {
+    this.accessToken = null;
+    this.refreshToken = null;
+    this.locationId = null;
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('location_id');
+  }
+
+  hasTokens(): boolean {
+    return !!this.accessToken || !!this.locationId;
+  }
+
+  // Legacy location ID support (for backward compatibility)
   setLocationId(id: string) {
     this.locationId = id;
     localStorage.setItem('location_id', id);
@@ -26,36 +71,96 @@ class ApiClient {
     this.onUnauthorized = callback;
   }
 
-  async fetch<T>(endpoint: string, options: ApiOptions = {}): Promise<T> {
-    const locationId = this.getLocationId();
-
-    // Add location_id to query params
-    const url = new URL(`${API_BASE_URL}${endpoint}`);
-    if (locationId) {
-      url.searchParams.set('location_id', locationId);
+  // Token refresh logic
+  private async refreshTokens(): Promise<void> {
+    if (!this.refreshToken) {
+      throw new Error('No refresh token available');
     }
 
-    const response = await fetch(url.toString(), {
-      method: options.method || 'GET',
-      headers: {
+    // Prevent concurrent refresh attempts
+    if (this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
+    this.refreshPromise = (async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: this.refreshToken }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Token refresh failed');
+        }
+
+        const data = await response.json();
+        this.setTokens({
+          accessToken: data.access_token,
+          refreshToken: data.refresh_token,
+        });
+      } finally {
+        this.refreshPromise = null;
+      }
+    })();
+
+    return this.refreshPromise;
+  }
+
+  async fetch<T>(endpoint: string, options: ApiOptions = {}): Promise<T> {
+    const makeRequest = async (retry = false): Promise<T> => {
+      const url = new URL(`${API_BASE_URL}${endpoint}`);
+
+      // Build headers
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         ...options.headers,
-      },
-      body: options.body ? JSON.stringify(options.body) : undefined,
-    });
+      };
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
-
-      // Handle 401 Unauthorized - token expired
-      if (response.status === 401 && this.onUnauthorized) {
-        this.onUnauthorized();
+      // Add JWT Authorization header if we have a token
+      if (this.accessToken) {
+        headers['Authorization'] = `Bearer ${this.accessToken}`;
+      } else if (this.locationId) {
+        // Legacy fallback: add location_id as query param
+        url.searchParams.set('location_id', this.locationId);
       }
 
-      throw new Error(error.detail || `API error: ${response.status}`);
-    }
+      const response = await fetch(url.toString(), {
+        method: options.method || 'GET',
+        headers,
+        body: options.body ? JSON.stringify(options.body) : undefined,
+      });
 
-    return response.json();
+      // Handle 401 - try token refresh once
+      if (response.status === 401 && !retry && this.refreshToken) {
+        try {
+          await this.refreshTokens();
+          return makeRequest(true); // Retry with new token
+        } catch {
+          // Refresh failed - clear tokens and notify
+          this.clearTokens();
+          if (this.onUnauthorized) {
+            this.onUnauthorized();
+          }
+          throw new Error('Session expired. Please re-authenticate.');
+        }
+      }
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
+
+        // Handle other 401s
+        if (response.status === 401 && this.onUnauthorized) {
+          this.onUnauthorized();
+        }
+
+        throw new Error(error.detail || `API error: ${response.status}`);
+      }
+
+      return response.json();
+    };
+
+    return makeRequest();
   }
 
   // Contacts
@@ -149,9 +254,23 @@ class ApiClient {
 
   // Auth
   async checkAuth() {
-    const locationId = this.getLocationId();
-    if (!locationId) return null;
-    return this.fetch<{ location_id: string; location_name: string; tenant_id: string; authenticated: boolean; plan: string; billing_status: string }>(`/auth/me`);
+    if (!this.accessToken && !this.locationId) return null;
+    return this.fetch<{
+      location_id: string;
+      location_name: string;
+      tenant_id: string;
+      authenticated: boolean;
+      plan: string;
+      billing_status: string
+    }>('/auth/me');
+  }
+
+  async logout() {
+    try {
+      await this.fetch('/auth/logout', { method: 'POST' });
+    } finally {
+      this.clearTokens();
+    }
   }
 }
 

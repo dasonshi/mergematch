@@ -3,7 +3,8 @@ import { Link, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ArrowLeft, Edit, Search, Play, Loader2, ChevronDown, ChevronUp } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { ArrowLeft, Edit, Search, Play, Loader2, ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
@@ -95,6 +96,45 @@ export default function MatchRuleDetail() {
     },
   });
 
+  // Toggle rule status mutation
+  const toggleMutation = useMutation({
+    mutationFn: () => api.toggleRuleStatus(id!),
+    onSuccess: (data) => {
+      toast({
+        title: data.is_active ? "Rule Activated" : "Rule Deactivated",
+        description: `Rule is now ${data.is_active ? "active" : "inactive"}.`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["rule", id] });
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Toggle Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Rollback mutation
+  const rollbackMutation = useMutation({
+    mutationFn: (mergeId: string) => api.rollbackMerge(mergeId),
+    onSuccess: () => {
+      toast({
+        title: "Rollback Successful",
+        description: "The merge has been rolled back.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["merges"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Rollback Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const pendingMatches = matchesData?.data || [];
   const mergeHistory = mergesData?.data || [];
 
@@ -111,8 +151,8 @@ export default function MatchRuleDetail() {
     return (
       <div className="text-center py-12">
         <p className="text-muted-foreground">Rule not found</p>
-        <Link to="/match-rules" className="text-primary hover:underline mt-4 block">
-          Back to Match Rules
+        <Link to="/" className="text-primary hover:underline mt-4 block">
+          Back to Dashboard
         </Link>
       </div>
     );
@@ -124,11 +164,11 @@ export default function MatchRuleDetail() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
           <Link
-            to="/match-rules"
+            to="/"
             className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
-            Match Rules
+            Dashboard
           </Link>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground lg:text-3xl">
             {rule.name}
@@ -182,9 +222,16 @@ export default function MatchRuleDetail() {
               <span className="text-muted-foreground">Strategy:</span>{" "}
               <span className="font-medium capitalize">{rule.merge_strategy || 'standard'}</span>
             </div>
-            <div>
-              <span className="text-muted-foreground">Status:</span>{" "}
-              <span className="font-medium">{rule.is_active ? 'Active' : 'Inactive'}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground">Status:</span>
+              <Switch
+                checked={rule.is_active}
+                onCheckedChange={() => toggleMutation.mutate()}
+                disabled={toggleMutation.isPending}
+              />
+              <span className="text-xs text-muted-foreground">
+                {rule.is_active ? "Active" : "Inactive"}
+              </span>
             </div>
             <div>
               <span className="text-muted-foreground">Fields:</span>{" "}
@@ -207,8 +254,12 @@ export default function MatchRuleDetail() {
               <span className="font-medium capitalize">{rule.schedule_frequency || "manual"}</span>
             </div>
             <div>
-              <span className="text-muted-foreground">Pending:</span>{" "}
-              <span className="font-medium">{pendingMatches.length} matches</span>
+              <span className="text-muted-foreground">Last Scan:</span>{" "}
+              <span className="font-medium">
+                {rule.last_scan_at
+                  ? new Date(rule.last_scan_at).toLocaleString()
+                  : "Never"}
+              </span>
             </div>
           </div>
         </CardContent>
@@ -221,7 +272,7 @@ export default function MatchRuleDetail() {
           className="flex items-center gap-2 text-lg font-semibold hover:text-primary transition-colors w-full text-left"
         >
           {matchesExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
-          PENDING MATCHES ({pendingMatches.length})
+          Pending Matches ({pendingMatches.length})
         </button>
 
         {matchesExpanded && (
@@ -303,7 +354,7 @@ export default function MatchRuleDetail() {
 
       {/* Merge History Section */}
       <div className="space-y-4">
-        <h2 className="text-lg font-semibold">MERGE HISTORY ({mergeHistory.length})</h2>
+        <h2 className="text-lg font-semibold">Merge History ({mergeHistory.length})</h2>
 
         {mergeHistory.length === 0 ? (
           <Card>
@@ -318,23 +369,39 @@ export default function MatchRuleDetail() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b bg-muted/50">
-                      <th className="text-left py-3 px-4 font-medium text-muted-foreground">Master</th>
-                      <th className="text-left py-3 px-4 font-medium text-muted-foreground">Duplicate</th>
+                      <th className="text-left py-3 px-4 font-medium text-muted-foreground">Master Record</th>
                       <th className="text-left py-3 px-4 font-medium text-muted-foreground">Status</th>
+                      <th className="text-left py-3 px-4 font-medium text-muted-foreground">Date</th>
                       <th className="text-right py-3 px-4 font-medium text-muted-foreground">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {mergeHistory.map((item: any) => (
                       <tr key={item.id} className="border-b last:border-0">
-                        <td className="py-3 px-4 font-medium">{item.master_record_id?.slice(0, 8)}...</td>
-                        <td className="py-3 px-4 text-muted-foreground">← {item.duplicate_record_id?.slice(0, 8)}...</td>
+                        <td className="py-3 px-4 font-medium">
+                          {item.master_record_name || item.master_record_id?.slice(0, 8) + "..."}
+                        </td>
                         <td className="py-3 px-4 capitalize">{item.status}</td>
+                        <td className="py-3 px-4 text-muted-foreground">
+                          {item.created_at ? new Date(item.created_at).toLocaleDateString() : "—"}
+                        </td>
                         <td className="py-3 px-4 text-right">
-                          <Button variant="ghost" size="sm">View</Button>
-                          {item.status !== "rolled_back" && (
-                            <Button variant="ghost" size="sm">Restore</Button>
-                          )}
+                          <div className="flex justify-end gap-1">
+                            <Button variant="ghost" size="sm" asChild>
+                              <Link to={`/history/${item.id}`}>View</Link>
+                            </Button>
+                            {item.status !== "rolled_back" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => rollbackMutation.mutate(item.id)}
+                                disabled={rollbackMutation.isPending}
+                              >
+                                <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                                Restore
+                              </Button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}

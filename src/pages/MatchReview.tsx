@@ -38,13 +38,7 @@ export default function MatchReview() {
   // Fetch match details
   const { data: match, isLoading: matchLoading } = useQuery({
     queryKey: ["match", matchId, locationId],
-    queryFn: async () => {
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/v1/matches/${matchId}?location_id=${locationId}`
-      );
-      if (!response.ok) throw new Error("Failed to fetch match");
-      return response.json();
-    },
+    queryFn: () => api.getMatch(matchId!),
     enabled: !!locationId && !!matchId,
   });
 
@@ -171,7 +165,7 @@ export default function MatchReview() {
       {/* Master Selection */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          <CardTitle className="text-base font-semibold">
             Select Master Record
           </CardTitle>
         </CardHeader>
@@ -325,7 +319,7 @@ export default function MatchReview() {
             <AlertTriangle className="h-5 w-5 text-yellow-500 flex-shrink-0 mt-0.5" />
             <div className="space-y-3">
               <div>
-                <h3 className="font-semibold text-foreground">MERGE WARNING</h3>
+                <h3 className="font-semibold text-foreground">Merge Warning</h3>
                 <p className="text-sm text-muted-foreground mt-1">
                   "{duplicateName}" will be <span className="font-semibold text-destructive">DELETED</span> from GoHighLevel.
                 </p>

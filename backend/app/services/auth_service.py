@@ -104,6 +104,9 @@ async def get_location_tokens(location_id: str) -> Optional[dict]:
         "location_name": location.get("name", "Unknown Location"),
         "plan": tenant.get("plan", "free"),
         "billing_status": tenant.get("billing_status", "active"),
+        "is_on_trial": tenant.get("is_on_trial", False),
+        "trial_ends_at": tenant.get("trial_ends_at"),
+        "ghl_plan_id": tenant.get("ghl_plan_id"),
     }
 
 
