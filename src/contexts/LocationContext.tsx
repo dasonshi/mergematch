@@ -55,6 +55,106 @@ const LocationContext = createContext<LocationContextType>({
   features: defaultFeatures,
 });
 
+// GHL allowed origins for postMessage
+const GHL_ORIGINS = [
+  'https://app.gohighlevel.com',
+  'https://app.leadconnectorhq.com',
+  'https://highlevel.com',
+  'https://leadconnectorhq.com',
+];
+
+function isGHLOrigin(origin: string): boolean {
+  return GHL_ORIGINS.some(allowed => origin.startsWith(allowed));
+}
+
+// Extract locationId from URL/referrer
+function extractLocationId(): string | null {
+  // 1. Check query params
+  const params = new URLSearchParams(window.location.search);
+  const queryLocationId = params.get('locationId') || params.get('location_id');
+  if (queryLocationId) {
+    console.log('📍 Found locationId in query params:', queryLocationId);
+    return queryLocationId;
+  }
+
+  // 2. Check URL path (GHL pattern: /v2/location/{locationId}/...)
+  const pathPatterns = [
+    /\/v2\/location\/([a-zA-Z0-9]+)/,
+    /\/location\/([a-zA-Z0-9]+)/,
+  ];
+  for (const pattern of pathPatterns) {
+    const match = window.location.pathname.match(pattern);
+    if (match) {
+      console.log('📍 Found locationId in URL path:', match[1]);
+      return match[1];
+    }
+  }
+
+  // 3. Check referrer (parent iframe URL)
+  if (document.referrer) {
+    try {
+      const referrerPatterns = [
+        /\/v2\/location\/([a-zA-Z0-9]+)/,
+        /\/location\/([a-zA-Z0-9]+)/,
+        /locationId=([a-zA-Z0-9]+)/,
+      ];
+      for (const pattern of referrerPatterns) {
+        const match = document.referrer.match(pattern);
+        if (match) {
+          console.log('📍 Found locationId in referrer:', match[1]);
+          return match[1];
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to parse referrer');
+    }
+  }
+
+  // 4. Check localStorage as last resort
+  const storedLocationId = localStorage.getItem('ghl_location_id');
+  if (storedLocationId) {
+    console.log('📍 Using cached locationId:', storedLocationId);
+    return storedLocationId;
+  }
+
+  return null;
+}
+
+// Request encrypted user data from GHL parent via postMessage
+async function requestGHLUserData(): Promise<string> {
+  return new Promise((resolve) => {
+    // Skip if not in iframe
+    if (window.parent === window) {
+      console.log('📤 Not in iframe, skipping postMessage');
+      resolve('');
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      console.warn('⏱️ GHL postMessage timeout - no response from parent');
+      resolve('');
+    }, 5000);
+
+    const messageHandler = (event: MessageEvent) => {
+      // Validate origin
+      if (!isGHLOrigin(event.origin)) {
+        return;
+      }
+
+      if (event.data?.message === 'REQUEST_USER_DATA_RESPONSE') {
+        clearTimeout(timeout);
+        window.removeEventListener('message', messageHandler);
+        console.log('✅ Received GHL user data response');
+        resolve(event.data.payload || '');
+      }
+    };
+
+    window.addEventListener('message', messageHandler);
+    console.log('📤 Sending REQUEST_USER_DATA to GHL parent...');
+    window.parent.postMessage({ message: 'REQUEST_USER_DATA' }, '*');
+  });
+}
+
 export function LocationProvider({ children }: { children: ReactNode }) {
   const [locationId, setLocationId] = useState<string | null>(null);
   const [locationName, setLocationName] = useState<string | null>(null);
@@ -78,28 +178,134 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   const checkAuth = useCallback(async () => {
     setIsLoading(true);
     setConnectionStatus('connecting');
+
     try {
-      const result = await api.checkAuth();
-      if (result?.authenticated) {
-        setIsAuthenticated(true);
-        setLocationId(result.location_id);
-        setPlan((result.plan as Plan) || 'free');
-        setLocationName(result.location_name || null);
-        setConnectionStatus('connected');
-        setError(null);
-        // Billing info
-        setIsOnTrial(result.is_on_trial || false);
-        setTrialEndsAt(result.trial_ends_at || null);
-        setUpgradeUrl(result.upgrade_url || null);
-        if (result.features) {
-          setFeatures(result.features);
+      // Check for tokens from OAuth callback first
+      const params = new URLSearchParams(window.location.search);
+      const accessToken = params.get('access_token');
+      const refreshToken = params.get('refresh_token');
+      const urlLocationId = params.get('location_id');
+      const oauthError = params.get('error');
+
+      // Handle OAuth error
+      if (oauthError) {
+        setIsLoading(false);
+        setConnectionStatus('error');
+        setError(`OAuth error: ${oauthError}`);
+        window.history.replaceState({}, '', window.location.pathname);
+        return;
+      }
+
+      // If we got JWT tokens from OAuth callback, store them
+      if (accessToken && refreshToken) {
+        console.log('✅ Got JWT tokens from OAuth callback');
+        api.setTokens({ accessToken, refreshToken });
+        if (urlLocationId) {
+          localStorage.setItem('ghl_location_id', urlLocationId);
+        }
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+
+      // Try SSO flow if in iframe (GHL custom page)
+      const isInIframe = window.parent !== window;
+
+      if (isInIframe) {
+        console.log('🔒 Running in GHL iframe - attempting SSO...');
+
+        // Request encrypted user data from GHL
+        const encryptedData = await requestGHLUserData();
+        const fallbackLocationId = extractLocationId();
+
+        // Call backend app-context endpoint
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+        const response = await fetch(`${apiUrl}/auth/app-context`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            encryptedData: encryptedData || '',
+            locationId: fallbackLocationId || '',
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log('✅ SSO authentication successful:', data.location?.id);
+
+          // Store JWT tokens from SSO response
+          if (data.access_token && data.refresh_token) {
+            api.setTokens({
+              accessToken: data.access_token,
+              refreshToken: data.refresh_token,
+            });
+          }
+
+          // Cache locationId
+          if (data.location?.id) {
+            localStorage.setItem('ghl_location_id', data.location.id);
+          }
+
+          setIsAuthenticated(true);
+          setLocationId(data.location?.id || null);
+          setLocationName(data.location?.name || null);
+          setPlan((data.plan as Plan) || 'free');
+          setConnectionStatus('connected');
+          setError(null);
+          setIsOnTrial(data.is_on_trial || false);
+          setTrialEndsAt(data.trial_ends_at || null);
+          setUpgradeUrl(data.upgrade_url || null);
+          if (data.features) {
+            setFeatures(data.features);
+          }
+          setIsLoading(false);
+          return;
+        } else {
+          const errorData = await response.json().catch(() => ({}));
+          console.warn('⚠️ SSO failed:', errorData);
+
+          if (response.status === 422 && errorData.detail?.error === 'app_not_installed') {
+            setConnectionStatus('disconnected');
+            setError('App not installed. Please install from GHL Marketplace.');
+          } else {
+            // Fall through to try regular auth
+          }
+        }
+      }
+
+      // Regular auth flow (not in iframe or SSO failed)
+      if (api.hasTokens()) {
+        const result = await api.checkAuth();
+        if (result?.authenticated) {
+          setIsAuthenticated(true);
+          setLocationId(result.location_id);
+          setPlan((result.plan as Plan) || 'free');
+          setLocationName(result.location_name || null);
+          setConnectionStatus('connected');
+          setError(null);
+          // Billing info from /me endpoint
+          if ('is_on_trial' in result) {
+            setIsOnTrial((result as any).is_on_trial || false);
+          }
+          if ('trial_ends_at' in result) {
+            setTrialEndsAt((result as any).trial_ends_at || null);
+          }
+          if ('upgrade_url' in result) {
+            setUpgradeUrl((result as any).upgrade_url || null);
+          }
+          if ('features' in result) {
+            setFeatures((result as any).features);
+          }
+        } else {
+          setConnectionStatus('disconnected');
+          setError('Not authenticated. Please install the app from GHL.');
         }
       } else {
         setConnectionStatus('disconnected');
-        setError('Not authenticated. Please install the app from GHL.');
+        setError('No location ID. Please install the app from GHL.');
       }
     } catch (err) {
+      console.error('Auth error:', err);
       if (import.meta.env.DEV) {
+        // Dev mode - allow access for testing
         setIsAuthenticated(true);
         setPlan('pro');
         setConnectionStatus('connected');
@@ -125,53 +331,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-
-    // Check for JWT tokens from OAuth callback (new method)
-    const accessToken = params.get('access_token');
-    const refreshToken = params.get('refresh_token');
-
-    // Also check for legacy location_id
-    const urlLocationId = params.get('location_id');
-
-    // Handle error from OAuth
-    const oauthError = params.get('error');
-    if (oauthError) {
-      setIsLoading(false);
-      setConnectionStatus('error');
-      setError(`OAuth error: ${oauthError}`);
-      // Clean up URL
-      window.history.replaceState({}, '', window.location.pathname);
-      return;
-    }
-
-    // If we received JWT tokens, store them (preferred method)
-    if (accessToken && refreshToken) {
-      api.setTokens({ accessToken, refreshToken });
-      // Clean up URL immediately (tokens in URL are sensitive)
-      window.history.replaceState({}, '', window.location.pathname);
-    }
-    // Also store legacy location_id for backward compatibility
-    else if (urlLocationId) {
-      api.setLocationId(urlLocationId);
-      setLocationId(urlLocationId);
-      window.history.replaceState({}, '', window.location.pathname);
-    } else {
-      // Try to load from localStorage
-      const storedId = api.getLocationId();
-      if (storedId) {
-        setLocationId(storedId);
-      }
-    }
-
-    // Check if we have any auth method available
-    if (api.hasTokens()) {
-      checkAuth();
-    } else {
-      setIsLoading(false);
-      setConnectionStatus('disconnected');
-      setError('No authentication found. Please install the app from GHL.');
-    }
+    checkAuth();
   }, [checkAuth]);
 
   // Set up global 401 handler

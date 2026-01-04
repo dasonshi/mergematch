@@ -6,13 +6,22 @@
 |---------|-----|
 | Frontend | https://merge-match.vercel.app |
 | Backend | https://mergematch.onrender.com |
-| GHL Marketplace Webhook | https://mergematch.onrender.com/webhooks/marketplace |
+| GHL Webhooks | https://mergematch.onrender.com/webhooks/ghl |
+
+### Supabase
+
+```
+SUPABASE_URL=https://kgmtjsmjbbjvtgvzymof.supabase.co
+SUPABASE_SERVICE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtnbXRqc21qYmJqdnRndnp5bW9mIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NzAwNDM2MywiZXhwIjoyMDgyNTgwMzYzfQ.oe9pdM8h7eYUCQd7meJ-x28vbToJhTSd8C-HrMhhaeU
+PROJECT_REF=kgmtjsmjbbjvtgvzymof
+```
 
 ### Render Env Vars (GHL Marketplace)
 
 ```
 GHL_APP_ID=69527a942cc51c7766fe9927
 GHL_PLAN_MAPPING=6957cf22476864bd99d6a09c:free,6957cf775d95882a1bda4d6c:starter,6957cfe65d9588c6bbda4ebf:pro,6957d036476864bb8fd6a1cd:agency
+GHL_APP_SHARED_SECRET=616c0f6a-f8dc-4666-8e50-3a19c93463f5
 ```
 
 ---

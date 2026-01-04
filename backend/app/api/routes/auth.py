@@ -7,6 +7,12 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
+import base64
+import hashlib
+import json
+
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.backends import default_backend
 
 from app.config import settings
 from app.core.ghl.oauth import GHLOAuth
@@ -268,3 +274,151 @@ async def logout(
     await get_current_user_flexible(authorization=authorization, location_id=location_id)
 
     return {"success": True, "message": "Logged out successfully"}
+
+
+def decrypt_ghl_sso_data(encrypted_data: str, secret: str) -> dict:
+    """
+    Decrypt GHL SSO encrypted data (CryptoJS AES compatible).
+    CryptoJS uses OpenSSL-compatible format with EVP_BytesToKey for key derivation.
+    """
+    try:
+        # Decode base64
+        raw = base64.b64decode(encrypted_data)
+
+        # Check for "Salted__" prefix (OpenSSL format)
+        if raw[:8] == b"Salted__":
+            salt = raw[8:16]
+            ciphertext = raw[16:]
+        else:
+            # No salt prefix - use raw data
+            salt = b""
+            ciphertext = raw
+
+        # Derive key and IV using EVP_BytesToKey (OpenSSL compatible)
+        # CryptoJS default: AES-256-CBC with MD5-based key derivation
+        def evp_bytes_to_key(password: bytes, salt: bytes, key_len: int = 32, iv_len: int = 16) -> tuple:
+            dtot = b""
+            d = b""
+            while len(dtot) < key_len + iv_len:
+                d = hashlib.md5(d + password + salt).digest()
+                dtot += d
+            return dtot[:key_len], dtot[key_len:key_len + iv_len]
+
+        key, iv = evp_bytes_to_key(secret.encode("utf-8"), salt)
+
+        # Decrypt using AES-256-CBC
+        cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+        decryptor = cipher.decryptor()
+        decrypted = decryptor.update(ciphertext) + decryptor.finalize()
+
+        # Remove PKCS7 padding
+        padding_len = decrypted[-1]
+        decrypted = decrypted[:-padding_len]
+
+        # Parse JSON
+        return json.loads(decrypted.decode("utf-8"))
+    except Exception as e:
+        print(f"❌ SSO decrypt failed: {e}")
+        raise ValueError(f"Failed to decrypt SSO data: {e}")
+
+
+class AppContextRequest(BaseModel):
+    """Request body for app-context endpoint."""
+    encryptedData: str = ""
+    locationId: Optional[str] = None
+
+
+@router.post("/app-context")
+async def app_context(body: AppContextRequest):
+    """
+    GHL SSO app context endpoint.
+    Decrypts user data from GHL iframe postMessage and validates authentication.
+    """
+    encrypted_data = body.encryptedData
+    target_location_id = body.locationId
+
+    user = None
+
+    # Try to decrypt SSO data if provided
+    if encrypted_data and encrypted_data.strip():
+        if not settings.GHL_APP_SHARED_SECRET:
+            print("⚠️ GHL_APP_SHARED_SECRET not configured")
+            raise HTTPException(status_code=500, detail="SSO not configured")
+
+        try:
+            user = decrypt_ghl_sso_data(encrypted_data, settings.GHL_APP_SHARED_SECRET)
+            print(f"✅ SSO user decrypted: companyId={user.get('companyId')}, location={user.get('activeLocation')}")
+        except ValueError as e:
+            print(f"❌ SSO decrypt failed: {e}")
+            # Continue without user data - might have locationId
+
+    # Determine location ID from user data or request
+    location_id = None
+    if user and user.get("activeLocation"):
+        location_id = user["activeLocation"]
+    elif target_location_id:
+        location_id = target_location_id
+
+    if not location_id:
+        raise HTTPException(
+            status_code=401,
+            detail="No location ID found. Please install the app from GHL Marketplace."
+        )
+
+    # Check if location has tokens stored
+    tokens = await get_location_tokens(location_id)
+
+    if not tokens:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "app_not_installed",
+                "message": f"App not installed for location {location_id}",
+                "redirectUrl": "/auth/install"
+            }
+        )
+
+    # Get plan info
+    plan = tokens.get("plan", "free")
+    features = get_plan_features(plan)
+
+    # Generate JWT tokens for the frontend
+    jwt_access_token = create_access_token(
+        location_id=str(tokens.get("location_uuid", location_id)),
+        ghl_location_id=location_id,
+        tenant_id=str(tokens.get("tenant_id", "")),
+        plan=plan,
+    )
+
+    jwt_refresh_token = create_refresh_token(
+        location_id=str(tokens.get("location_uuid", location_id)),
+        ghl_location_id=location_id,
+        tenant_id=str(tokens.get("tenant_id", "")),
+    )
+
+    return {
+        "user": {
+            "companyId": user.get("companyId") if user else None,
+            "userId": user.get("userId") if user else None,
+            "email": user.get("email") if user else None,
+            "type": user.get("type") if user else "location",
+        } if user else None,
+        "location": {
+            "id": location_id,
+            "name": tokens.get("location_name", "Unknown Location"),
+        },
+        "authenticated": True,
+        "plan": plan,
+        "features": {
+            "unlimited_merges": features.unlimited_merges,
+            "auto_merge": features.auto_merge,
+            "scheduled_scans": features.scheduled_scans,
+            "company_matching": features.company_matching,
+            "white_label": features.white_label,
+        },
+        "access_token": jwt_access_token,
+        "refresh_token": jwt_refresh_token,
+        "is_on_trial": tokens.get("is_on_trial", False),
+        "trial_ends_at": tokens.get("trial_ends_at"),
+        "upgrade_url": get_upgrade_url(location_id),
+    }

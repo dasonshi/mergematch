@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     GHL_REDIRECT_URI: str = "http://localhost:8000/auth/callback"
     GHL_WEBHOOK_SECRET: str = ""
     GHL_APP_ID: str = ""  # Your GHL Marketplace app ID
+    GHL_APP_SHARED_SECRET: str = ""  # SSO shared secret from GHL Marketplace
 
     # GHL Marketplace Plan IDs (set these after creating plans in marketplace)
     # Format: comma-separated plan_id:tier pairs
