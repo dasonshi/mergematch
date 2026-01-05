@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Header
 from pydantic import BaseModel
 from typing import Dict, Optional
 import uuid
@@ -6,6 +6,7 @@ import uuid
 from app.db.supabase import get_supabase
 from app.services.auth_service import get_location_tokens
 from app.services.merge_service import execute_merge, rollback_merge
+from app.core.security import get_current_user_flexible
 
 router = APIRouter()
 
@@ -18,23 +19,20 @@ class MergeRequest(BaseModel):
 
 @router.get("/")
 async def list_merges(
-    location_id: str = Query(..., description="GHL Location ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
     limit: int = 50,
     offset: int = 0,
 ):
     """List merge history with rule info."""
-    tokens = await get_location_tokens(location_id)
-    if not tokens:
-        raise HTTPException(status_code=401, detail="Location not authenticated")
-
-    internal_location_id = tokens["location_id"]
+    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
 
     supabase = get_supabase()
 
     # Get merges with rule info through match_pairs
     result = supabase.table("merges").select(
         "*, match_pairs(rule_id, match_rules(id, name))"
-    ).eq("location_id", internal_location_id).order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+    ).eq("location_id", user.location_id).order("created_at", desc=True).range(offset, offset + limit - 1).execute()
 
     # Flatten the rule info for easier frontend consumption
     data = []
@@ -52,10 +50,12 @@ async def list_merges(
 @router.post("/")
 async def execute_merge_route(
     request: MergeRequest,
-    location_id: str = Query(..., description="GHL Location ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
 ):
     """Execute a merge operation."""
-    tokens = await get_location_tokens(location_id)
+    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
+    tokens = await get_location_tokens(user.ghl_location_id)
     if not tokens:
         raise HTTPException(status_code=401, detail="Location not authenticated")
 
@@ -65,9 +65,9 @@ async def execute_merge_route(
             master_record_id=request.master_record_id,
             field_selections=request.field_selections,
             access_token=tokens["access_token"],
-            ghl_location_id=location_id,
-            tenant_id=tokens["tenant_id"],
-            internal_location_id=tokens["location_id"],
+            ghl_location_id=user.ghl_location_id,
+            tenant_id=user.tenant_id,
+            internal_location_id=user.location_id,
         )
         return result
     except ValueError as e:
@@ -79,19 +79,16 @@ async def execute_merge_route(
 @router.get("/{merge_id}")
 async def get_merge(
     merge_id: str,
-    location_id: str = Query(..., description="GHL Location ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
 ):
     """Get merge details including field selections and snapshots."""
-    tokens = await get_location_tokens(location_id)
-    if not tokens:
-        raise HTTPException(status_code=401, detail="Location not authenticated")
-
-    internal_location_id = tokens["location_id"]
+    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
 
     supabase = get_supabase()
 
     # Get merge record
-    result = supabase.table("merges").select("*").eq("id", merge_id).eq("location_id", internal_location_id).single().execute()
+    result = supabase.table("merges").select("*").eq("id", merge_id).eq("location_id", user.location_id).single().execute()
 
     if not result.data:
         raise HTTPException(status_code=404, detail="Merge not found")
@@ -112,7 +109,7 @@ async def get_merge(
 
     merge_data["master_snapshot"] = master_snapshot
     merge_data["duplicate_snapshot"] = duplicate_snapshot
-    merge_data["ghl_location_id"] = location_id
+    merge_data["ghl_location_id"] = user.ghl_location_id
 
     return merge_data
 
@@ -120,10 +117,12 @@ async def get_merge(
 @router.post("/{merge_id}/rollback")
 async def rollback_merge_route(
     merge_id: str,
-    location_id: str = Query(..., description="GHL Location ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
 ):
     """Rollback a merge (restore deleted record)."""
-    tokens = await get_location_tokens(location_id)
+    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
+    tokens = await get_location_tokens(user.ghl_location_id)
     if not tokens:
         raise HTTPException(status_code=401, detail="Location not authenticated")
 
@@ -131,8 +130,8 @@ async def rollback_merge_route(
         result = await rollback_merge(
             merge_id=merge_id,
             access_token=tokens["access_token"],
-            ghl_location_id=location_id,
-            internal_location_id=tokens["location_id"],
+            ghl_location_id=user.ghl_location_id,
+            internal_location_id=user.location_id,
         )
         return result
     except ValueError as e:

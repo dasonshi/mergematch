@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Header
 from pydantic import BaseModel
 from typing import List, Optional
 import uuid
@@ -6,6 +6,7 @@ import uuid
 from app.db.supabase import get_supabase
 from app.services.auth_service import get_location_tokens
 from app.services.matching_service import run_scan
+from app.core.security import get_current_user_flexible
 
 router = APIRouter()
 
@@ -29,17 +30,15 @@ class MatchRuleCreate(BaseModel):
 
 
 @router.get("/")
-async def list_rules(location_id: str = Query(..., description="GHL Location ID")):
+async def list_rules(
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+):
     """List all match rules for the current tenant."""
-    tokens = await get_location_tokens(location_id)
-    if not tokens:
-        raise HTTPException(status_code=401, detail="Location not authenticated")
-
-    # Use internal UUID location_id from tokens lookup
-    internal_location_id = tokens["location_id"]
+    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
 
     supabase = get_supabase()
-    result = supabase.table("match_rules").select("*").eq("location_id", internal_location_id).execute()
+    result = supabase.table("match_rules").select("*").eq("location_id", user.location_id).execute()
 
     return {"data": result.data, "total": len(result.data)}
 
@@ -47,16 +46,11 @@ async def list_rules(location_id: str = Query(..., description="GHL Location ID"
 @router.post("/")
 async def create_rule(
     rule: MatchRuleCreate,
-    location_id: str = Query(..., description="GHL Location ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
 ):
     """Create a new match rule."""
-    tokens = await get_location_tokens(location_id)
-    if not tokens:
-        raise HTTPException(status_code=401, detail="Location not authenticated")
-
-    # Use internal IDs from tokens lookup
-    internal_location_id = tokens["location_id"]
-    tenant_id = tokens["tenant_id"]
+    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
 
     supabase = get_supabase()
 
@@ -67,8 +61,8 @@ async def create_rule(
 
     rule_data = {
         "id": rule_id,
-        "tenant_id": tenant_id,
-        "location_id": internal_location_id,
+        "tenant_id": user.tenant_id,
+        "location_id": user.location_id,
         "name": rule.name,
         "source_object": rule.source_object,
         "match_fields": [f.model_dump() for f in rule.match_fields],
@@ -87,17 +81,14 @@ async def create_rule(
 @router.get("/{rule_id}")
 async def get_rule(
     rule_id: str,
-    location_id: str = Query(..., description="GHL Location ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
 ):
     """Get a specific match rule."""
-    tokens = await get_location_tokens(location_id)
-    if not tokens:
-        raise HTTPException(status_code=401, detail="Location not authenticated")
-
-    internal_location_id = tokens["location_id"]
+    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
 
     supabase = get_supabase()
-    result = supabase.table("match_rules").select("*").eq("id", rule_id).eq("location_id", internal_location_id).single().execute()
+    result = supabase.table("match_rules").select("*").eq("id", rule_id).eq("location_id", user.location_id).single().execute()
 
     if not result.data:
         raise HTTPException(status_code=404, detail="Rule not found")
@@ -109,14 +100,11 @@ async def get_rule(
 async def update_rule(
     rule_id: str,
     rule: MatchRuleCreate,
-    location_id: str = Query(..., description="GHL Location ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
 ):
     """Update a match rule."""
-    tokens = await get_location_tokens(location_id)
-    if not tokens:
-        raise HTTPException(status_code=401, detail="Location not authenticated")
-
-    internal_location_id = tokens["location_id"]
+    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
 
     # Convert percentage thresholds to decimals if > 1
     auto_threshold = rule.auto_merge_threshold / 100 if rule.auto_merge_threshold > 1 else rule.auto_merge_threshold
@@ -135,7 +123,7 @@ async def update_rule(
         "is_active": rule.is_active,
     }
 
-    result = supabase.table("match_rules").update(update_data).eq("id", rule_id).eq("location_id", internal_location_id).execute()
+    result = supabase.table("match_rules").update(update_data).eq("id", rule_id).eq("location_id", user.location_id).execute()
 
     if not result.data:
         raise HTTPException(status_code=404, detail="Rule not found")
@@ -146,17 +134,14 @@ async def update_rule(
 @router.delete("/{rule_id}")
 async def delete_rule(
     rule_id: str,
-    location_id: str = Query(..., description="GHL Location ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
 ):
     """Delete a match rule."""
-    tokens = await get_location_tokens(location_id)
-    if not tokens:
-        raise HTTPException(status_code=401, detail="Location not authenticated")
-
-    internal_location_id = tokens["location_id"]
+    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
 
     supabase = get_supabase()
-    supabase.table("match_rules").delete().eq("id", rule_id).eq("location_id", internal_location_id).execute()
+    supabase.table("match_rules").delete().eq("id", rule_id).eq("location_id", user.location_id).execute()
 
     return {"deleted": True}
 
@@ -164,18 +149,15 @@ async def delete_rule(
 @router.patch("/{rule_id}/toggle")
 async def toggle_rule_status(
     rule_id: str,
-    location_id: str = Query(..., description="GHL Location ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
 ):
     """Toggle a rule's active status."""
-    tokens = await get_location_tokens(location_id)
-    if not tokens:
-        raise HTTPException(status_code=401, detail="Location not authenticated")
-
-    internal_location_id = tokens["location_id"]
+    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
     supabase = get_supabase()
 
     # Get current status
-    current = supabase.table("match_rules").select("is_active").eq("id", rule_id).eq("location_id", internal_location_id).single().execute()
+    current = supabase.table("match_rules").select("is_active").eq("id", rule_id).eq("location_id", user.location_id).single().execute()
     if not current.data:
         raise HTTPException(status_code=404, detail="Rule not found")
 
@@ -189,24 +171,23 @@ async def toggle_rule_status(
 @router.post("/{rule_id}/scan")
 async def scan_rule(
     rule_id: str,
-    location_id: str = Query(..., description="GHL Location ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
     limit: int = Query(100, le=500, description="Max records to scan"),
 ):
     """Run a duplicate scan for this rule."""
-    tokens = await get_location_tokens(location_id)
+    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
+    tokens = await get_location_tokens(user.ghl_location_id)
     if not tokens:
         raise HTTPException(status_code=401, detail="Location not authenticated")
 
-    internal_location_id = tokens["location_id"]
-    tenant_id = tokens["tenant_id"]
-
     try:
         result = await run_scan(
-            ghl_location_id=location_id,
+            ghl_location_id=user.ghl_location_id,
             rule_id=rule_id,
             access_token=tokens["access_token"],
-            tenant_id=tenant_id,
-            internal_location_id=internal_location_id,
+            tenant_id=user.tenant_id,
+            internal_location_id=user.location_id,
             limit=limit,
         )
 
