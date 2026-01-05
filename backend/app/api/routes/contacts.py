@@ -1,24 +1,28 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends, Header
 from typing import Optional
 
 from app.services.auth_service import get_location_tokens
 from app.core.ghl.client import GHLClient
+from app.core.security import get_current_user_flexible, AuthenticatedUser
 
 router = APIRouter()
 
 
 @router.get("/stats")
 async def get_contacts_stats(
-    location_id: str = Query(..., description="GHL Location ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
 ):
     """
     Get contact count for the location using the search API.
+    Supports JWT auth (preferred) or legacy query param.
     """
-    tokens = await get_location_tokens(location_id)
+    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
+    tokens = await get_location_tokens(user.ghl_location_id)
     if not tokens:
         raise HTTPException(status_code=401, detail="Location not authenticated")
 
-    async with GHLClient(tokens["access_token"], location_id) as client:
+    async with GHLClient(tokens["access_token"], user.ghl_location_id) as client:
         try:
             result = await client.search_contacts(limit=1)
             return {
@@ -30,21 +34,22 @@ async def get_contacts_stats(
 
 @router.get("/")
 async def list_contacts(
-    location_id: str = Query(..., description="GHL Location ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
     limit: int = Query(100, le=100),
     start_after: Optional[str] = Query(None),
     query: Optional[str] = Query(None, description="Search query"),
 ):
     """
     Fetch contacts from GHL for the given location.
+    Supports JWT auth (preferred) or legacy query param.
     """
-    # Get tokens for this location
-    tokens = await get_location_tokens(location_id)
+    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
+    tokens = await get_location_tokens(user.ghl_location_id)
     if not tokens:
         raise HTTPException(status_code=401, detail="Location not authenticated")
 
-    # Fetch from GHL
-    async with GHLClient(tokens["access_token"], location_id) as client:
+    async with GHLClient(tokens["access_token"], user.ghl_location_id) as client:
         try:
             result = await client.get_contacts(
                 limit=limit,
@@ -62,16 +67,19 @@ async def list_contacts(
 @router.get("/{contact_id}")
 async def get_contact(
     contact_id: str,
-    location_id: str = Query(..., description="GHL Location ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
 ):
     """
     Get a single contact from GHL.
+    Supports JWT auth (preferred) or legacy query param.
     """
-    tokens = await get_location_tokens(location_id)
+    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
+    tokens = await get_location_tokens(user.ghl_location_id)
     if not tokens:
         raise HTTPException(status_code=401, detail="Location not authenticated")
 
-    async with GHLClient(tokens["access_token"], location_id) as client:
+    async with GHLClient(tokens["access_token"], user.ghl_location_id) as client:
         try:
             result = await client.get_contact(contact_id)
             return result.get("contact", result)
