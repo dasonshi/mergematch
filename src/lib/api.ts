@@ -179,8 +179,8 @@ class ApiClient {
   }
 
   // Companies
-  async getCompanies(limit = 100) {
-    return this.fetch<{ companies: Company[]; total: number }>(`/v1/companies/?limit=${limit}`);
+  async getCompanies() {
+    return this.fetch<{ companies: Company[]; total: number }>(`/v1/companies/`);
   }
 
   // Match Rules

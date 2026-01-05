@@ -78,6 +78,13 @@ class GHLClient:
         response.raise_for_status()
         return response.json()
 
+    async def get_contacts_count(self) -> int:
+        """Get total contact count using GET /contacts/ which returns count field."""
+        params = {"locationId": self.location_id, "limit": 1}
+        response = await self._client.get("/contacts/", params=params)
+        response.raise_for_status()
+        return response.json().get("count", 0)
+
     async def update_contact(self, contact_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Update a contact."""
         response = await self._client.put(f"/contacts/{contact_id}", json=data)
@@ -98,9 +105,11 @@ class GHLClient:
 
     # ==================== COMPANIES ====================
 
-    async def get_companies(self, limit: int = 100, skip: int = 0) -> Dict[str, Any]:
-        """Fetch companies (businesses)."""
-        params = {"locationId": self.location_id, "limit": limit, "skip": skip}
+    async def get_companies(self) -> Dict[str, Any]:
+        """Fetch all companies (businesses) for this location.
+        Note: GHL API doesn't support pagination for this endpoint.
+        """
+        params = {"locationId": self.location_id}
         response = await self._client.get("/businesses/", params=params)
         response.raise_for_status()
         return response.json()

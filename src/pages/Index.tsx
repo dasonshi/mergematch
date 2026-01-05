@@ -25,7 +25,7 @@ export default function Dashboard() {
   // Fetch companies count
   const { data: companiesData } = useQuery({
     queryKey: ['companies', locationId],
-    queryFn: () => api.getCompanies(1),
+    queryFn: () => api.getCompanies(),
     enabled: isAuthenticated && !!locationId,
   });
 

@@ -14,7 +14,8 @@ async def get_contacts_stats(
     location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
 ):
     """
-    Get contact count for the location using the search API.
+    Get contact count for the location.
+    Uses GET /contacts/ which returns a 'count' field.
     Supports JWT auth (preferred) or legacy query param.
     """
     user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
@@ -24,10 +25,8 @@ async def get_contacts_stats(
 
     async with GHLClient(tokens["access_token"], user.ghl_location_id) as client:
         try:
-            result = await client.search_contacts(limit=1)
-            return {
-                "total": result.get("total", 0),
-            }
+            total = await client.get_contacts_count()
+            return {"total": total}
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to fetch contact stats: {str(e)}")
 

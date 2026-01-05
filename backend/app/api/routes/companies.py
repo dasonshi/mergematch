@@ -12,11 +12,10 @@ router = APIRouter()
 async def list_companies(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
-    limit: int = Query(100, le=100),
-    skip: int = Query(0),
 ):
     """
-    Fetch companies (businesses) from GHL for the given location.
+    Fetch all companies (businesses) from GHL for the given location.
+    Note: GHL API doesn't support pagination for this endpoint.
     Supports JWT auth (preferred) or legacy query param.
     """
     user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
@@ -26,10 +25,11 @@ async def list_companies(
 
     async with GHLClient(tokens["access_token"], user.ghl_location_id) as client:
         try:
-            result = await client.get_companies(limit=limit, skip=skip)
+            result = await client.get_companies()
+            businesses = result.get("businesses", [])
             return {
-                "companies": result.get("businesses", []),
-                "total": result.get("total", 0),
+                "companies": businesses,
+                "total": len(businesses),
             }
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to fetch companies: {str(e)}")
