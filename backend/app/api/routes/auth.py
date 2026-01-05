@@ -383,15 +383,16 @@ async def app_context(body: AppContextRequest):
     features = get_plan_features(plan)
 
     # Generate JWT tokens for the frontend
+    # Note: tokens["location_id"] is the internal UUID from the locations table
     jwt_access_token = create_access_token(
-        location_id=str(tokens.get("location_uuid", location_id)),
+        location_id=str(tokens.get("location_id", "")),
         ghl_location_id=location_id,
         tenant_id=str(tokens.get("tenant_id", "")),
         plan=plan,
     )
 
     jwt_refresh_token = create_refresh_token(
-        location_id=str(tokens.get("location_uuid", location_id)),
+        location_id=str(tokens.get("location_id", "")),
         ghl_location_id=location_id,
         tenant_id=str(tokens.get("tenant_id", "")),
     )
