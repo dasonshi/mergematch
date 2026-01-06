@@ -1,18 +1,20 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Eye, RotateCcw, Loader2, ExternalLink } from "lucide-react";
+import { Eye, RotateCcw, Loader2, ExternalLink, Search, X, Filter } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ResponsiveTable, ResponsiveTableContent } from "@/components/ui/responsive-table";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -51,6 +53,12 @@ export default function History() {
   const queryClient = useQueryClient();
   const [restoreItem, setRestoreItem] = useState<MergeItem | null>(null);
 
+  // Filter state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+
   // Fetch merges
   const { data: mergesData, isLoading } = useQuery({
     queryKey: ["merges", locationId],
@@ -81,7 +89,53 @@ export default function History() {
     },
   });
 
-  const merges = mergesData?.data || [];
+  const allMerges = mergesData?.data || [];
+
+  // Filter merges
+  const filteredMerges = useMemo(() => {
+    return allMerges.filter((item: MergeItem) => {
+      // Search filter
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const matchesSearch =
+          item.master_record_name?.toLowerCase().includes(query) ||
+          item.rule_name?.toLowerCase().includes(query) ||
+          item.master_record_id?.toLowerCase().includes(query);
+        if (!matchesSearch) return false;
+      }
+
+      // Status filter
+      if (statusFilter !== "all" && item.status !== statusFilter) {
+        return false;
+      }
+
+      // Date range filter
+      if (startDate || endDate) {
+        const itemDate = new Date(item.created_at);
+        if (startDate) {
+          const start = new Date(startDate);
+          start.setHours(0, 0, 0, 0);
+          if (itemDate < start) return false;
+        }
+        if (endDate) {
+          const end = new Date(endDate);
+          end.setHours(23, 59, 59, 999);
+          if (itemDate > end) return false;
+        }
+      }
+
+      return true;
+    });
+  }, [allMerges, searchQuery, statusFilter, startDate, endDate]);
+
+  const hasActiveFilters = searchQuery || statusFilter !== "all" || startDate || endDate;
+
+  const clearFilters = () => {
+    setSearchQuery("");
+    setStatusFilter("all");
+    setStartDate("");
+    setEndDate("");
+  };
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -122,14 +176,97 @@ export default function History() {
     <div className="space-y-6 pt-12 lg:pt-0">
       <PageHeader title="Merge History" />
 
+      {/* Filters */}
+      <Card className="shadow-sm">
+        <CardContent className="pt-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
+            {/* Search */}
+            <div className="flex-1 space-y-2">
+              <Label htmlFor="search" className="text-sm font-medium">Search</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="search"
+                  placeholder="Search by name or rule..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+            </div>
+
+            {/* Status Filter */}
+            <div className="w-full lg:w-40 space-y-2">
+              <Label className="text-sm font-medium">Status</Label>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="completed">Merged</SelectItem>
+                  <SelectItem value="rolled_back">Restored</SelectItem>
+                  <SelectItem value="failed">Failed</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Date Range */}
+            <div className="w-full lg:w-40 space-y-2">
+              <Label htmlFor="start-date" className="text-sm font-medium">From</Label>
+              <Input
+                id="start-date"
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+            </div>
+            <div className="w-full lg:w-40 space-y-2">
+              <Label htmlFor="end-date" className="text-sm font-medium">To</Label>
+              <Input
+                id="end-date"
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
+            </div>
+
+            {/* Clear Filters */}
+            {hasActiveFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearFilters}
+                className="h-10 px-3"
+              >
+                <X className="h-4 w-4 mr-1" />
+                Clear
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* History Table */}
-      {merges.length === 0 ? (
+      {filteredMerges.length === 0 ? (
         <Card className="shadow-md">
           <CardContent className="p-12 text-center">
-            <p className="text-muted-foreground mb-4">No merges have been performed yet</p>
-            <Button variant="outline" asChild>
-              <Link to="/">Go to Dashboard</Link>
-            </Button>
+            {hasActiveFilters ? (
+              <>
+                <Filter className="h-8 w-8 mx-auto text-muted-foreground mb-4" />
+                <p className="text-muted-foreground mb-4">No merges match your filters</p>
+                <Button variant="outline" onClick={clearFilters}>
+                  Clear Filters
+                </Button>
+              </>
+            ) : (
+              <>
+                <p className="text-muted-foreground mb-4">No merges have been performed yet</p>
+                <Button variant="outline" asChild>
+                  <Link to="/">Go to Dashboard</Link>
+                </Button>
+              </>
+            )}
           </CardContent>
         </Card>
       ) : (
@@ -138,21 +275,22 @@ export default function History() {
             <CardTitle className="text-xl font-bold">Merge History</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/30">
-                  <TableHead className="py-3 px-4 text-xs font-semibold uppercase tracking-wide">Rule</TableHead>
-                  <TableHead className="py-3 px-4 text-xs font-semibold uppercase tracking-wide">Master Record</TableHead>
-                  <TableHead className="py-3 px-4 text-xs font-semibold uppercase tracking-wide">Duplicate</TableHead>
-                  <TableHead className="py-3 px-4 text-xs font-semibold uppercase tracking-wide">Status</TableHead>
-                  <TableHead className="py-3 px-4 text-xs font-semibold uppercase tracking-wide">When</TableHead>
-                  <TableHead className="py-3 px-4 text-xs font-semibold uppercase tracking-wide text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-            <TableBody>
-              {merges.map((item: MergeItem) => (
-                <TableRow key={item.id} className="hover:bg-muted/30 transition-colors">
-                  <TableCell>
+            <ResponsiveTable>
+              <ResponsiveTableContent minWidth="750px">
+                <thead className="bg-muted/30">
+                  <tr className="border-b">
+                    <th className="py-3 px-4 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Rule</th>
+                    <th className="py-3 px-4 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Master Record</th>
+                    <th className="py-3 px-4 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Duplicate</th>
+                    <th className="py-3 px-4 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</th>
+                    <th className="py-3 px-4 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">When</th>
+                    <th className="py-3 px-4 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">Actions</th>
+                  </tr>
+                </thead>
+              <tbody>
+              {filteredMerges.map((item: MergeItem) => (
+                <tr key={item.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
+                  <td className="py-3 px-4">
                     {item.rule_id ? (
                       <Link
                         to={`/match-rules/${item.rule_id}`}
@@ -163,8 +301,8 @@ export default function History() {
                     ) : (
                       <span className="text-muted-foreground">-</span>
                     )}
-                  </TableCell>
-                  <TableCell className="font-medium">
+                  </td>
+                  <td className="py-3 px-4 font-medium">
                     <div className="flex items-center gap-2">
                       <span>
                         {item.master_record_name || `${item.master_record_id?.slice(0, 12)}...`}
@@ -181,8 +319,8 @@ export default function History() {
                         </a>
                       )}
                     </div>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  </td>
+                  <td className="py-3 px-4 text-muted-foreground">
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-sm">← {item.duplicate_record_id?.slice(0, 12)}...</span>
                       {item.status === "rolled_back" && item.restored_record_id && (
@@ -197,14 +335,14 @@ export default function History() {
                         </a>
                       )}
                     </div>
-                  </TableCell>
-                  <TableCell>
+                  </td>
+                  <td className="py-3 px-4">
                     {getStatusBadge(item.status)}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  </td>
+                  <td className="py-3 px-4 text-muted-foreground">
                     {formatDate(item.created_at)}
-                  </TableCell>
-                  <TableCell className="text-right">
+                  </td>
+                  <td className="py-3 px-4 text-right">
                     <div className="flex justify-end gap-2">
                       <Button variant="outline" size="sm" asChild>
                         <Link to={`/history/${item.id}`}>
@@ -223,18 +361,22 @@ export default function History() {
                         </Button>
                       )}
                     </div>
-                  </TableCell>
-                </TableRow>
+                  </td>
+                </tr>
               ))}
-            </TableBody>
-          </Table>
+            </tbody>
+          </ResponsiveTableContent>
+        </ResponsiveTable>
           </CardContent>
         </Card>
       )}
 
       {/* Footer */}
       <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>Showing {merges.length} merges</span>
+        <span>
+          Showing {filteredMerges.length} of {allMerges.length} merges
+          {hasActiveFilters && " (filtered)"}
+        </span>
       </div>
 
       {/* Restore Confirmation Dialog */}

@@ -4,7 +4,7 @@ import { ArrowLeft, Star, ExternalLink, Loader2, RotateCcw, Check, X } from "luc
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ResponsiveTable, ResponsiveTableContent } from "@/components/ui/responsive-table";
 import { cn } from "@/lib/utils";
 import { useLocation } from "@/contexts/LocationContext";
 import { api } from "@/lib/api";
@@ -189,49 +189,50 @@ export default function MergeDetail() {
           </CardTitle>
         </CardHeader>
         <CardContent className="pt-6">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-32"></TableHead>
-                  <TableHead className="min-w-40">
+          <ResponsiveTable>
+            <ResponsiveTableContent minWidth="600px">
+              <thead className="bg-muted/30">
+                <tr className="border-b">
+                  <th className="w-32 py-3 px-4 text-left"></th>
+                  <th className="min-w-40 py-3 px-4 text-left">
                     <div className="flex items-center gap-2">
                       <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
-                      <span className="font-semibold">Master</span>
+                      <span className="font-semibold text-foreground">Master</span>
                     </div>
                     <div className="text-sm font-normal text-muted-foreground mt-1">
                       {recordA?.firstName} {recordA?.lastName}
                     </div>
-                  </TableHead>
-                  <TableHead className="min-w-40">
+                  </th>
+                  <th className="min-w-40 py-3 px-4 text-left">
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold">Duplicate</span>
+                      <span className="font-semibold text-foreground">Duplicate</span>
                     </div>
                     <div className="text-sm font-normal text-muted-foreground mt-1">
                       {recordB?.firstName} {recordB?.lastName}
                     </div>
-                  </TableHead>
-                  <TableHead className="min-w-40 bg-muted/50">
+                  </th>
+                  <th className="min-w-40 py-3 px-4 text-left bg-muted/50">
                     <div className="flex items-center gap-2">
                       <Check className="h-4 w-4 text-green-500" />
-                      <span className="font-semibold">Result</span>
+                      <span className="font-semibold text-foreground">Result</span>
                     </div>
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
                 {displayFields.map((field) => {
                   const valueA = recordA?.[field];
                   const valueB = recordB?.[field];
                   const selectedSource = fieldSelections[field];
 
                   return (
-                    <TableRow key={field}>
-                      <TableCell className="font-medium text-muted-foreground">
+                    <tr key={field} className="border-b last:border-0">
+                      <td className="py-3 px-4 font-medium text-muted-foreground">
                         {fieldLabels[field] || field}
-                      </TableCell>
-                      <TableCell
+                      </td>
+                      <td
                         className={cn(
+                          "py-3 px-4",
                           selectedSource === "a" && "bg-green-500/10"
                         )}
                       >
@@ -243,9 +244,10 @@ export default function MergeDetail() {
                             {getDisplayValue(valueA)}
                           </span>
                         </div>
-                      </TableCell>
-                      <TableCell
+                      </td>
+                      <td
                         className={cn(
+                          "py-3 px-4",
                           selectedSource === "b" && "bg-green-500/10"
                         )}
                       >
@@ -257,18 +259,18 @@ export default function MergeDetail() {
                             {getDisplayValue(valueB)}
                           </span>
                         </div>
-                      </TableCell>
-                      <TableCell className="bg-muted/50 font-medium">
+                      </td>
+                      <td className="py-3 px-4 bg-muted/50 font-medium">
                         <span className={cn(getResultValue(field) === "(empty)" && "text-muted-foreground italic")}>
                           {getResultValue(field)}
                         </span>
-                      </TableCell>
-                    </TableRow>
+                      </td>
+                    </tr>
                   );
                 })}
-              </TableBody>
-            </Table>
-          </div>
+              </tbody>
+            </ResponsiveTableContent>
+          </ResponsiveTable>
 
           {/* Legend */}
           <div className="mt-4 pt-4 border-t flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground">

@@ -5,10 +5,21 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ArrowLeft, Edit, Search, Play, Loader2, ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
+import { ResponsiveTable, ResponsiveTableContent } from "@/components/ui/responsive-table";
 import { cn } from "@/lib/utils";
 
 export default function MatchRuleDetail() {
@@ -18,6 +29,8 @@ export default function MatchRuleDetail() {
   const queryClient = useQueryClient();
   const [matchesExpanded, setMatchesExpanded] = useState(true);
   const [mergingIds, setMergingIds] = useState<Set<string>>(new Set());
+  const [showMergeAllDialog, setShowMergeAllDialog] = useState(false);
+  const [bulkMergeProgress, setBulkMergeProgress] = useState({ current: 0, total: 0, inProgress: false });
 
   // Fetch rule details
   const { data: rule, isLoading: ruleLoading, isPending: rulePending } = useQuery({
@@ -137,6 +150,44 @@ export default function MatchRuleDetail() {
     },
   });
 
+  // Bulk merge all pending matches
+  const handleMergeAll = async () => {
+    setShowMergeAllDialog(false);
+    const matches = matchesData?.data || [];
+    if (matches.length === 0) return;
+
+    setBulkMergeProgress({ current: 0, total: matches.length, inProgress: true });
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < matches.length; i++) {
+      const match = matches[i];
+      try {
+        // Default all fields to "a" (master)
+        const fields = ["firstName", "lastName", "email", "phone", "companyName", "tags", "address1", "city", "state", "postalCode"];
+        const selections: Record<string, string> = {};
+        fields.forEach(f => { selections[f] = "a"; });
+
+        await api.executeMerge(match.id, match.record_a_id, selections);
+        successCount++;
+      } catch {
+        failCount++;
+      }
+      setBulkMergeProgress({ current: i + 1, total: matches.length, inProgress: true });
+    }
+
+    setBulkMergeProgress({ current: 0, total: 0, inProgress: false });
+    queryClient.invalidateQueries({ queryKey: ["matches"] });
+    queryClient.invalidateQueries({ queryKey: ["merges"] });
+
+    toast({
+      title: "Bulk Merge Complete",
+      description: `Successfully merged ${successCount} records.${failCount > 0 ? ` ${failCount} failed.` : ''}`,
+      variant: failCount > 0 ? "destructive" : "default",
+    });
+  };
+
   const pendingMatches = matchesData?.data || [];
   const mergeHistory = mergesData?.data || [];
 
@@ -188,9 +239,22 @@ export default function MatchRuleDetail() {
             )}
             {scanMutation.isPending ? "Scanning..." : "Scan Now"}
           </Button>
-          <Button variant="secondary">
-            <Play className="mr-2 h-4 w-4" />
-            Merge All
+          <Button
+            variant="secondary"
+            onClick={() => setShowMergeAllDialog(true)}
+            disabled={pendingMatches.length === 0 || bulkMergeProgress.inProgress}
+          >
+            {bulkMergeProgress.inProgress ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Merging {bulkMergeProgress.current}/{bulkMergeProgress.total}
+              </>
+            ) : (
+              <>
+                <Play className="mr-2 h-4 w-4" />
+                Merge All
+              </>
+            )}
           </Button>
           <Button variant="outline" asChild>
             <Link to={`/match-rules/${id}/edit`}>
@@ -294,16 +358,17 @@ export default function MatchRuleDetail() {
             ) : (
               <Card className="shadow-md overflow-hidden">
                 <div className="max-h-80 overflow-y-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-muted/30 sticky top-0">
-                      <tr className="border-b">
-                        <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Record A</th>
-                        <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Record B</th>
-                        <th className="text-center py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Score</th>
-                        <th className="text-right py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Actions</th>
-                      </tr>
-                    </thead>
-                  <tbody>
+                  <ResponsiveTable>
+                    <ResponsiveTableContent minWidth="600px">
+                      <thead className="bg-muted/30 sticky top-0">
+                        <tr className="border-b">
+                          <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Record A</th>
+                          <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Record B</th>
+                          <th className="text-center py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Score</th>
+                          <th className="text-right py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Actions</th>
+                        </tr>
+                      </thead>
+                    <tbody>
                     {pendingMatches.map((match: any) => {
                       const recordA = match.record_a_data || {};
                       const recordB = match.record_b_data || {};
@@ -358,8 +423,9 @@ export default function MatchRuleDetail() {
                         </tr>
                       );
                     })}
-                  </tbody>
-                </table>
+                    </tbody>
+                  </ResponsiveTableContent>
+                </ResponsiveTable>
                 </div>
               </Card>
             )}
@@ -380,8 +446,8 @@ export default function MatchRuleDetail() {
         ) : (
           <Card className="shadow-md overflow-hidden">
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+              <ResponsiveTable>
+                <ResponsiveTableContent minWidth="550px">
                   <thead className="bg-muted/30">
                     <tr className="border-b">
                       <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Master Record</th>
@@ -398,13 +464,15 @@ export default function MatchRuleDetail() {
                         </td>
                         <td className="py-3 px-4">
                           <Badge
-                            variant={item.status === 'completed' ? 'default' : 'outline'}
+                            variant={item.status === 'completed' ? 'default' : item.status === 'failed' ? 'destructive' : 'outline'}
                             className={cn(
                               item.status === 'completed' && 'bg-green-600 hover:bg-green-700',
                               item.status === 'rolled_back' && 'border-amber-500 text-amber-600'
                             )}
                           >
-                            {item.status === 'completed' ? 'Merged' : item.status === 'rolled_back' ? 'Restored' : item.status}
+                            {item.status === 'completed' ? 'Merged' :
+                             item.status === 'rolled_back' ? 'Restored' :
+                             item.status === 'failed' ? 'Failed' : item.status}
                           </Badge>
                         </td>
                         <td className="py-3 px-4 text-muted-foreground">
@@ -415,7 +483,7 @@ export default function MatchRuleDetail() {
                             <Button variant="outline" size="sm" asChild>
                               <Link to={`/history/${item.id}`}>View</Link>
                             </Button>
-                            {item.status !== "rolled_back" && (
+                            {item.status === "completed" && (
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -431,8 +499,8 @@ export default function MatchRuleDetail() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
-              </div>
+                </ResponsiveTableContent>
+              </ResponsiveTable>
             </CardContent>
           </Card>
         )}
@@ -441,6 +509,27 @@ export default function MatchRuleDetail() {
           View Full History →
         </Link>
       </div>
+
+      {/* Merge All Confirmation Dialog */}
+      <AlertDialog open={showMergeAllDialog} onOpenChange={setShowMergeAllDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Merge All Pending Matches?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will merge <span className="font-semibold">{pendingMatches.length}</span> pending matches
+              using Record A as the master for each pair. All duplicate records will be deleted from GoHighLevel.
+              <br /><br />
+              Snapshots will be saved for 30-day rollback. This action cannot be easily undone in bulk.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleMergeAll}>
+              Merge All ({pendingMatches.length})
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

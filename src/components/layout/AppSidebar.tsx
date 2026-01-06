@@ -8,13 +8,15 @@ import {
   ArrowUpRight,
   Menu,
   X,
-  Lock
+  Lock,
+  Bell
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useLocation } from "@/contexts/LocationContext";
+import { NotificationsDrawer, useUnreadNotificationCount } from "@/components/ui/notifications-drawer";
 
 interface NavItem {
   title: string;
@@ -35,17 +37,31 @@ export function AppSidebar() {
   const routerLocation = useRouterLocation();
   const { canUseStrategies, plan } = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const unreadCount = useUnreadNotificationCount();
 
   const SidebarContent = () => (
     <div className="flex h-full flex-col">
-      {/* Logo */}
-      <div className="flex h-16 items-center px-6">
+      {/* Logo + Notifications */}
+      <div className="flex h-16 items-center justify-between px-6">
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary">
             <span className="text-sm font-bold text-sidebar-primary-foreground">M</span>
           </div>
           <span className="text-lg font-semibold text-sidebar-accent-foreground">MergeMatch</span>
         </div>
+        <NotificationsDrawer>
+          <Button variant="ghost" size="icon" className="relative h-8 w-8 text-sidebar-foreground hover:bg-sidebar-accent">
+            <Bell className="h-4 w-4" />
+            {unreadCount > 0 && (
+              <Badge
+                variant="destructive"
+                className="absolute -top-1 -right-1 h-4 min-w-4 px-1 text-[10px] flex items-center justify-center"
+              >
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </Badge>
+            )}
+          </Button>
+        </NotificationsDrawer>
       </div>
 
       {/* Divider */}

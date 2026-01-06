@@ -281,6 +281,41 @@ class ApiClient {
       this.clearTokens();
     }
   }
+
+  // Notifications
+  async getNotifications(limit = 50, offset = 0, unreadOnly = false) {
+    const params = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+      unread_only: String(unreadOnly),
+    });
+    return this.fetch<{ data: Notification[]; total: number; unread_count: number }>(`/v1/notifications/?${params}`);
+  }
+
+  async getUnreadNotificationCount() {
+    return this.fetch<{ count: number }>('/v1/notifications/unread-count');
+  }
+
+  async markNotificationRead(id: string) {
+    return this.fetch<{ success: boolean }>(`/v1/notifications/${id}/read`, { method: 'PATCH' });
+  }
+
+  async markAllNotificationsRead() {
+    return this.fetch<{ success: boolean; marked_count: number }>('/v1/notifications/mark-all-read', { method: 'POST' });
+  }
+
+  async createBulkMergeNotification(ruleId: string, ruleName: string, successCount: number, failCount: number) {
+    return this.fetch<Notification>('/v1/notifications/', {
+      method: 'POST',
+      body: {
+        type: 'bulk_merge',
+        rule_id: ruleId,
+        rule_name: ruleName,
+        success_count: successCount,
+        fail_count: failCount,
+      },
+    });
+  }
 }
 
 // Types
@@ -360,6 +395,23 @@ export interface ObjectType {
   id: string;
   name: string;
   standard: boolean;
+}
+
+export interface Notification {
+  id: string;
+  type: string;
+  title: string;
+  message?: string;
+  metadata?: {
+    rule_id?: string;
+    rule_name?: string;
+    success_count?: number;
+    fail_count?: number;
+    total_count?: number;
+    [key: string]: unknown;
+  };
+  read: boolean;
+  created_at: string;
 }
 
 export const api = new ApiClient();
