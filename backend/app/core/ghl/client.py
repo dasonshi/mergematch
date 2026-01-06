@@ -190,3 +190,58 @@ class GHLClient:
         response = await self._client.get(f"/contacts/{contact_id}/tasks")
         response.raise_for_status()
         return response.json().get("tasks", [])
+
+    # ==================== CUSTOM FIELDS & OBJECT SCHEMAS ====================
+
+    async def get_custom_fields(self, model: str = "contact") -> List[Dict[str, Any]]:
+        """Get custom field definitions for contacts or opportunities.
+
+        Args:
+            model: 'contact', 'opportunity', or 'all'
+
+        Returns list of custom field definitions.
+        """
+        params = {"locationId": self.location_id}
+        if model:
+            params["model"] = model
+
+        response = await self._client.get(
+            f"/locations/{self.location_id}/customFields",
+            params=params
+        )
+        response.raise_for_status()
+        return response.json().get("customFields", [])
+
+    async def get_object_schema(
+        self,
+        object_key: str,
+        fetch_properties: bool = True
+    ) -> Dict[str, Any]:
+        """Get object schema with field definitions.
+
+        Args:
+            object_key: 'business', 'contact', 'opportunity', or 'custom_objects.{key}'
+            fetch_properties: Whether to include field definitions
+
+        Returns object schema with optional fields array.
+        """
+        params = {
+            "locationId": self.location_id,
+            "fetchProperties": str(fetch_properties).lower()
+        }
+
+        response = await self._client.get(f"/objects/{object_key}", params=params)
+        response.raise_for_status()
+        return response.json()
+
+    async def list_objects(self) -> List[Dict[str, Any]]:
+        """List all objects (standard + custom) for the location.
+
+        Returns list of object definitions including custom objects.
+        """
+        response = await self._client.get(
+            "/objects/",
+            params={"locationId": self.location_id}
+        )
+        response.raise_for_status()
+        return response.json().get("objects", [])

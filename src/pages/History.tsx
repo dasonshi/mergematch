@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Eye, RotateCcw, Loader2, ExternalLink } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -12,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -98,9 +100,9 @@ export default function History() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "completed":
-        return <Badge variant="default" className="bg-green-500">Completed</Badge>;
+        return <Badge className="bg-green-600 hover:bg-green-700">Merged</Badge>;
       case "rolled_back":
-        return <Badge variant="secondary">Rolled Back</Badge>;
+        return <Badge variant="outline" className="border-amber-500 text-amber-600">Restored</Badge>;
       case "failed":
         return <Badge variant="destructive">Failed</Badge>;
       default:
@@ -122,28 +124,34 @@ export default function History() {
 
       {/* History Table */}
       {merges.length === 0 ? (
-        <div className="border rounded-lg p-8 text-center">
-          <p className="text-muted-foreground mb-4">No merges have been performed yet</p>
-          <Button variant="outline" asChild>
-            <Link to="/">Go to Dashboard</Link>
-          </Button>
-        </div>
+        <Card className="shadow-md">
+          <CardContent className="p-12 text-center">
+            <p className="text-muted-foreground mb-4">No merges have been performed yet</p>
+            <Button variant="outline" asChild>
+              <Link to="/">Go to Dashboard</Link>
+            </Button>
+          </CardContent>
+        </Card>
       ) : (
-        <div className="border rounded-lg">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Rule</TableHead>
-                <TableHead>Master Record</TableHead>
-                <TableHead>Duplicate</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>When</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
+        <Card className="shadow-md overflow-hidden">
+          <CardHeader className="bg-muted/30 border-b">
+            <CardTitle className="text-xl font-bold">Merge History</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/30">
+                  <TableHead className="py-3 px-4 text-xs font-semibold uppercase tracking-wide">Rule</TableHead>
+                  <TableHead className="py-3 px-4 text-xs font-semibold uppercase tracking-wide">Master Record</TableHead>
+                  <TableHead className="py-3 px-4 text-xs font-semibold uppercase tracking-wide">Duplicate</TableHead>
+                  <TableHead className="py-3 px-4 text-xs font-semibold uppercase tracking-wide">Status</TableHead>
+                  <TableHead className="py-3 px-4 text-xs font-semibold uppercase tracking-wide">When</TableHead>
+                  <TableHead className="py-3 px-4 text-xs font-semibold uppercase tracking-wide text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
             <TableBody>
               {merges.map((item: MergeItem) => (
-                <TableRow key={item.id}>
+                <TableRow key={item.id} className="hover:bg-muted/30 transition-colors">
                   <TableCell>
                     {item.rule_id ? (
                       <Link
@@ -197,8 +205,8 @@ export default function History() {
                     {formatDate(item.created_at)}
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="sm" asChild>
+                    <div className="flex justify-end gap-2">
+                      <Button variant="outline" size="sm" asChild>
                         <Link to={`/history/${item.id}`}>
                           <Eye className="h-4 w-4 mr-1" />
                           View
@@ -220,7 +228,8 @@ export default function History() {
               ))}
             </TableBody>
           </Table>
-        </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Footer */}

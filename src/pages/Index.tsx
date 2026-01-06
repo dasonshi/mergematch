@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,11 +10,34 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, MatchRule, Merge, MatchPair } from "@/lib/api";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
+import { ResponsiveTable, ResponsiveTableContent } from "@/components/ui/responsive-table";
+import { NoRulesEmpty, NoMergesEmpty } from "@/components/ui/empty-state";
+import { cn } from "@/lib/utils";
 
 export default function Dashboard() {
   const { locationId, locationName, isAuthenticated, isLoading: authLoading, error: authError, connectionStatus, reconnect } = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Sync cooldown state (30 seconds between syncs)
+  const [syncCooldown, setSyncCooldown] = useState(0);
+
+  useEffect(() => {
+    if (syncCooldown > 0) {
+      const timer = setTimeout(() => setSyncCooldown((c) => c - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [syncCooldown]);
+
+  const handleSync = () => {
+    queryClient.invalidateQueries({ queryKey: ["contacts-stats"] });
+    queryClient.invalidateQueries({ queryKey: ["companies"] });
+    queryClient.invalidateQueries({ queryKey: ["rules"] });
+    queryClient.invalidateQueries({ queryKey: ["matches"] });
+    queryClient.invalidateQueries({ queryKey: ["merges"] });
+    setSyncCooldown(30);
+    toast({ title: "Refreshing data..." });
+  };
 
   // Fetch contacts count
   const { data: contactsData } = useQuery({
@@ -162,10 +186,10 @@ export default function Dashboard() {
     <TooltipProvider>
       <div className="space-y-8 pt-12 lg:pt-0">
         {/* Header */}
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Welcome back!</h1>
-            <p className="text-muted-foreground text-sm">
+            <h1 className="text-3xl font-bold tracking-tight">Welcome back!</h1>
+            <p className="text-muted-foreground mt-1">
               {locationName || `Location ${locationId?.slice(0, 8)}...`}
             </p>
           </div>
@@ -198,78 +222,89 @@ export default function Dashboard() {
               </div>
             )}
             {connectionStatus === 'connected' && (
-              <Button variant="outline" size="sm">
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Sync
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSync}
+                disabled={syncCooldown > 0}
+                aria-label={syncCooldown > 0 ? `Sync available in ${syncCooldown} seconds` : "Sync data"}
+              >
+                <RefreshCw
+                  className={cn("mr-2 h-4 w-4", syncCooldown > 0 && "animate-spin")}
+                  aria-hidden="true"
+                />
+                {syncCooldown > 0 ? `${syncCooldown}s` : "Sync"}
               </Button>
             )}
           </div>
         </div>
 
         {/* Quick Stats */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {/* Pending Review */}
-          <Card className="shadow-sm hover:shadow-md transition-shadow">
+          <Card className="shadow-md hover:shadow-lg transition-all duration-200 hover:-translate-y-0.5 border-l-4 border-l-primary">
             <CardContent className="p-6">
               <div className="flex items-start gap-4">
-                <div className="rounded-lg bg-primary/10 p-3">
+                <div className="rounded-xl bg-primary/10 p-3.5">
                   <ClipboardList className="h-6 w-6 text-primary" />
                 </div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-muted-foreground">Pending Review</p>
-                  <p className="text-3xl font-bold">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Pending Review</p>
+                  <p className="text-4xl font-bold mt-1">
                     {pendingMatches.length}
-                    <span className="text-sm font-normal text-muted-foreground ml-2">
-                      matches across {rulesWithPending} rules
-                    </span>
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    matches across {rulesWithPending} rules
                   </p>
                 </div>
               </div>
-              <Button variant="link" className="mt-3 p-0 h-auto text-primary" asChild>
-                <Link to="/match-rules">Review Now <ArrowRight className="ml-1 h-4 w-4" /></Link>
+              <Button variant="link" className="mt-4 p-0 h-auto font-semibold" asChild>
+                <Link to="/match-rules">Review Now <ArrowRight className="ml-1.5 h-4 w-4" /></Link>
               </Button>
             </CardContent>
           </Card>
 
           {/* Merged This Week */}
-          <Card className="shadow-sm hover:shadow-md transition-shadow">
+          <Card className="shadow-md hover:shadow-lg transition-all duration-200 hover:-translate-y-0.5 border-l-4 border-l-green-500">
             <CardContent className="p-6">
               <div className="flex items-start gap-4">
-                <div className="rounded-lg bg-success/10 p-3">
-                  <Check className="h-6 w-6 text-success" />
+                <div className="rounded-xl bg-green-500/10 p-3.5">
+                  <Check className="h-6 w-6 text-green-600" />
                 </div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-muted-foreground">Recent Merges</p>
-                  <p className="text-3xl font-bold">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Recent Merges</p>
+                  <p className="text-4xl font-bold mt-1">
                     {recentMerges.length}
-                    <span className="text-sm font-normal text-muted-foreground ml-2">duplicates merged</span>
+                  </p>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    duplicates merged
                   </p>
                 </div>
               </div>
-              <Button variant="link" className="mt-3 p-0 h-auto text-primary" asChild>
-                <Link to="/history">View History <ArrowRight className="ml-1 h-4 w-4" /></Link>
+              <Button variant="link" className="mt-4 p-0 h-auto font-semibold" asChild>
+                <Link to="/history">View History <ArrowRight className="ml-1.5 h-4 w-4" /></Link>
               </Button>
             </CardContent>
           </Card>
 
           {/* Total Records */}
-          <Card className="shadow-sm hover:shadow-md transition-shadow sm:col-span-2 lg:col-span-1">
+          <Card className="shadow-md hover:shadow-lg transition-all duration-200 hover:-translate-y-0.5 border-l-4 border-l-slate-400 sm:col-span-2 lg:col-span-1">
             <CardContent className="p-6">
               <div className="flex items-start gap-4">
-                <div className="rounded-lg bg-muted p-3">
-                  <FolderOpen className="h-6 w-6 text-muted-foreground" />
+                <div className="rounded-xl bg-slate-100 dark:bg-slate-800 p-3.5">
+                  <FolderOpen className="h-6 w-6 text-slate-600 dark:text-slate-400" />
                 </div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-muted-foreground">Total Records</p>
-                  <p className="text-3xl font-bold">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Total Records</p>
+                  <p className="text-4xl font-bold mt-1">
                     {(contactsCount + companiesCount).toLocaleString()}
-                    <span className="text-sm font-normal text-muted-foreground ml-2">
-                      synced across {objectCounts.filter(o => o.count > 0).length} objects
-                    </span>
                   </p>
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 text-sm text-muted-foreground">
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    synced across {objectCounts.filter(o => o.count > 0).length} objects
+                  </p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-sm text-muted-foreground">
                     {objectCounts.map(obj => (
-                      <span key={obj.name} className="flex items-center gap-1">
+                      <span key={obj.name} className="flex items-center gap-1.5">
                         {obj.icon}
                         {obj.name}: {obj.count.toLocaleString()}
                       </span>
@@ -282,9 +317,9 @@ export default function Dashboard() {
         </div>
 
         {/* Match Rules Table */}
-        <Card className="shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between pb-4">
-            <CardTitle className="text-lg font-semibold">Your Match Rules</CardTitle>
+        <Card className="shadow-md overflow-hidden">
+          <CardHeader className="flex flex-row items-center justify-between bg-muted/30 border-b">
+            <CardTitle className="text-xl font-bold">Your Match Rules</CardTitle>
             <Button size="sm" asChild>
               <Link to="/match-rules/new">
                 <Plus className="mr-2 h-4 w-4" />
@@ -298,146 +333,169 @@ export default function Dashboard() {
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
             ) : rules.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <p>No match rules yet.</p>
-                <Button variant="link" className="mt-2" asChild>
-                  <Link to="/match-rules/new">Create your first rule</Link>
-                </Button>
-              </div>
+              <NoRulesEmpty />
             ) : (
-              <div className="border-t">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/50">
-                    <tr className="border-b">
-                      <th className="text-left py-3 px-4 font-medium text-muted-foreground">Name</th>
-                      <th className="text-left py-3 px-4 font-medium text-muted-foreground">Object</th>
-                      <th className="text-left py-3 px-4 font-medium text-muted-foreground">Strategy</th>
-                      <th className="text-left py-3 px-4 font-medium text-muted-foreground">Schedule</th>
-                      <th className="text-left py-3 px-4 font-medium text-muted-foreground">Last Scan</th>
-                      <th className="text-right py-3 px-4 font-medium text-muted-foreground">Pending</th>
-                      <th className="text-center py-3 px-4 font-medium text-muted-foreground">Status</th>
-                      <th className="text-right py-3 px-4 font-medium text-muted-foreground">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rules.map((rule: MatchRule) => (
-                      <tr key={rule.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
-                        <td className="py-3 px-4">
-                          <Link to={`/match-rules/${rule.id}`} className="font-medium hover:text-primary hover:underline">
-                            {rule.name}
-                          </Link>
-                        </td>
-                        <td className="py-3 px-4 capitalize">{rule.source_object}</td>
-                        <td className="py-3 px-4">{rule.merge_strategy || 'standard'}</td>
-                        <td className="py-3 px-4 capitalize">{rule.schedule_frequency}</td>
-                        <td className="py-3 px-4">{formatLastScan(rule.last_scan_at)}</td>
-                        <td className="py-3 px-4 text-right">
-                          <Badge variant="outline">{pendingByRule[rule.id] || 0}</Badge>
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <Switch
-                            checked={rule.is_active}
-                            onCheckedChange={() => toggleStatusMutation.mutate(rule.id)}
-                            disabled={toggleStatusMutation.isPending}
-                          />
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <Button variant="outline" size="sm" asChild>
-                            <Link to={`/match-rules/${rule.id}`}>
-                              <Pencil className="h-4 w-4 mr-1" />
-                              Edit
-                            </Link>
-                          </Button>
-                        </td>
+              <ResponsiveTable>
+                  <ResponsiveTableContent minWidth="700px">
+                    <thead className="bg-muted/50">
+                      <tr className="border-b">
+                        <th scope="col" className="text-left py-3 px-4 font-medium text-muted-foreground">Name</th>
+                        <th scope="col" className="text-left py-3 px-4 font-medium text-muted-foreground">Object</th>
+                        <th scope="col" className="text-left py-3 px-4 font-medium text-muted-foreground">Strategy</th>
+                        <th scope="col" className="text-left py-3 px-4 font-medium text-muted-foreground">Schedule</th>
+                        <th scope="col" className="text-left py-3 px-4 font-medium text-muted-foreground">Last Scan</th>
+                        <th scope="col" className="text-right py-3 px-4 font-medium text-muted-foreground">Pending</th>
+                        <th scope="col" className="text-center py-3 px-4 font-medium text-muted-foreground">Status</th>
+                        <th scope="col" className="text-right py-3 px-4 font-medium text-muted-foreground">Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {rules.map((rule: MatchRule) => (
+                        <tr key={rule.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
+                          <td className="py-3 px-4">
+                            <Link to={`/match-rules/${rule.id}`} className="font-medium text-primary hover:underline">
+                              {rule.name}
+                            </Link>
+                          </td>
+                          <td className="py-3 px-4 capitalize">{rule.source_object}</td>
+                          <td className="py-3 px-4">{rule.merge_strategy || 'standard'}</td>
+                          <td className="py-3 px-4 capitalize">{rule.schedule_frequency}</td>
+                          <td className="py-3 px-4">{formatLastScan(rule.last_scan_at)}</td>
+                          <td className="py-3 px-4 text-right">
+                            <Badge
+                              variant={pendingByRule[rule.id] > 0 ? 'default' : 'outline'}
+                              className={pendingByRule[rule.id] > 0 ? 'bg-primary' : 'text-muted-foreground'}
+                            >
+                              {pendingByRule[rule.id] || 0}
+                            </Badge>
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <Switch
+                              checked={rule.is_active}
+                              onCheckedChange={() => toggleStatusMutation.mutate(rule.id)}
+                              disabled={toggleStatusMutation.isPending}
+                              aria-label={`${rule.is_active ? 'Disable' : 'Enable'} ${rule.name} rule`}
+                            />
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <Button variant="outline" size="sm" asChild>
+                              <Link to={`/match-rules/${rule.id}`} aria-label={`Edit ${rule.name}`}>
+                                <Pencil className="h-4 w-4 mr-1" aria-hidden="true" />
+                                Edit
+                              </Link>
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </ResponsiveTableContent>
+              </ResponsiveTable>
             )}
           </CardContent>
         </Card>
 
         {/* Recent Activity Table */}
-        <Card className="shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between pb-4">
-            <CardTitle className="text-lg font-semibold">Recent Activity</CardTitle>
+        <Card className="shadow-md overflow-hidden">
+          <CardHeader className="flex flex-row items-center justify-between bg-muted/30 border-b">
+            <CardTitle className="text-xl font-bold">Recent Activity</CardTitle>
             <Button variant="link" className="p-0 h-auto text-primary" asChild>
               <Link to="/history">View All <ArrowRight className="ml-1 h-4 w-4" /></Link>
             </Button>
           </CardHeader>
           <CardContent className="p-0">
             {recentMerges.length === 0 ? (
-              <p className="text-center py-8 text-muted-foreground">No merges yet</p>
+              <NoMergesEmpty />
             ) : (
-              <div className="border-t">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/50">
-                    <tr className="border-b">
-                      <th className="text-left py-3 px-4 font-medium text-muted-foreground">Date</th>
-                      <th className="text-left py-3 px-4 font-medium text-muted-foreground">Record</th>
-                      <th className="text-left py-3 px-4 font-medium text-muted-foreground">Master ID</th>
-                      <th className="text-left py-3 px-4 font-medium text-muted-foreground">Merged ID</th>
-                      <th className="text-left py-3 px-4 font-medium text-muted-foreground">Status</th>
-                      <th className="text-right py-3 px-4 font-medium text-muted-foreground">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recentMerges.map((merge: Merge) => (
-                      <tr key={merge.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
-                        <td className="py-3 px-4">
-                          {new Date(merge.created_at).toLocaleDateString()}
-                        </td>
-                        <td className="py-3 px-4 font-medium">
-                          {merge.master_record_name || 'Unknown'}
-                        </td>
-                        <td className="py-3 px-4">
-                          <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
-                            {merge.master_record_id.slice(0, 8)}...
-                          </code>
-                        </td>
-                        <td className="py-3 px-4">
-                          <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
-                            {merge.duplicate_record_id.slice(0, 8)}...
-                          </code>
-                        </td>
-                        <td className="py-3 px-4">
-                          <Badge variant={merge.status === 'completed' ? 'default' : 'secondary'}>
-                            {merge.status}
-                          </Badge>
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" asChild>
-                                  <Link to={`/history/${merge.id}`}>
-                                    <Eye className="h-4 w-4" />
-                                  </Link>
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>View</TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => rollbackMutation.mutate(merge.id)}
-                                  disabled={rollbackMutation.isPending || merge.status === 'rolled_back'}
-                                >
-                                  <RotateCcw className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>Restore</TooltipContent>
-                            </Tooltip>
-                          </div>
-                        </td>
+              <ResponsiveTable>
+                  <ResponsiveTableContent minWidth="650px">
+                    <thead className="bg-muted/50">
+                      <tr className="border-b">
+                        <th scope="col" className="text-left py-3 px-4 font-medium text-muted-foreground">Date</th>
+                        <th scope="col" className="text-left py-3 px-4 font-medium text-muted-foreground">Record</th>
+                        <th scope="col" className="text-left py-3 px-4 font-medium text-muted-foreground">Master ID</th>
+                        <th scope="col" className="text-left py-3 px-4 font-medium text-muted-foreground">Merged ID</th>
+                        <th scope="col" className="text-left py-3 px-4 font-medium text-muted-foreground">Status</th>
+                        <th scope="col" className="text-right py-3 px-4 font-medium text-muted-foreground">Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {recentMerges.map((merge: Merge) => (
+                        <tr key={merge.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
+                          <td className="py-3 px-4">
+                            {new Date(merge.created_at).toLocaleDateString()}
+                          </td>
+                          <td className="py-3 px-4 font-medium">
+                            {merge.master_record_name || 'Unknown'}
+                          </td>
+                          <td className="py-3 px-4">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <code className="text-xs bg-muted px-1.5 py-0.5 rounded cursor-help">
+                                  {merge.master_record_id.slice(0, 8)}...
+                                </code>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <code>{merge.master_record_id}</code>
+                              </TooltipContent>
+                            </Tooltip>
+                          </td>
+                          <td className="py-3 px-4">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <code className="text-xs bg-muted px-1.5 py-0.5 rounded cursor-help">
+                                  {merge.duplicate_record_id.slice(0, 8)}...
+                                </code>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <code>{merge.duplicate_record_id}</code>
+                              </TooltipContent>
+                            </Tooltip>
+                          </td>
+                          <td className="py-3 px-4">
+                            <Badge
+                              variant={merge.status === 'completed' ? 'default' : merge.status === 'rolled_back' ? 'outline' : 'secondary'}
+                              className={cn(
+                                merge.status === 'completed' && 'bg-green-600 hover:bg-green-700',
+                                merge.status === 'rolled_back' && 'border-amber-500 text-amber-600'
+                              )}
+                            >
+                              {merge.status === 'completed' ? 'Merged' : merge.status === 'rolled_back' ? 'Restored' : merge.status}
+                            </Badge>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button variant="ghost" size="sm" className="h-9 w-9 p-0" asChild>
+                                    <Link to={`/history/${merge.id}`} aria-label={`View merge details for ${merge.master_record_name || 'record'}`}>
+                                      <Eye className="h-4 w-4" aria-hidden="true" />
+                                    </Link>
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>View Details</TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-9 w-9 p-0"
+                                    onClick={() => rollbackMutation.mutate(merge.id)}
+                                    disabled={rollbackMutation.isPending || merge.status === 'rolled_back'}
+                                    aria-label={`Restore duplicate record from merge with ${merge.master_record_name || 'record'}`}
+                                  >
+                                    <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Restore Duplicate</TooltipContent>
+                              </Tooltip>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </ResponsiveTableContent>
+              </ResponsiveTable>
             )}
           </CardContent>
         </Card>

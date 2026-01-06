@@ -19,26 +19,30 @@ import {
 } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, MatchRule, MatchField } from "@/lib/api";
+import { api, MatchRule, MatchField, ObjectField } from "@/lib/api";
 import { useLocation } from "@/contexts/LocationContext";
 
-const objectTypes = [
+// Standard object types (custom objects loaded dynamically)
+const standardObjectTypes = [
   { id: "contacts", name: "Contacts", tier: "free", available: true },
   { id: "companies", name: "Companies", tier: "starter", available: true },
   { id: "opportunities", name: "Opportunities", tier: "pro", available: false },
-  { id: "custom", name: "Custom Objects", tier: "agency", available: false },
 ];
 
-const fieldOptions = [
-  { id: "email", name: "Email" },
-  { id: "phone", name: "Phone" },
-  { id: "firstName", name: "First Name" },
-  { id: "lastName", name: "Last Name" },
-  { id: "fullName", name: "Full Name" },
-  { id: "company", name: "Company" },
-  { id: "domain", name: "Domain" },
-  { id: "address", name: "Address" },
-];
+// Fallback fields if API fails
+const fallbackFields: Record<string, { id: string; name: string }[]> = {
+  contacts: [
+    { id: "email", name: "Email" },
+    { id: "phone", name: "Phone" },
+    { id: "firstName", name: "First Name" },
+    { id: "lastName", name: "Last Name" },
+  ],
+  companies: [
+    { id: "name", name: "Company Name" },
+    { id: "email", name: "Email" },
+    { id: "phone", name: "Phone" },
+  ],
+};
 
 const matchTypes = [
   { id: "exact", name: "Exact Match" },
@@ -121,6 +125,22 @@ export default function MatchRuleForm() {
     enabled: isEditing && isAuthenticated && !!locationId,
   });
 
+  // Fetch available fields for selected object type
+  const { data: fetchedFields, isLoading: fieldsLoading } = useQuery({
+    queryKey: ['object-fields', objectType],
+    queryFn: () => api.getObjectFields(objectType),
+    enabled: !!objectType && isAuthenticated,
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
+
+  // Use fetched fields or fallback to static fields
+  const fieldOptions = fetchedFields?.length
+    ? fetchedFields.map(f => ({ id: f.id, name: f.name, isCustom: f.isCustom }))
+    : (fallbackFields[objectType] || []).map(f => ({ ...f, isCustom: false }));
+
+  // Object types (could be extended with custom objects in future)
+  const objectTypes = standardObjectTypes;
+
   // Create mutation
   const createMutation = useMutation({
     mutationFn: (rule: Partial<MatchRule>) => api.createMatchRule(rule),
@@ -197,8 +217,6 @@ export default function MatchRuleForm() {
   const getLogicExpression = () => {
     if (fields.length === 0 || !fields[0].name) return "";
 
-    let expr = "";
-    let needsParens = false;
     let currentGroup: string[] = [];
 
     fields.forEach((field, i) => {
@@ -211,9 +229,6 @@ export default function MatchRuleForm() {
         currentGroup.push(condition);
       } else {
         const prevOperator = fields[i - 1].operator;
-        if (prevOperator === "OR") {
-          needsParens = true;
-        }
         currentGroup.push(` ${prevOperator} ${condition}`);
       }
     });
@@ -291,18 +306,18 @@ export default function MatchRuleForm() {
           <ArrowLeft className="h-4 w-4" />
           {isEditing ? (existingRule?.name || "Match Rule") : "Dashboard"}
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground lg:text-3xl">
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">
           {isEditing ? "Edit Match Rule" : "Create Match Rule"}
         </h1>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Rule Name - First and Prominent */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Rule Name</CardTitle>
+        <Card className="shadow-md">
+          <CardHeader className="bg-muted/30 border-b">
+            <CardTitle className="text-lg font-bold">Rule Name</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-6">
             <div className="space-y-2">
               <Input
                 placeholder="e.g., Email + Phone Match"
@@ -319,9 +334,9 @@ export default function MatchRuleForm() {
         </Card>
 
         {/* Object Type */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+        <Card className="shadow-md">
+          <CardHeader className="bg-muted/30 border-b">
+            <CardTitle className="text-lg font-bold flex items-center gap-2">
               Object Type
               {isEditing && (
                 <Tooltip>
@@ -339,7 +354,7 @@ export default function MatchRuleForm() {
               )}
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-6">
             {isEditing ? (
               <div className="flex items-center gap-2 p-3 bg-muted rounded-md">
                 <Lock className="h-4 w-4 text-muted-foreground" />
@@ -350,7 +365,11 @@ export default function MatchRuleForm() {
             ) : (
               <Select value={objectType} onValueChange={(val) => {
                 const selected = objectTypes.find(o => o.id === val);
-                if (selected?.available) setObjectType(val);
+                if (selected?.available) {
+                  setObjectType(val);
+                  // Reset fields when object type changes since fields are different
+                  setFields([{ name: "", matchType: "exact", operator: "AND" }]);
+                }
               }}>
                 <SelectTrigger className="w-full sm:w-[280px]">
                   <SelectValue />
@@ -381,30 +400,36 @@ export default function MatchRuleForm() {
         </Card>
 
         {/* Match Conditions with Inline Logic */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Match Conditions</CardTitle>
+        <Card className="shadow-md">
+          <CardHeader className="bg-muted/30 border-b">
+            <CardTitle className="text-lg font-bold">Match Conditions</CardTitle>
             <p className="text-sm text-muted-foreground">
               Define which fields to compare and how they should be combined
             </p>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-3 pt-6">
             {fields.map((field, index) => (
               <div key={index} className="space-y-3">
                 {/* Condition Row */}
-                <div className="flex gap-2 items-center p-3 bg-muted/30 rounded-lg border">
+                <div className="flex gap-2 items-center p-4 bg-muted/40 rounded-lg border hover:bg-muted/50 transition-colors">
                   <div className="flex-1 min-w-0">
                     <Select
                       value={field.name}
                       onValueChange={(val) => updateField(index, "name", val)}
+                      disabled={fieldsLoading}
                     >
                       <SelectTrigger className="bg-background">
-                        <SelectValue placeholder="Select field..." />
+                        <SelectValue placeholder={fieldsLoading ? "Loading fields..." : "Select field..."} />
                       </SelectTrigger>
                       <SelectContent>
                         {fieldOptions.map((opt) => (
                           <SelectItem key={opt.id} value={opt.id}>
-                            {opt.name}
+                            <span className="flex items-center gap-2">
+                              {opt.name}
+                              {opt.isCustom && (
+                                <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">Custom</span>
+                              )}
+                            </span>
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -494,8 +519,8 @@ export default function MatchRuleForm() {
 
             {/* Logic Preview */}
             {fields.length > 0 && fields[0].name && (
-              <div className="mt-4 p-3 bg-primary/5 border border-primary/20 rounded-lg">
-                <p className="text-xs text-muted-foreground mb-1">Match Logic Preview:</p>
+              <div className="mt-4 p-4 bg-primary/8 border-l-4 border-l-primary rounded-lg">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Match Logic Preview</p>
                 <p className="text-sm font-mono">
                   {getLogicExpression()}
                 </p>
@@ -505,14 +530,14 @@ export default function MatchRuleForm() {
         </Card>
 
         {/* Merge Strategy */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Merge Strategy</CardTitle>
+        <Card className="shadow-md">
+          <CardHeader className="bg-muted/30 border-b">
+            <CardTitle className="text-lg font-bold">Merge Strategy</CardTitle>
             <p className="text-sm text-muted-foreground">
               Define how duplicate records should be merged
             </p>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 pt-6">
             {/* Prebuilt Strategies */}
             <div className="space-y-2">
               <Label>Prebuilt Strategies</Label>
@@ -521,16 +546,16 @@ export default function MatchRuleForm() {
                   <div
                     key={s.id}
                     onClick={() => setStrategy(s.id)}
-                    className={`p-3 rounded-lg border cursor-pointer transition-all ${
+                    className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
                       strategy === s.id
-                        ? "border-primary bg-primary/5 ring-1 ring-primary"
-                        : "hover:border-muted-foreground/50 hover:bg-muted/30"
+                        ? "border-primary bg-primary/8 shadow-md"
+                        : "border-muted hover:border-muted-foreground/50 hover:bg-muted/40 hover:shadow-sm"
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="font-medium">{s.name}</span>
+                      <span className="font-semibold">{s.name}</span>
                       {strategy === s.id && (
-                        <span className="text-xs text-primary font-medium">Selected</span>
+                        <span className="text-xs text-primary font-semibold">Selected</span>
                       )}
                     </div>
                     <p className="text-sm text-muted-foreground mt-1">{s.description}</p>
@@ -572,7 +597,7 @@ export default function MatchRuleForm() {
                   // Navigate to create custom strategy
                   navigate("/merge-strategies/new");
                 }}
-                className="p-3 rounded-lg border border-dashed cursor-pointer hover:border-muted-foreground/50 hover:bg-muted/30 transition-all opacity-70"
+                className="p-4 rounded-lg border-2 border-dashed border-muted bg-muted/20 cursor-not-allowed transition-all"
               >
                 <div className="flex items-center gap-2">
                   <Plus className="h-4 w-4 text-muted-foreground" />
@@ -587,9 +612,9 @@ export default function MatchRuleForm() {
 
             {/* Selected Strategy Preview */}
             {strategy && (
-              <div className="p-3 bg-muted/50 rounded-lg border">
-                <p className="text-xs text-muted-foreground mb-1">Selected Strategy:</p>
-                <p className="font-medium">{strategies.find(s => s.id === strategy)?.name}</p>
+              <div className="p-4 bg-muted/40 rounded-lg border-l-4 border-l-primary">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Selected Strategy</p>
+                <p className="font-semibold">{strategies.find(s => s.id === strategy)?.name}</p>
                 <p className="text-sm text-muted-foreground">{strategies.find(s => s.id === strategy)?.description}</p>
               </div>
             )}
@@ -597,14 +622,14 @@ export default function MatchRuleForm() {
         </Card>
 
         {/* Schedule */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Schedule</CardTitle>
+        <Card className="shadow-md">
+          <CardHeader className="bg-muted/30 border-b">
+            <CardTitle className="text-lg font-bold">Schedule</CardTitle>
             <p className="text-sm text-muted-foreground">
               Configure when this rule automatically scans for duplicates
             </p>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 pt-6">
             {/* Frequency Selection */}
             <div className="space-y-2">
               <Label>Frequency</Label>
@@ -704,15 +729,13 @@ export default function MatchRuleForm() {
 
             {/* Schedule Preview */}
             {frequency !== "manual" && (
-              <div className="p-3 bg-muted/50 rounded-lg border">
-                <p className="text-sm">
-                  <span className="text-muted-foreground">Runs: </span>
-                  <span className="font-medium">
-                    {frequency === "daily" && `Every day at ${timeOptions.find(t => t.id === scheduleTime)?.name}`}
-                    {frequency === "weekly" && `Every ${daysOfWeek.find(d => d.id === scheduleDayOfWeek)?.name} at ${timeOptions.find(t => t.id === scheduleTime)?.name}`}
-                    {frequency === "biweekly" && `Every other ${daysOfWeek.find(d => d.id === scheduleDayOfWeek)?.name} at ${timeOptions.find(t => t.id === scheduleTime)?.name}`}
-                    {frequency === "monthly" && `${daysOfMonth.find(d => d.id === scheduleDayOfMonth)?.name} of each month at ${timeOptions.find(t => t.id === scheduleTime)?.name}`}
-                  </span>
+              <div className="p-4 bg-muted/40 rounded-lg border-l-4 border-l-primary">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Schedule Preview</p>
+                <p className="font-medium">
+                  {frequency === "daily" && `Every day at ${timeOptions.find(t => t.id === scheduleTime)?.name}`}
+                  {frequency === "weekly" && `Every ${daysOfWeek.find(d => d.id === scheduleDayOfWeek)?.name} at ${timeOptions.find(t => t.id === scheduleTime)?.name}`}
+                  {frequency === "biweekly" && `Every other ${daysOfWeek.find(d => d.id === scheduleDayOfWeek)?.name} at ${timeOptions.find(t => t.id === scheduleTime)?.name}`}
+                  {frequency === "monthly" && `${daysOfMonth.find(d => d.id === scheduleDayOfMonth)?.name} of each month at ${timeOptions.find(t => t.id === scheduleTime)?.name}`}
                 </p>
               </div>
             )}
@@ -728,7 +751,7 @@ export default function MatchRuleForm() {
         </Card>
 
         {/* Footer Actions */}
-        <div className="flex justify-between items-center pt-4 border-t">
+        <div className="flex justify-between items-center pt-6 mt-6 border-t-2 border-t-muted">
           <Button type="button" variant="outline" onClick={handleCancel} disabled={isSaving}>
             Cancel
           </Button>

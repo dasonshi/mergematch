@@ -9,7 +9,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
-from app.api.routes import auth, health, matches, rules, merges, jobs, webhooks, contacts, companies
+from app.api.routes import auth, health, matches, rules, merges, jobs, webhooks, contacts, companies, fields
 from app.core.security import validate_security_config
 
 
@@ -114,6 +114,7 @@ app.include_router(jobs.router, prefix="/v1/jobs", tags=["Jobs"])
 app.include_router(webhooks.router, prefix="/webhooks", tags=["Webhooks"])
 app.include_router(contacts.router, prefix="/v1/contacts", tags=["Contacts"])
 app.include_router(companies.router, prefix="/v1/companies", tags=["Companies"])
+app.include_router(fields.router, prefix="/v1/fields", tags=["Fields"])
 
 
 @app.get("/")

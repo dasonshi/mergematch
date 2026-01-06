@@ -153,23 +153,31 @@ export default function MatchReview() {
             <ArrowLeft className="h-4 w-4" />
             {rule?.name || "Match Rule"}
           </Link>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground lg:text-3xl">
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">
             Review Match
           </h1>
         </div>
-        <Badge variant="secondary" className="text-base px-4 py-1.5 w-fit">
+        <Badge
+          variant="outline"
+          className={cn(
+            "text-base px-4 py-1.5 w-fit font-semibold",
+            confidence >= 80 ? "bg-green-100 text-green-700 border-green-200" :
+            confidence >= 60 ? "bg-amber-100 text-amber-700 border-amber-200" :
+            "bg-red-100 text-red-700 border-red-200"
+          )}
+        >
           {confidence}% confidence
         </Badge>
       </div>
 
       {/* Master Selection */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base font-semibold">
+      <Card className="shadow-md">
+        <CardHeader className="pb-4 bg-muted/30 border-b">
+          <CardTitle className="text-lg font-bold">
             Select Master Record
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
           <div className="flex gap-4">
             <Button
               variant={masterId === "a" ? "default" : "outline"}
@@ -195,13 +203,14 @@ export default function MatchReview() {
       </Card>
 
       {/* Field Comparison Table */}
-      <Card>
-        <CardHeader className="pb-3">
+      <Card className="shadow-md">
+        <CardHeader className="pb-4 bg-muted/30 border-b">
+          <CardTitle className="text-lg font-bold">Field Comparison</CardTitle>
           <p className="text-sm text-muted-foreground">
             Click any cell to select which value to keep for each field.
           </p>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -303,7 +312,7 @@ export default function MatchReview() {
           </div>
 
           {/* Legend */}
-          <div className="mt-4 pt-4 border-t flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground">
+          <div className="mt-4 pt-4 border-t flex flex-wrap gap-x-8 gap-y-3 text-sm text-muted-foreground">
             <span><span className="text-primary">[Value] ✓</span> = Selected (will be kept)</span>
             <span>Value = Not selected</span>
             <span className="italic">(empty)</span> = No value in record
@@ -313,7 +322,7 @@ export default function MatchReview() {
       </Card>
 
       {/* Merge Warning */}
-      <Card className="border-yellow-500/50 bg-yellow-500/5">
+      <Card className="border-yellow-500/50 bg-yellow-500/8 shadow-md">
         <CardContent className="pt-6">
           <div className="flex gap-3">
             <AlertTriangle className="h-5 w-5 text-yellow-500 flex-shrink-0 mt-0.5" />
@@ -343,7 +352,7 @@ export default function MatchReview() {
       </Card>
 
       {/* Footer Actions */}
-      <div className="flex justify-between items-center pt-4 border-t">
+      <div className="flex justify-between items-center pt-6 mt-6 border-t-2 border-t-muted">
         <Button variant="outline" asChild>
           <Link to={`/match-rules/${ruleId}`}>Cancel</Link>
         </Button>

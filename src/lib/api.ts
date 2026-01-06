@@ -183,6 +183,15 @@ class ApiClient {
     return this.fetch<{ companies: Company[]; total: number }>(`/v1/companies/`);
   }
 
+  // Fields (for match rule creation)
+  async getObjectFields(objectType: string) {
+    return this.fetch<ObjectField[]>(`/v1/fields/${objectType}`);
+  }
+
+  async getAvailableObjects() {
+    return this.fetch<ObjectType[]>('/v1/fields/');
+  }
+
   // Match Rules
   async getMatchRules() {
     return this.fetch<{ data: MatchRule[]; total: number }>('/v1/rules/');
@@ -337,6 +346,20 @@ export interface Merge {
   status: string;
   created_at: string;
   rule_name?: string;
+}
+
+export interface ObjectField {
+  id: string;
+  name: string;
+  fieldKey: string;
+  dataType: string;
+  isCustom: boolean;
+}
+
+export interface ObjectType {
+  id: string;
+  name: string;
+  standard: boolean;
 }
 
 export const api = new ApiClient();

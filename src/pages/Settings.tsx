@@ -125,9 +125,9 @@ export default function Settings() {
       />
 
       {/* Connection Section */}
-      <Card className="animate-fade-in border-border/50 shadow-sm">
-        <CardHeader>
-          <CardTitle>Connection</CardTitle>
+      <Card className="animate-fade-in shadow-md">
+        <CardHeader className="bg-muted/30 border-b">
+          <CardTitle className="text-lg font-bold">Connection</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex items-start justify-between">
@@ -169,9 +169,9 @@ export default function Settings() {
       </Card>
 
       {/* Subscription Section */}
-      <Card className="animate-fade-in border-border/50 shadow-sm" style={{ animationDelay: "50ms" }}>
-        <CardHeader>
-          <CardTitle>Subscription</CardTitle>
+      <Card className="animate-fade-in shadow-md" style={{ animationDelay: "50ms" }}>
+        <CardHeader className="bg-muted/30 border-b">
+          <CardTitle className="text-lg font-bold">Subscription</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="space-y-3">
@@ -198,7 +198,7 @@ export default function Settings() {
 
           {/* Upgrade CTA Card - only show if can upgrade */}
           {canUpgrade && (
-            <Card className="border-primary/30 bg-primary/5">
+            <Card className="border-primary/50 bg-primary/10 shadow-md">
               <CardContent className="pt-6">
                 <div className="flex items-start justify-between">
                   <div className="space-y-3">
@@ -252,9 +252,9 @@ export default function Settings() {
       </Card>
 
       {/* Notifications Section */}
-      <Card className="animate-fade-in border-border/50 shadow-sm" style={{ animationDelay: "100ms" }}>
-        <CardHeader>
-          <CardTitle>Notifications</CardTitle>
+      <Card className="animate-fade-in shadow-md" style={{ animationDelay: "100ms" }}>
+        <CardHeader className="bg-muted/30 border-b">
+          <CardTitle className="text-lg font-bold">Notifications</CardTitle>
           <CardDescription>Configure email notifications for your account</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -338,13 +338,13 @@ export default function Settings() {
       </Card>
 
       {/* Preferences Section */}
-      <Card className="animate-fade-in border-border/50 shadow-sm" style={{ animationDelay: "150ms" }}>
-        <CardHeader>
-          <CardTitle>Preferences</CardTitle>
+      <Card className="animate-fade-in shadow-md" style={{ animationDelay: "150ms" }}>
+        <CardHeader className="bg-muted/30 border-b">
+          <CardTitle className="text-lg font-bold">Preferences</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-6 pt-6">
           <div className="space-y-2">
-            <Label className="text-base">Merge Warnings</Label>
+            <Label className="text-base font-semibold">Merge Warnings</Label>
             <div className="space-y-3">
               <div className="flex items-center space-x-2">
                 <Checkbox 
@@ -391,9 +391,9 @@ export default function Settings() {
       </Card>
 
       {/* White-Label Section */}
-      <Card className="animate-fade-in border-border/50 shadow-sm" style={{ animationDelay: "150ms" }}>
-        <CardHeader>
-          <CardTitle>White-Label</CardTitle>
+      <Card className="animate-fade-in shadow-md" style={{ animationDelay: "150ms" }}>
+        <CardHeader className="bg-muted/30 border-b">
+          <CardTitle className="text-lg font-bold">White-Label</CardTitle>
           <CardDescription>Customize branding for your clients</CardDescription>
         </CardHeader>
         <CardContent>
@@ -448,7 +448,7 @@ export default function Settings() {
         <Separator />
 
         {/* Force Full Resync */}
-        <Card className="animate-fade-in border-destructive/30" style={{ animationDelay: "200ms" }}>
+        <Card className="animate-fade-in border-destructive/50 shadow-md" style={{ animationDelay: "200ms" }}>
           <CardContent className="pt-6">
             <div className="flex items-start justify-between">
               <div className="space-y-1">
@@ -488,7 +488,7 @@ export default function Settings() {
         </Card>
 
         {/* Delete All Data */}
-        <Card className="animate-fade-in border-destructive/30" style={{ animationDelay: "250ms" }}>
+        <Card className="animate-fade-in border-destructive/50 shadow-md" style={{ animationDelay: "250ms" }}>
           <CardContent className="pt-6">
             <div className="flex items-start justify-between">
               <div className="space-y-1">
@@ -531,7 +531,7 @@ export default function Settings() {
         </Card>
 
         {/* Disconnect Account */}
-        <Card className="animate-fade-in border-destructive/30" style={{ animationDelay: "300ms" }}>
+        <Card className="animate-fade-in border-destructive/50 shadow-md" style={{ animationDelay: "300ms" }}>
           <CardContent className="pt-6">
             <div className="flex items-start justify-between">
               <div className="space-y-1">

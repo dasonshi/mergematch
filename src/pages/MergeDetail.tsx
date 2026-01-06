@@ -75,9 +75,9 @@ export default function MergeDetail() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "completed":
-        return <Badge className="bg-green-500">Completed</Badge>;
+        return <Badge className="bg-green-600 hover:bg-green-700">Merged</Badge>;
       case "rolled_back":
-        return <Badge variant="secondary">Rolled Back</Badge>;
+        return <Badge variant="outline" className="border-amber-500 text-amber-600">Restored</Badge>;
       case "failed":
         return <Badge variant="destructive">Failed</Badge>;
       default:
@@ -101,7 +101,7 @@ export default function MergeDetail() {
             <ArrowLeft className="h-4 w-4" />
             Merge History
           </Link>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground lg:text-3xl">
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">
             Merge Details
           </h1>
         </div>
@@ -109,16 +109,16 @@ export default function MergeDetail() {
       </div>
 
       {/* Merge Info Card */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base font-semibold">
+      <Card className="shadow-md border-l-4 border-l-primary">
+        <CardHeader className="pb-3 bg-muted/30 border-b">
+          <CardTitle className="text-lg font-bold">
             Merge Information
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 pt-6">
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <p className="text-sm text-muted-foreground">Master Record (Kept)</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Master Record (Kept)</p>
               <div className="flex items-center gap-2 mt-1">
                 <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
                 <span className="font-medium">
@@ -140,7 +140,7 @@ export default function MergeDetail() {
               </p>
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Duplicate Record ({merge.status === "rolled_back" ? "Restored" : "Deleted"})
               </p>
               <div className="flex items-center gap-2 mt-1">
@@ -182,13 +182,13 @@ export default function MergeDetail() {
       </Card>
 
       {/* Field Comparison Table */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base font-semibold">
+      <Card className="shadow-md">
+        <CardHeader className="pb-3 bg-muted/30 border-b">
+          <CardTitle className="text-lg font-bold">
             Field Values at Time of Merge
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -280,7 +280,7 @@ export default function MergeDetail() {
       </Card>
 
       {/* Footer Actions */}
-      <div className="flex justify-between items-center pt-4 border-t">
+      <div className="flex justify-between items-center pt-6 mt-6 border-t-2 border-t-muted">
         <Button variant="outline" asChild>
           <Link to="/history">Back to History</Link>
         </Button>

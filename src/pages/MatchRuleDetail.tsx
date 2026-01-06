@@ -3,11 +3,13 @@ import { Link, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { ArrowLeft, Edit, Search, Play, Loader2, ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 export default function MatchRuleDetail() {
   const { id } = useParams();
@@ -170,7 +172,7 @@ export default function MatchRuleDetail() {
             <ArrowLeft className="h-4 w-4" />
             Dashboard
           </Link>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground lg:text-3xl">
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">
             {rule.name}
           </h1>
         </div>
@@ -211,65 +213,67 @@ export default function MatchRuleDetail() {
       </div>
 
       {/* Rule Summary Card */}
-      <Card>
-        <CardContent className="p-5">
-          <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+      <Card className="shadow-md border-t-4 border-t-primary">
+        <CardContent className="p-6">
+          <div className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
             <div>
-              <span className="text-muted-foreground">Object:</span>{" "}
-              <span className="font-medium capitalize">{rule.source_object}</span>
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Object</span>
+              <p className="font-medium capitalize mt-1">{rule.source_object}</p>
             </div>
             <div>
-              <span className="text-muted-foreground">Strategy:</span>{" "}
-              <span className="font-medium capitalize">{rule.merge_strategy || 'standard'}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-muted-foreground">Status:</span>
-              <Switch
-                checked={rule.is_active}
-                onCheckedChange={() => toggleMutation.mutate()}
-                disabled={toggleMutation.isPending}
-              />
-              <span className="text-xs text-muted-foreground">
-                {rule.is_active ? "Active" : "Inactive"}
-              </span>
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Strategy</span>
+              <p className="font-medium capitalize mt-1">{rule.merge_strategy || 'standard'}</p>
             </div>
             <div>
-              <span className="text-muted-foreground">Fields:</span>{" "}
-              <span className="font-medium">
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</span>
+              <div className="flex items-center gap-2 mt-1">
+                <Switch
+                  checked={rule.is_active}
+                  onCheckedChange={() => toggleMutation.mutate()}
+                  disabled={toggleMutation.isPending}
+                />
+                <span className="text-sm font-medium">
+                  {rule.is_active ? "Active" : "Inactive"}
+                </span>
+              </div>
+            </div>
+            <div>
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Fields</span>
+              <p className="font-medium mt-1">
                 {(rule.match_fields || []).map((f: any, i: number) => (
                   <span key={f.field}>
                     {f.field} ({f.algorithm}){i < rule.match_fields.length - 1 ? ", " : ""}
                   </span>
                 ))}
-              </span>
+              </p>
             </div>
             <div>
-              <span className="text-muted-foreground">Thresholds:</span>{" "}
-              <span className="font-medium">
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Thresholds</span>
+              <p className="font-medium mt-1">
                 Auto: {Math.round(rule.auto_merge_threshold * 100)}% | Review: {Math.round(rule.review_threshold * 100)}%
-              </span>
+              </p>
             </div>
             <div>
-              <span className="text-muted-foreground">Schedule:</span>{" "}
-              <span className="font-medium capitalize">{rule.schedule_frequency || "manual"}</span>
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Schedule</span>
+              <p className="font-medium capitalize mt-1">{rule.schedule_frequency || "manual"}</p>
             </div>
             <div>
-              <span className="text-muted-foreground">Last Scan:</span>{" "}
-              <span className="font-medium">
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Last Scan</span>
+              <p className="font-medium mt-1">
                 {rule.last_scan_at
                   ? new Date(rule.last_scan_at).toLocaleString()
                   : "Never"}
-              </span>
+              </p>
             </div>
           </div>
         </CardContent>
       </Card>
 
       {/* Pending Matches Section */}
-      <div className="space-y-2">
+      <div className="space-y-3">
         <button
           onClick={() => setMatchesExpanded(!matchesExpanded)}
-          className="flex items-center gap-2 text-lg font-semibold hover:text-primary transition-colors w-full text-left"
+          className="flex items-center gap-2 text-xl font-bold hover:text-primary transition-colors w-full text-left"
         >
           {matchesExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
           Pending Matches ({pendingMatches.length})
@@ -288,16 +292,17 @@ export default function MatchRuleDetail() {
                 </CardContent>
               </Card>
             ) : (
-              <div className="max-h-80 overflow-y-auto border rounded-lg">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/50 sticky top-0">
-                    <tr className="border-b">
-                      <th className="text-left py-2 px-3 font-medium text-muted-foreground">Record A</th>
-                      <th className="text-left py-2 px-3 font-medium text-muted-foreground">Record B</th>
-                      <th className="text-center py-2 px-3 font-medium text-muted-foreground">Score</th>
-                      <th className="text-right py-2 px-3 font-medium text-muted-foreground">Actions</th>
-                    </tr>
-                  </thead>
+              <Card className="shadow-md overflow-hidden">
+                <div className="max-h-80 overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted/30 sticky top-0">
+                      <tr className="border-b">
+                        <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Record A</th>
+                        <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Record B</th>
+                        <th className="text-center py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Score</th>
+                        <th className="text-right py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Actions</th>
+                      </tr>
+                    </thead>
                   <tbody>
                     {pendingMatches.map((match: any) => {
                       const recordA = match.record_a_data || {};
@@ -306,8 +311,8 @@ export default function MatchRuleDetail() {
                       const isMerging = mergingIds.has(match.id);
 
                       return (
-                        <tr key={match.id} className="border-b last:border-0 hover:bg-muted/30">
-                          <td className="py-2 px-3">
+                        <tr key={match.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
+                          <td className="py-3 px-4">
                             <div className="font-medium truncate max-w-[200px]">
                               {recordA.firstName || recordA.name || recordA.email || "—"}
                             </div>
@@ -315,7 +320,7 @@ export default function MatchRuleDetail() {
                               {recordA.email || recordA.phone || ""}
                             </div>
                           </td>
-                          <td className="py-2 px-3">
+                          <td className="py-3 px-4">
                             <div className="font-medium truncate max-w-[200px]">
                               {recordB.firstName || recordB.name || recordB.email || "—"}
                             </div>
@@ -323,17 +328,26 @@ export default function MatchRuleDetail() {
                               {recordB.email || recordB.phone || ""}
                             </div>
                           </td>
-                          <td className="py-2 px-3 text-center">
-                            <span className="text-primary font-medium">{confidence}%</span>
+                          <td className="py-3 px-4 text-center">
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                "font-semibold",
+                                confidence >= 90 ? "bg-green-100 text-green-700 border-green-200" :
+                                confidence >= 80 ? "bg-amber-100 text-amber-700 border-amber-200" :
+                                "bg-red-100 text-red-700 border-red-200"
+                              )}
+                            >
+                              {confidence}%
+                            </Badge>
                           </td>
-                          <td className="py-2 px-3 text-right">
-                            <div className="flex justify-end gap-1">
-                              <Button variant="ghost" size="sm" className="h-7 px-2" asChild>
+                          <td className="py-3 px-4 text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button variant="outline" size="sm" asChild>
                                 <Link to={`/match-rules/${id}/review/${match.id}`}>Review</Link>
                               </Button>
                               <Button
                                 size="sm"
-                                className="h-7 px-2"
                                 onClick={() => quickMergeMutation.mutate(match)}
                                 disabled={isMerging}
                               >
@@ -346,7 +360,8 @@ export default function MatchRuleDetail() {
                     })}
                   </tbody>
                 </table>
-              </div>
+                </div>
+              </Card>
             )}
           </>
         )}
@@ -354,40 +369,50 @@ export default function MatchRuleDetail() {
 
       {/* Merge History Section */}
       <div className="space-y-4">
-        <h2 className="text-lg font-semibold">Merge History ({mergeHistory.length})</h2>
+        <h2 className="text-xl font-bold">Merge History ({mergeHistory.length})</h2>
 
         {mergeHistory.length === 0 ? (
-          <Card>
+          <Card className="shadow-md">
             <CardContent className="p-8 text-center">
               <p className="text-muted-foreground">No merges performed yet.</p>
             </CardContent>
           </Card>
         ) : (
-          <Card>
+          <Card className="shadow-md overflow-hidden">
             <CardContent className="p-0">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b bg-muted/50">
-                      <th className="text-left py-3 px-4 font-medium text-muted-foreground">Master Record</th>
-                      <th className="text-left py-3 px-4 font-medium text-muted-foreground">Status</th>
-                      <th className="text-left py-3 px-4 font-medium text-muted-foreground">Date</th>
-                      <th className="text-right py-3 px-4 font-medium text-muted-foreground">Actions</th>
+                  <thead className="bg-muted/30">
+                    <tr className="border-b">
+                      <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Master Record</th>
+                      <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</th>
+                      <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Date</th>
+                      <th className="text-right py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {mergeHistory.map((item: any) => (
-                      <tr key={item.id} className="border-b last:border-0">
+                      <tr key={item.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
                         <td className="py-3 px-4 font-medium">
                           {item.master_record_name || item.master_record_id?.slice(0, 8) + "..."}
                         </td>
-                        <td className="py-3 px-4 capitalize">{item.status}</td>
+                        <td className="py-3 px-4">
+                          <Badge
+                            variant={item.status === 'completed' ? 'default' : 'outline'}
+                            className={cn(
+                              item.status === 'completed' && 'bg-green-600 hover:bg-green-700',
+                              item.status === 'rolled_back' && 'border-amber-500 text-amber-600'
+                            )}
+                          >
+                            {item.status === 'completed' ? 'Merged' : item.status === 'rolled_back' ? 'Restored' : item.status}
+                          </Badge>
+                        </td>
                         <td className="py-3 px-4 text-muted-foreground">
                           {item.created_at ? new Date(item.created_at).toLocaleDateString() : "—"}
                         </td>
                         <td className="py-3 px-4 text-right">
-                          <div className="flex justify-end gap-1">
-                            <Button variant="ghost" size="sm" asChild>
+                          <div className="flex justify-end gap-2">
+                            <Button variant="outline" size="sm" asChild>
                               <Link to={`/history/${item.id}`}>View</Link>
                             </Button>
                             {item.status !== "rolled_back" && (

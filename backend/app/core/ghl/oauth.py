@@ -18,6 +18,8 @@ class GHLOAuth:
         "opportunities.readonly",
         "opportunities.write",
         "locations.readonly",
+        "locations/customFields.readonly",  # Custom field definitions
+        "objects/schema.readonly",  # Object schemas & custom objects
         "oauth.readonly",
         "oauth.write",
     ]
