@@ -181,6 +181,15 @@ export default function MatchRuleDetail() {
     queryClient.invalidateQueries({ queryKey: ["matches"] });
     queryClient.invalidateQueries({ queryKey: ["merges"] });
 
+    // Create notification for bulk merge result
+    try {
+      await api.createBulkMergeNotification(id!, rule?.name || "Unknown Rule", successCount, failCount);
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      queryClient.invalidateQueries({ queryKey: ["unread-count"] });
+    } catch (e) {
+      console.error("Failed to create notification:", e);
+    }
+
     toast({
       title: "Bulk Merge Complete",
       description: `Successfully merged ${successCount} records.${failCount > 0 ? ` ${failCount} failed.` : ''}`,

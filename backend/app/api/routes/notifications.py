@@ -12,6 +12,7 @@ from app.services.notification_service import (
     get_unread_count,
     mark_as_read,
     mark_all_as_read,
+    create_bulk_merge_notification,
 )
 
 router = APIRouter()
@@ -124,3 +125,45 @@ async def mark_all_notifications_read(
     count = await mark_all_as_read(user.location_id)
 
     return {"success": True, "marked_count": count}
+
+
+class CreateBulkMergeNotificationRequest(BaseModel):
+    """Request model for creating a bulk merge notification."""
+    rule_id: str
+    rule_name: str
+    success_count: int
+    fail_count: int
+
+
+@router.post("/", response_model=NotificationResponse)
+async def create_notification_route(
+    request: CreateBulkMergeNotificationRequest,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+):
+    """
+    Create a notification for a bulk merge operation.
+    """
+    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
+
+    notification = await create_bulk_merge_notification(
+        location_id=user.location_id,
+        rule_id=request.rule_id,
+        rule_name=request.rule_name,
+        success_count=request.success_count,
+        fail_count=request.fail_count,
+        tenant_id=user.tenant_id,
+    )
+
+    if not notification:
+        raise HTTPException(status_code=500, detail="Failed to create notification")
+
+    return NotificationResponse(
+        id=notification["id"],
+        type=notification["type"],
+        title=notification["title"],
+        message=notification.get("message"),
+        metadata=notification.get("metadata"),
+        read=notification["read"],
+        created_at=notification["created_at"],
+    )

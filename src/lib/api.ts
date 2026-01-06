@@ -308,7 +308,6 @@ class ApiClient {
     return this.fetch<Notification>('/v1/notifications/', {
       method: 'POST',
       body: {
-        type: 'bulk_merge',
         rule_id: ruleId,
         rule_name: ruleName,
         success_count: successCount,
