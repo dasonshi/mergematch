@@ -4,7 +4,7 @@ from typing import Dict, Optional
 import uuid
 
 from app.db.supabase import get_supabase
-from app.services.auth_service import get_location_tokens
+from app.services.auth_service import get_location_tokens_with_refresh
 from app.services.merge_service import execute_merge, rollback_merge
 from app.core.security import get_current_user_flexible
 
@@ -55,9 +55,9 @@ async def execute_merge_route(
 ):
     """Execute a merge operation."""
     user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-    tokens = await get_location_tokens(user.ghl_location_id)
+    tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
     if not tokens:
-        raise HTTPException(status_code=401, detail="Location not authenticated")
+        raise HTTPException(status_code=401, detail="Location not authenticated or token refresh failed")
 
     try:
         result = await execute_merge(
@@ -122,9 +122,9 @@ async def rollback_merge_route(
 ):
     """Rollback a merge (restore deleted record)."""
     user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-    tokens = await get_location_tokens(user.ghl_location_id)
+    tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
     if not tokens:
-        raise HTTPException(status_code=401, detail="Location not authenticated")
+        raise HTTPException(status_code=401, detail="Location not authenticated or token refresh failed")
 
     try:
         result = await rollback_merge(

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query, Header
 from typing import Optional, List, Dict, Any
 
-from app.services.auth_service import get_location_tokens
+from app.services.auth_service import get_location_tokens_with_refresh
 from app.core.ghl.client import GHLClient
 from app.core.security import get_current_user_flexible
 
@@ -85,9 +85,9 @@ async def get_object_fields(
     - 'custom_objects.{key}' - Custom object records
     """
     user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-    tokens = await get_location_tokens(user.ghl_location_id)
+    tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
     if not tokens:
-        raise HTTPException(status_code=401, detail="Location not authenticated")
+        raise HTTPException(status_code=401, detail="Location not authenticated or token refresh failed")
 
     # Start with standard fields (as fallback)
     standard_fields = STANDARD_FIELDS.get(object_type, [])
@@ -162,9 +162,9 @@ async def list_available_objects(
     Returns standard objects plus any custom objects defined in the location.
     """
     user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-    tokens = await get_location_tokens(user.ghl_location_id)
+    tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
     if not tokens:
-        raise HTTPException(status_code=401, detail="Location not authenticated")
+        raise HTTPException(status_code=401, detail="Location not authenticated or token refresh failed")
 
     # Standard objects always available
     objects = [

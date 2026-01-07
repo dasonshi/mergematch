@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query, Depends, Header
 from typing import Optional
 
-from app.services.auth_service import get_location_tokens
+from app.services.auth_service import get_location_tokens_with_refresh
 from app.core.ghl.client import GHLClient
 from app.core.security import get_current_user_flexible, AuthenticatedUser
 
@@ -19,9 +19,9 @@ async def get_contacts_stats(
     Supports JWT auth (preferred) or legacy query param.
     """
     user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-    tokens = await get_location_tokens(user.ghl_location_id)
+    tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
     if not tokens:
-        raise HTTPException(status_code=401, detail="Location not authenticated")
+        raise HTTPException(status_code=401, detail="Location not authenticated or token refresh failed")
 
     async with GHLClient(tokens["access_token"], user.ghl_location_id) as client:
         try:
@@ -44,9 +44,9 @@ async def list_contacts(
     Supports JWT auth (preferred) or legacy query param.
     """
     user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-    tokens = await get_location_tokens(user.ghl_location_id)
+    tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
     if not tokens:
-        raise HTTPException(status_code=401, detail="Location not authenticated")
+        raise HTTPException(status_code=401, detail="Location not authenticated or token refresh failed")
 
     async with GHLClient(tokens["access_token"], user.ghl_location_id) as client:
         try:
@@ -74,9 +74,9 @@ async def get_contact(
     Supports JWT auth (preferred) or legacy query param.
     """
     user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-    tokens = await get_location_tokens(user.ghl_location_id)
+    tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
     if not tokens:
-        raise HTTPException(status_code=401, detail="Location not authenticated")
+        raise HTTPException(status_code=401, detail="Location not authenticated or token refresh failed")
 
     async with GHLClient(tokens["access_token"], user.ghl_location_id) as client:
         try:

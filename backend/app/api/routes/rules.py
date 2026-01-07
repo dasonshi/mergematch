@@ -4,7 +4,7 @@ from typing import List, Optional
 import uuid
 
 from app.db.supabase import get_supabase
-from app.services.auth_service import get_location_tokens
+from app.services.auth_service import get_location_tokens_with_refresh
 from app.services.matching_service import run_scan
 from app.core.security import get_current_user_flexible
 
@@ -177,9 +177,9 @@ async def scan_rule(
 ):
     """Run a duplicate scan for this rule."""
     user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-    tokens = await get_location_tokens(user.ghl_location_id)
+    tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
     if not tokens:
-        raise HTTPException(status_code=401, detail="Location not authenticated")
+        raise HTTPException(status_code=401, detail="Location not authenticated or token refresh failed")
 
     try:
         result = await run_scan(
