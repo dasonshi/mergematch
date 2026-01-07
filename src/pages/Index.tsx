@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { RefreshCw, ArrowRight, Plus, Check, ClipboardList, FolderOpen, Building2, Users, Loader2, RotateCcw, Eye, Pencil } from "lucide-react";
+import { RefreshCw, ArrowRight, Plus, Check, ClipboardList, FolderOpen, Building2, Users, Loader2, RotateCcw, Eye, Pencil, GitMerge } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, MatchRule, Merge, MatchPair } from "@/lib/api";
@@ -19,25 +19,95 @@ export default function Dashboard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Sync cooldown state (30 seconds between syncs)
-  const [syncCooldown, setSyncCooldown] = useState(0);
+  // Sync state
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [cooldownRemaining, setCooldownRemaining] = useState(0);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
 
+  // Fetch sync status from backend
+  const { data: syncStatus, refetch: refetchSyncStatus } = useQuery({
+    queryKey: ['sync-status', locationId],
+    queryFn: () => api.getSyncStatus(),
+    enabled: isAuthenticated && !!locationId,
+    refetchInterval: cooldownRemaining > 0 ? 10000 : false, // Poll every 10s during cooldown
+  });
+
+  // Update local state from sync status
   useEffect(() => {
-    if (syncCooldown > 0) {
-      const timer = setTimeout(() => setSyncCooldown((c) => c - 1), 1000);
+    if (syncStatus) {
+      setCooldownRemaining(syncStatus.cooldown_remaining);
+      setLastSyncedAt(syncStatus.last_synced_at);
+    }
+  }, [syncStatus]);
+
+  // Countdown timer for UI responsiveness
+  useEffect(() => {
+    if (cooldownRemaining > 0) {
+      const timer = setTimeout(() => setCooldownRemaining((c) => Math.max(0, c - 1)), 1000);
       return () => clearTimeout(timer);
     }
-  }, [syncCooldown]);
+  }, [cooldownRemaining]);
 
-  const handleSync = () => {
-    queryClient.invalidateQueries({ queryKey: ["contacts-stats"] });
-    queryClient.invalidateQueries({ queryKey: ["companies"] });
-    queryClient.invalidateQueries({ queryKey: ["rules"] });
-    queryClient.invalidateQueries({ queryKey: ["matches"] });
-    queryClient.invalidateQueries({ queryKey: ["merges"] });
-    queryClient.invalidateQueries({ queryKey: ["merge-stats"] });
-    setSyncCooldown(30);
-    toast({ title: "Refreshing data..." });
+  // Format cooldown as MM:SS
+  const formatCooldown = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Format relative time
+  const formatLastSynced = (isoString: string | null): string => {
+    if (!isoString) return '';
+    const date = new Date(isoString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins === 1) return '1 min ago';
+    if (diffMins < 60) return `${diffMins} mins ago`;
+
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours === 1) return '1 hour ago';
+    if (diffHours < 24) return `${diffHours} hours ago`;
+
+    return date.toLocaleDateString();
+  };
+
+  const handleSync = async () => {
+    setIsSyncing(true);
+    try {
+      const result = await api.triggerSync();
+      setLastSyncedAt(result.last_synced_at);
+      setCooldownRemaining(300); // 5 minutes
+
+      // Invalidate all data queries
+      queryClient.invalidateQueries({ queryKey: ["contacts-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["companies"] });
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+      queryClient.invalidateQueries({ queryKey: ["matches"] });
+      queryClient.invalidateQueries({ queryKey: ["merges"] });
+      queryClient.invalidateQueries({ queryKey: ["merge-stats"] });
+
+      toast({ title: "Data synced successfully!" });
+    } catch (error: any) {
+      if (error.message?.includes('429') || error.message?.includes('cooldown')) {
+        toast({
+          title: "Sync on cooldown",
+          description: "Please wait before syncing again.",
+          variant: "destructive",
+        });
+        refetchSyncStatus();
+      } else {
+        toast({
+          title: "Sync failed",
+          description: error.message,
+          variant: "destructive",
+        });
+      }
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   // Fetch contacts count
@@ -230,19 +300,36 @@ export default function Dashboard() {
               </div>
             )}
             {connectionStatus === 'connected' && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleSync}
-                disabled={syncCooldown > 0}
-                aria-label={syncCooldown > 0 ? `Sync available in ${syncCooldown} seconds` : "Sync data"}
-              >
-                <RefreshCw
-                  className={cn("mr-2 h-4 w-4", syncCooldown > 0 && "animate-spin")}
-                  aria-hidden="true"
-                />
-                {syncCooldown > 0 ? `${syncCooldown}s` : "Sync"}
-              </Button>
+              <div className="flex items-center gap-3">
+                {lastSyncedAt && cooldownRemaining === 0 && (
+                  <span className="text-sm text-muted-foreground">
+                    Synced {formatLastSynced(lastSyncedAt)}
+                  </span>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSync}
+                  disabled={cooldownRemaining > 0 || isSyncing}
+                  className={cn(cooldownRemaining > 0 && "opacity-50")}
+                  aria-label={
+                    cooldownRemaining > 0
+                      ? `Sync available in ${formatCooldown(cooldownRemaining)}`
+                      : "Sync data"
+                  }
+                >
+                  <RefreshCw
+                    className={cn("mr-2 h-4 w-4", isSyncing && "animate-spin")}
+                    aria-hidden="true"
+                  />
+                  {isSyncing
+                    ? "Syncing..."
+                    : cooldownRemaining > 0
+                      ? formatCooldown(cooldownRemaining)
+                      : "Sync"
+                  }
+                </Button>
+              </div>
             )}
           </div>
         </div>
@@ -285,14 +372,7 @@ export default function Dashboard() {
                     {mergeStatsData?.completed ?? 0}
                   </p>
                   <p className="text-sm text-muted-foreground mt-0.5">
-                    {(mergeStatsData?.failed ?? 0) > 0 && (
-                      <span className="text-destructive">{mergeStatsData?.failed} failed</span>
-                    )}
-                    {(mergeStatsData?.failed ?? 0) > 0 && (mergeStatsData?.rolled_back ?? 0) > 0 && " · "}
-                    {(mergeStatsData?.rolled_back ?? 0) > 0 && (
-                      <span className="text-amber-600">{mergeStatsData?.rolled_back} restored</span>
-                    )}
-                    {(mergeStatsData?.failed ?? 0) === 0 && (mergeStatsData?.rolled_back ?? 0) === 0 && "total successful merges"}
+                    total successful merges
                   </p>
                 </div>
               </div>
@@ -393,12 +473,22 @@ export default function Dashboard() {
                             />
                           </td>
                           <td className="py-3 px-4 text-right">
-                            <Button variant="outline" size="sm" asChild>
-                              <Link to={`/match-rules/${rule.id}`} aria-label={`Edit ${rule.name}`}>
-                                <Pencil className="h-4 w-4 mr-1" aria-hidden="true" />
-                                Edit
-                              </Link>
-                            </Button>
+                            <div className="flex items-center justify-end gap-2">
+                              {pendingByRule[rule.id] > 0 && (
+                                <Button size="sm" asChild>
+                                  <Link to={`/match-rules/${rule.id}?action=merge-all`} aria-label={`Merge all for ${rule.name}`}>
+                                    <GitMerge className="h-4 w-4 mr-1" aria-hidden="true" />
+                                    Merge All
+                                  </Link>
+                                </Button>
+                              )}
+                              <Button variant="outline" size="sm" asChild>
+                                <Link to={`/match-rules/${rule.id}`} aria-label={`Edit ${rule.name}`}>
+                                  <Pencil className="h-4 w-4 mr-1" aria-hidden="true" />
+                                  Edit
+                                </Link>
+                              </Button>
+                            </div>
                           </td>
                         </tr>
                       ))}

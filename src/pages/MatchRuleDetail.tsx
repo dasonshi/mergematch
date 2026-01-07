@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 
 export default function MatchRuleDetail() {
   const { id } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { locationId, isLoading: authLoading, canUseStrategies } = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -52,6 +53,17 @@ export default function MatchRuleDetail() {
     queryFn: () => api.getMerges(10),
     enabled: !!locationId,
   });
+
+  // Auto-trigger merge all dialog from URL param
+  useEffect(() => {
+    const matches = matchesData?.data || [];
+    if (searchParams.get('action') === 'merge-all' && matches.length > 0 && !matchesLoading) {
+      setShowMergeAllDialog(true);
+      // Clear the action param from URL
+      searchParams.delete('action');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams, matchesData, matchesLoading, setSearchParams]);
 
   // Scan mutation
   const scanMutation = useMutation({

@@ -321,6 +321,15 @@ class ApiClient {
       },
     });
   }
+
+  // Sync
+  async getSyncStatus() {
+    return this.fetch<SyncStatus>('/v1/sync/status');
+  }
+
+  async triggerSync() {
+    return this.fetch<SyncTriggerResponse>('/v1/sync/trigger', { method: 'POST' });
+  }
 }
 
 // Types
@@ -417,6 +426,17 @@ export interface Notification {
   };
   read: boolean;
   created_at: string;
+}
+
+export interface SyncStatus {
+  can_sync: boolean;
+  last_synced_at: string | null;
+  cooldown_remaining: number;
+}
+
+export interface SyncTriggerResponse {
+  success: boolean;
+  last_synced_at: string;
 }
 
 export const api = new ApiClient();
