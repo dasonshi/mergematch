@@ -22,6 +22,8 @@ class CleanupRequest(BaseModel):
     match_ids: List[str]
 
 
+# ==================== STATIC ROUTES (must come before dynamic routes) ====================
+
 @router.get("/")
 async def list_matches(
     authorization: Optional[str] = Header(None, alias="Authorization"),
@@ -51,65 +53,6 @@ async def list_matches(
         "limit": limit,
         "offset": offset,
     }
-
-
-@router.get("/{match_id}")
-async def get_match(
-    match_id: str,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
-):
-    """Get details of a specific match pair."""
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-
-    supabase = get_supabase()
-    result = supabase.table("match_pairs").select("*").eq("id", match_id).eq("location_id", user.location_id).single().execute()
-
-    if not result.data:
-        raise HTTPException(status_code=404, detail="Match not found")
-
-    return result.data
-
-
-@router.post("/{match_id}/approve")
-async def approve_match(
-    match_id: str,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
-):
-    """Approve a match as a valid duplicate."""
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-
-    supabase = get_supabase()
-    result = supabase.table("match_pairs").update({"status": "approved"}).eq("id", match_id).eq("location_id", user.location_id).execute()
-
-    if not result.data:
-        raise HTTPException(status_code=404, detail="Match not found")
-
-    return result.data[0]
-
-
-@router.post("/{match_id}/reject")
-async def reject_match(
-    match_id: str,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
-    body: RejectRequest = None,
-):
-    """Reject a match - not a duplicate."""
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-
-    supabase = get_supabase()
-    update_data = {"status": "rejected"}
-    if body and body.reason:
-        update_data["rejection_reason"] = body.reason
-
-    result = supabase.table("match_pairs").update(update_data).eq("id", match_id).eq("location_id", user.location_id).execute()
-
-    if not result.data:
-        raise HTTPException(status_code=404, detail="Match not found")
-
-    return result.data[0]
 
 
 @router.post("/validate")
@@ -211,3 +154,64 @@ async def cleanup_stale_matches(
     logger.info(f"Cleaned up {cleaned} stale match pairs")
 
     return {"cleaned": cleaned}
+
+
+# ==================== DYNAMIC ROUTES (must come after static routes) ====================
+
+@router.get("/{match_id}")
+async def get_match(
+    match_id: str,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+):
+    """Get details of a specific match pair."""
+    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
+
+    supabase = get_supabase()
+    result = supabase.table("match_pairs").select("*").eq("id", match_id).eq("location_id", user.location_id).single().execute()
+
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Match not found")
+
+    return result.data
+
+
+@router.post("/{match_id}/approve")
+async def approve_match(
+    match_id: str,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+):
+    """Approve a match as a valid duplicate."""
+    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
+
+    supabase = get_supabase()
+    result = supabase.table("match_pairs").update({"status": "approved"}).eq("id", match_id).eq("location_id", user.location_id).execute()
+
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Match not found")
+
+    return result.data[0]
+
+
+@router.post("/{match_id}/reject")
+async def reject_match(
+    match_id: str,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    body: RejectRequest = None,
+):
+    """Reject a match - not a duplicate."""
+    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
+
+    supabase = get_supabase()
+    update_data = {"status": "rejected"}
+    if body and body.reason:
+        update_data["rejection_reason"] = body.reason
+
+    result = supabase.table("match_pairs").update(update_data).eq("id", match_id).eq("location_id", user.location_id).execute()
+
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Match not found")
+
+    return result.data[0]
