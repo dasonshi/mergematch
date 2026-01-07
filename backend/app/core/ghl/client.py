@@ -1,6 +1,9 @@
 import httpx
+import logging
 from typing import Optional, List, Dict, Any
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
+logger = logging.getLogger(__name__)
 
 
 class GHLClient:
@@ -81,9 +84,17 @@ class GHLClient:
     async def get_contacts_count(self) -> int:
         """Get total contact count using GET /contacts/ which returns count field."""
         params = {"locationId": self.location_id, "limit": 1}
+        logger.info(f"[GHL] GET /contacts/ with params: {params}")
         response = await self._client.get("/contacts/", params=params)
+        logger.info(f"[GHL] Response status: {response.status_code}")
         response.raise_for_status()
-        return response.json().get("count", 0)
+        data = response.json()
+        logger.info(f"[GHL] Raw response keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}")
+        logger.info(f"[GHL] count field: {data.get('count', 'NOT FOUND')}, total field: {data.get('total', 'NOT FOUND')}")
+        # Try both 'count' and 'total' fields
+        count = data.get("count") or data.get("total") or 0
+        logger.info(f"[GHL] Returning count: {count}")
+        return count
 
     async def update_contact(self, contact_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Update a contact."""
@@ -110,9 +121,15 @@ class GHLClient:
         Note: GHL API doesn't support pagination for this endpoint.
         """
         params = {"locationId": self.location_id}
+        logger.info(f"[GHL] GET /businesses/ with params: {params}")
         response = await self._client.get("/businesses/", params=params)
+        logger.info(f"[GHL] Response status: {response.status_code}")
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+        logger.info(f"[GHL] Raw response keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}")
+        businesses = data.get("businesses", [])
+        logger.info(f"[GHL] Found {len(businesses)} businesses")
+        return data
 
     async def get_company(self, company_id: str) -> Dict[str, Any]:
         """Fetch a single company."""
