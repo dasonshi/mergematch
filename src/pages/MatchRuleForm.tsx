@@ -296,7 +296,7 @@ export default function MatchRuleForm() {
   };
 
   return (
-    <div className="space-y-6 pt-12 lg:pt-0">
+    <div className="space-y-6 ">
       {/* Header */}
       <div className="space-y-1">
         <Link

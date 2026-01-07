@@ -45,6 +45,7 @@ interface MergeItem {
   match_pair_id?: string;
   rule_id?: string;
   rule_name?: string;
+  error_message?: string;
 }
 
 export default function History() {
@@ -137,28 +138,41 @@ export default function History() {
     setEndDate("");
   };
 
-  const formatDate = (dateString: string) => {
+  const formatDateTime = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / (1000 * 60));
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-    if (diffHours < 1) return "Just now";
+    const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60) return `${diffMins}m ago`;
     if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays === 1) return "Yesterday";
-    if (diffDays < 7) return `${diffDays} days ago`;
-    return date.toLocaleDateString();
+    if (diffDays === 1) return `Yesterday at ${timeStr}`;
+    if (diffDays < 7) return `${diffDays} days ago at ${timeStr}`;
+    return `${date.toLocaleDateString()} at ${timeStr}`;
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, errorMessage?: string) => {
     switch (status) {
       case "completed":
         return <Badge className="bg-green-600 hover:bg-green-700">Merged</Badge>;
       case "rolled_back":
         return <Badge variant="outline" className="border-amber-500 text-amber-600">Restored</Badge>;
       case "failed":
-        return <Badge variant="destructive">Failed</Badge>;
+        return (
+          <div className="flex flex-col gap-1">
+            <Badge variant="destructive">Failed</Badge>
+            {errorMessage && (
+              <span className="text-xs text-destructive/80 max-w-[200px] truncate" title={errorMessage}>
+                {errorMessage}
+              </span>
+            )}
+          </div>
+        );
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -173,7 +187,7 @@ export default function History() {
   }
 
   return (
-    <div className="space-y-6 pt-12 lg:pt-0">
+    <div className="space-y-6">
       <PageHeader title="Merge History" />
 
       {/* Filters */}
@@ -337,10 +351,10 @@ export default function History() {
                     </div>
                   </td>
                   <td className="py-3 px-4">
-                    {getStatusBadge(item.status)}
+                    {getStatusBadge(item.status, item.error_message)}
                   </td>
                   <td className="py-3 px-4 text-muted-foreground">
-                    {formatDate(item.created_at)}
+                    {formatDateTime(item.created_at)}
                   </td>
                   <td className="py-3 px-4 text-right">
                     <div className="flex justify-end gap-2">

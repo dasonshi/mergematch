@@ -112,7 +112,7 @@ const faqItems = [
 
 export default function Help() {
   return (
-    <div className="space-y-8 pt-12 lg:pt-0">
+    <div className="space-y-8 ">
       <PageHeader 
         title="Help & Documentation" 
         description="Learn how to get the most out of MergeMatch"

@@ -262,7 +262,7 @@ export default function Dashboard() {
 
   return (
     <TooltipProvider>
-      <div className="space-y-8 pt-12 lg:pt-0">
+      <div className="space-y-8 ">
         {/* Header */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
