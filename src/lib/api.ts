@@ -241,6 +241,17 @@ class ApiClient {
     return this.fetch<MatchPair>(`/v1/matches/${id}/reject`, { method: 'POST', body: { reason } });
   }
 
+  async validateMatches(ruleId: string): Promise<{ valid: string[]; stale: string[] }> {
+    return this.fetch<{ valid: string[]; stale: string[] }>(`/v1/matches/validate?rule_id=${ruleId}`, { method: 'POST' });
+  }
+
+  async cleanupStaleMatches(matchIds: string[]): Promise<{ cleaned: number }> {
+    return this.fetch<{ cleaned: number }>('/v1/matches/cleanup-stale', {
+      method: 'POST',
+      body: { match_ids: matchIds },
+    });
+  }
+
   // Merges
   async getMergeStats() {
     return this.fetch<{ completed: number; failed: number; rolled_back: number; total: number }>('/v1/merges/stats');

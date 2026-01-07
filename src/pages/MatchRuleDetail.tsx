@@ -34,6 +34,12 @@ export default function MatchRuleDetail() {
   const [bulkMergeProgress, setBulkMergeProgress] = useState({ current: 0, total: 0, inProgress: false });
   const abortMergeRef = useRef(false);
 
+  // Stale data validation state
+  const [isValidating, setIsValidating] = useState(false);
+  const [showStaleModal, setShowStaleModal] = useState(false);
+  const [staleMatchIds, setStaleMatchIds] = useState<string[]>([]);
+  const [validMatchIds, setValidMatchIds] = useState<string[]>([]);
+
   // Fetch rule details
   const { data: rule, isLoading: ruleLoading, isPending: rulePending } = useQuery({
     queryKey: ["rule", id, locationId],
@@ -164,10 +170,86 @@ export default function MatchRuleDetail() {
     },
   });
 
+  // Validate matches before merge - checks if contacts still exist in GHL
+  const handleMergeAllClick = async () => {
+    if (!id) return;
+
+    setIsValidating(true);
+    try {
+      const result = await api.validateMatches(id);
+
+      if (result.stale.length > 0) {
+        // Some matches are stale - show modal
+        setStaleMatchIds(result.stale);
+        setValidMatchIds(result.valid);
+        setShowStaleModal(true);
+      } else {
+        // All matches are valid - show confirmation dialog
+        setShowMergeAllDialog(true);
+      }
+    } catch (error) {
+      toast({
+        title: "Validation Failed",
+        description: "Could not validate matches. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsValidating(false);
+    }
+  };
+
+  // Handle cleanup and continue with valid matches
+  const handleContinueWithValid = async () => {
+    setShowStaleModal(false);
+
+    // Clean up stale matches
+    if (staleMatchIds.length > 0) {
+      try {
+        await api.cleanupStaleMatches(staleMatchIds);
+        queryClient.invalidateQueries({ queryKey: ["matches"] });
+      } catch (e) {
+        console.error("Failed to cleanup stale matches:", e);
+      }
+    }
+
+    // Proceed with merge of valid ones
+    if (validMatchIds.length > 0) {
+      handleMergeAll(validMatchIds);
+    }
+  };
+
+  // Handle review updated list
+  const handleReviewUpdated = async () => {
+    setShowStaleModal(false);
+
+    // Clean up stale matches
+    if (staleMatchIds.length > 0) {
+      try {
+        await api.cleanupStaleMatches(staleMatchIds);
+      } catch (e) {
+        console.error("Failed to cleanup stale matches:", e);
+      }
+    }
+
+    // Refresh the matches list
+    queryClient.invalidateQueries({ queryKey: ["matches"] });
+
+    toast({
+      title: "List Updated",
+      description: `Removed ${staleMatchIds.length} stale match(es). Review the updated list.`,
+    });
+  };
+
   // Bulk merge all pending matches
-  const handleMergeAll = async () => {
+  const handleMergeAll = async (specificMatchIds?: string[]) => {
     setShowMergeAllDialog(false);
-    const matches = matchesData?.data || [];
+    const allMatches = matchesData?.data || [];
+
+    // If specific IDs provided, filter to only those; otherwise use all
+    const matches = specificMatchIds
+      ? allMatches.filter((m: any) => specificMatchIds.includes(m.id))
+      : allMatches;
+
     if (matches.length === 0) return;
 
     abortMergeRef.current = false; // Reset abort flag
@@ -280,10 +362,15 @@ export default function MatchRuleDetail() {
           </Button>
           <Button
             variant="secondary"
-            onClick={() => setShowMergeAllDialog(true)}
-            disabled={pendingMatches.length === 0 || bulkMergeProgress.inProgress}
+            onClick={handleMergeAllClick}
+            disabled={pendingMatches.length === 0 || bulkMergeProgress.inProgress || isValidating}
           >
-            {bulkMergeProgress.inProgress ? (
+            {isValidating ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Validating...
+              </>
+            ) : bulkMergeProgress.inProgress ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Merging {bulkMergeProgress.current}/{bulkMergeProgress.total}
@@ -580,9 +667,42 @@ export default function MatchRuleDetail() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleMergeAll}>
+            <AlertDialogAction onClick={() => handleMergeAll()}>
               Merge All ({pendingMatches.length})
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Stale Data Modal */}
+      <AlertDialog open={showStaleModal} onOpenChange={setShowStaleModal}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Stale Data Detected</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <p>
+                <span className="font-semibold text-destructive">{staleMatchIds.length}</span> match pair(s)
+                reference contacts that no longer exist in GoHighLevel (already merged or deleted).
+              </p>
+              {validMatchIds.length > 0 ? (
+                <p>
+                  <span className="font-semibold text-green-600">{validMatchIds.length}</span> valid match(es)
+                  can still be merged.
+                </p>
+              ) : (
+                <p className="text-muted-foreground">No valid matches remaining.</p>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:gap-0">
+            <AlertDialogCancel onClick={handleReviewUpdated}>
+              Review Updated List
+            </AlertDialogCancel>
+            {validMatchIds.length > 0 && (
+              <AlertDialogAction onClick={handleContinueWithValid}>
+                Continue with {validMatchIds.length} Valid
+              </AlertDialogAction>
+            )}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

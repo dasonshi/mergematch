@@ -151,6 +151,28 @@ async def execute_merge(
         # Update match status to merged
         supabase.table("match_pairs").update({"status": "merged"}).eq("id", match_id).execute()
 
+        # Clean up OTHER match_pairs that reference the deleted duplicate contact
+        # Mark them as stale since the contact no longer exists
+        stale_a = (
+            supabase.table("match_pairs")
+            .update({"status": "stale"})
+            .eq("record_a_id", duplicate_id)
+            .neq("id", match_id)
+            .eq("status", "pending")
+            .execute()
+        )
+        stale_b = (
+            supabase.table("match_pairs")
+            .update({"status": "stale"})
+            .eq("record_b_id", duplicate_id)
+            .neq("id", match_id)
+            .eq("status", "pending")
+            .execute()
+        )
+        stale_count = len(stale_a.data or []) + len(stale_b.data or [])
+        if stale_count > 0:
+            logger.info(f"Marked {stale_count} other match_pairs as stale (referenced deleted contact {duplicate_id})")
+
         logger.info(f"Merge {merge_id} completed successfully")
 
         return {
