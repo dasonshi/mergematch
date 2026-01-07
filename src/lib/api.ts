@@ -242,8 +242,14 @@ class ApiClient {
   }
 
   // Merges
-  async getMerges(limit = 50) {
-    return this.fetch<{ data: Merge[]; total: number }>(`/v1/merges/?limit=${limit}`);
+  async getMergeStats() {
+    return this.fetch<{ completed: number; failed: number; rolled_back: number; total: number }>('/v1/merges/stats');
+  }
+
+  async getMerges(limit = 50, status?: string) {
+    const params = new URLSearchParams({ limit: limit.toString() });
+    if (status) params.append('status', status);
+    return this.fetch<{ data: Merge[]; total: number }>(`/v1/merges/?${params}`);
   }
 
   async getMerge(id: string) {

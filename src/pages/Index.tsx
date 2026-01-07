@@ -35,6 +35,7 @@ export default function Dashboard() {
     queryClient.invalidateQueries({ queryKey: ["rules"] });
     queryClient.invalidateQueries({ queryKey: ["matches"] });
     queryClient.invalidateQueries({ queryKey: ["merges"] });
+    queryClient.invalidateQueries({ queryKey: ["merge-stats"] });
     setSyncCooldown(30);
     toast({ title: "Refreshing data..." });
   };
@@ -67,7 +68,14 @@ export default function Dashboard() {
     enabled: isAuthenticated && !!locationId,
   });
 
-  // Fetch recent merges
+  // Fetch merge stats
+  const { data: mergeStatsData } = useQuery({
+    queryKey: ['merge-stats', locationId],
+    queryFn: () => api.getMergeStats(),
+    enabled: isAuthenticated && !!locationId,
+  });
+
+  // Fetch recent merges (completed only for activity table)
   const { data: mergesData } = useQuery({
     queryKey: ['merges', locationId],
     queryFn: () => api.getMerges(10),
@@ -264,7 +272,7 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          {/* Merged This Week */}
+          {/* Merged Total */}
           <Card className="shadow-md hover:shadow-lg transition-all duration-200 hover:-translate-y-0.5 border-l-4 border-l-green-500">
             <CardContent className="p-6">
               <div className="flex items-start gap-4">
@@ -272,12 +280,19 @@ export default function Dashboard() {
                   <Check className="h-6 w-6 text-green-600" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Recent Merges</p>
+                  <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Duplicates Merged</p>
                   <p className="text-4xl font-bold mt-1">
-                    {recentMerges.length}
+                    {mergeStatsData?.completed ?? 0}
                   </p>
                   <p className="text-sm text-muted-foreground mt-0.5">
-                    duplicates merged
+                    {(mergeStatsData?.failed ?? 0) > 0 && (
+                      <span className="text-destructive">{mergeStatsData?.failed} failed</span>
+                    )}
+                    {(mergeStatsData?.failed ?? 0) > 0 && (mergeStatsData?.rolled_back ?? 0) > 0 && " · "}
+                    {(mergeStatsData?.rolled_back ?? 0) > 0 && (
+                      <span className="text-amber-600">{mergeStatsData?.rolled_back} restored</span>
+                    )}
+                    {(mergeStatsData?.failed ?? 0) === 0 && (mergeStatsData?.rolled_back ?? 0) === 0 && "total successful merges"}
                   </p>
                 </div>
               </div>
@@ -453,13 +468,13 @@ export default function Dashboard() {
                           </td>
                           <td className="py-3 px-4">
                             <Badge
-                              variant={merge.status === 'completed' ? 'default' : merge.status === 'rolled_back' ? 'outline' : 'secondary'}
+                              variant={merge.status === 'completed' ? 'default' : merge.status === 'failed' ? 'destructive' : merge.status === 'rolled_back' ? 'outline' : 'secondary'}
                               className={cn(
                                 merge.status === 'completed' && 'bg-green-600 hover:bg-green-700',
                                 merge.status === 'rolled_back' && 'border-amber-500 text-amber-600'
                               )}
                             >
-                              {merge.status === 'completed' ? 'Merged' : merge.status === 'rolled_back' ? 'Restored' : merge.status}
+                              {merge.status === 'completed' ? 'Merged' : merge.status === 'rolled_back' ? 'Restored' : merge.status === 'failed' ? 'Failed' : merge.status}
                             </Badge>
                           </td>
                           <td className="py-3 px-4 text-right">

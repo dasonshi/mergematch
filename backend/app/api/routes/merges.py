@@ -17,12 +17,36 @@ class MergeRequest(BaseModel):
     field_selections: Dict[str, str]  # field -> "a" or "b"
 
 
+@router.get("/stats")
+async def get_merge_stats(
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+):
+    """Get merge statistics by status."""
+    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
+
+    supabase = get_supabase()
+
+    # Get counts by status
+    all_merges = supabase.table("merges").select("status").eq("location_id", user.location_id).execute()
+
+    stats = {"completed": 0, "failed": 0, "rolled_back": 0, "total": 0}
+    for merge in all_merges.data:
+        status = merge.get("status", "unknown")
+        if status in stats:
+            stats[status] += 1
+        stats["total"] += 1
+
+    return stats
+
+
 @router.get("/")
 async def list_merges(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
     limit: int = 50,
     offset: int = 0,
+    status: Optional[str] = Query(None, description="Filter by status (completed, failed, rolled_back)"),
 ):
     """List merge history with rule info."""
     user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
@@ -30,9 +54,15 @@ async def list_merges(
     supabase = get_supabase()
 
     # Get merges with rule info through match_pairs
-    result = supabase.table("merges").select(
+    query = supabase.table("merges").select(
         "*, match_pairs(rule_id, match_rules(id, name))"
-    ).eq("location_id", user.location_id).order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+    ).eq("location_id", user.location_id)
+
+    # Apply status filter if provided
+    if status:
+        query = query.eq("status", status)
+
+    result = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
 
     # Flatten the rule info for easier frontend consumption
     data = []
