@@ -104,6 +104,85 @@ GHL_APP_SHARED_SECRET=616c0f6a-f8dc-4666-8e50-3a19c93463f5
 - [ ] Review `snapshots` table - rollback data
 - [ ] Review `scheduled_jobs` table - cron scheduling
 
+## Testing: Merge Strategy Configurations
+
+Test each merge strategy configuration option with CSV test data.
+
+### Master Selection Options
+| Option | Description | Test CSV |
+|--------|-------------|----------|
+| most-complete | Most fields populated wins | TBD |
+| most-recent | Last updated wins | TBD |
+| oldest | First created wins | TBD |
+| manual | Require review each time | TBD |
+
+### Conflict Resolution Options
+| Option | Description | Test CSV |
+|--------|-------------|----------|
+| prefer-master | Master record values win | TBD |
+| prefer-recent | Most recently updated value wins | TBD |
+| require-review | Manual review for conflicts | TBD |
+
+### Related Records Options
+| Option | Description | Test CSV |
+|--------|-------------|----------|
+| Notes: copy-all | Copy all notes to master | TBD |
+| Notes: dont-copy | Don't copy notes | TBD |
+| Tasks: copy-all | Copy all tasks to master | TBD |
+| Tasks: dont-copy | Don't copy tasks | TBD |
+| Opportunities: keep-all | Keep all from both | TBD |
+| Opportunities: keep-master | Keep from master only | TBD |
+| Opportunities: keep-highest | Keep highest value | TBD |
+
+### Test Scenarios
+- [ ] Create test CSV with duplicate pairs for each master selection method
+- [ ] Create test CSV with conflicting field values
+- [ ] Create test CSV with related records (notes, tasks, opportunities)
+- [ ] Verify each configuration produces expected merge result
+
+---
+
+## Testing: Paid Tier Functionality
+
+Verify each plan tier correctly gates/enables features.
+
+### Plan Tiers
+| Tier | Plan ID | Features to Test |
+|------|---------|------------------|
+| Free | 6957cf22476864bd99d6a09c | Basic match rules, limited scans |
+| Starter | 6957cf775d95882a1bda4d6c | Custom merge strategies, more rules |
+| Pro | 6957cfe65d9588c6bbda4ebf | Scheduled scans, priority support |
+| Agency | 6957d036476864bb8fd6a1cd | Multi-location, white-label |
+
+### Feature Tests
+- [ ] **Free Tier**
+  - Confirm merge strategies page locked
+  - Confirm rule limit enforced
+  - Confirm scheduled scans disabled
+
+- [ ] **Starter Tier**
+  - Confirm merge strategies page unlocked
+  - Confirm rule limit increased
+  - Confirm scheduled scans still disabled
+
+- [ ] **Pro Tier**
+  - All Starter features
+  - Confirm scheduled scans enabled
+  - Confirm auto-merge enabled
+
+- [ ] **Agency Tier**
+  - All Pro features
+  - Confirm multi-location access
+  - Confirm white-label options (if applicable)
+
+### Testing Method
+1. Use GHL sandbox with each plan tier assigned
+2. Verify UI correctly shows/hides features
+3. Verify API correctly enforces limits
+4. Document any discrepancies
+
+---
+
 ## Future Enhancements
 
 - [ ] Bulk operations (merge all with confirmation)

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Edit, Search, Play, Loader2, ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
+import { ArrowLeft, Edit, Search, Play, Loader2, ChevronDown, ChevronUp, RotateCcw, X } from "lucide-react";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
@@ -32,6 +32,7 @@ export default function MatchRuleDetail() {
   const [mergingIds, setMergingIds] = useState<Set<string>>(new Set());
   const [showMergeAllDialog, setShowMergeAllDialog] = useState(false);
   const [bulkMergeProgress, setBulkMergeProgress] = useState({ current: 0, total: 0, inProgress: false });
+  const abortMergeRef = useRef(false);
 
   // Fetch rule details
   const { data: rule, isLoading: ruleLoading, isPending: rulePending } = useQuery({
@@ -168,12 +169,22 @@ export default function MatchRuleDetail() {
     const matches = matchesData?.data || [];
     if (matches.length === 0) return;
 
+    abortMergeRef.current = false; // Reset abort flag
     setBulkMergeProgress({ current: 0, total: matches.length, inProgress: true });
 
     let successCount = 0;
     let failCount = 0;
 
     for (let i = 0; i < matches.length; i++) {
+      // Check abort flag before each merge
+      if (abortMergeRef.current) {
+        toast({
+          title: "Merge Aborted",
+          description: `Stopped after ${i} of ${matches.length} merges. ${successCount} succeeded, ${failCount} failed.`,
+        });
+        break;
+      }
+
       const match = matches[i];
       try {
         // Default all fields to "a" (master)
@@ -187,26 +198,31 @@ export default function MatchRuleDetail() {
         failCount++;
       }
       setBulkMergeProgress({ current: i + 1, total: matches.length, inProgress: true });
+
+      // Real-time update: invalidate queries after each merge
+      queryClient.invalidateQueries({ queryKey: ["merges"] });
     }
 
     setBulkMergeProgress({ current: 0, total: 0, inProgress: false });
     queryClient.invalidateQueries({ queryKey: ["matches"] });
-    queryClient.invalidateQueries({ queryKey: ["merges"] });
 
-    // Create notification for bulk merge result
-    try {
-      await api.createBulkMergeNotification(id!, rule?.name || "Unknown Rule", successCount, failCount);
-      queryClient.invalidateQueries({ queryKey: ["notifications"] });
-      queryClient.invalidateQueries({ queryKey: ["unread-count"] });
-    } catch (e) {
-      console.error("Failed to create notification:", e);
+    // Only show completion toast and create notification if not aborted
+    if (!abortMergeRef.current) {
+      // Create notification for bulk merge result
+      try {
+        await api.createBulkMergeNotification(id!, rule?.name || "Unknown Rule", successCount, failCount);
+        queryClient.invalidateQueries({ queryKey: ["notifications"] });
+        queryClient.invalidateQueries({ queryKey: ["unread-count"] });
+      } catch (e) {
+        console.error("Failed to create notification:", e);
+      }
+
+      toast({
+        title: "Bulk Merge Complete",
+        description: `Successfully merged ${successCount} records.${failCount > 0 ? ` ${failCount} failed.` : ''}`,
+        variant: failCount > 0 ? "destructive" : "default",
+      });
     }
-
-    toast({
-      title: "Bulk Merge Complete",
-      description: `Successfully merged ${successCount} records.${failCount > 0 ? ` ${failCount} failed.` : ''}`,
-      variant: failCount > 0 ? "destructive" : "default",
-    });
   };
 
   const pendingMatches = matchesData?.data || [];
@@ -277,6 +293,16 @@ export default function MatchRuleDetail() {
               </>
             )}
           </Button>
+          {bulkMergeProgress.inProgress && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => { abortMergeRef.current = true; }}
+            >
+              <X className="h-4 w-4 mr-1" />
+              Abort
+            </Button>
+          )}
           <Button variant="outline" asChild>
             <Link to={`/match-rules/${id}/edit`}>
               <Edit className="mr-2 h-4 w-4" />
@@ -484,17 +510,24 @@ export default function MatchRuleDetail() {
                           {item.master_record_name || item.master_record_id?.slice(0, 8) + "..."}
                         </td>
                         <td className="py-3 px-4">
-                          <Badge
-                            variant={item.status === 'completed' ? 'default' : item.status === 'failed' ? 'destructive' : 'outline'}
-                            className={cn(
-                              item.status === 'completed' && 'bg-green-600 hover:bg-green-700',
-                              item.status === 'rolled_back' && 'border-amber-500 text-amber-600'
+                          <div className="flex flex-col gap-1">
+                            <Badge
+                              variant={item.status === 'completed' ? 'default' : item.status === 'failed' ? 'destructive' : 'outline'}
+                              className={cn(
+                                item.status === 'completed' && 'bg-green-600 hover:bg-green-700',
+                                item.status === 'rolled_back' && 'border-amber-500 text-amber-600'
+                              )}
+                            >
+                              {item.status === 'completed' ? 'Merged' :
+                               item.status === 'rolled_back' ? 'Restored' :
+                               item.status === 'failed' ? 'Failed' : item.status}
+                            </Badge>
+                            {item.status === 'failed' && item.error_message && (
+                              <span className="text-xs text-destructive/80 max-w-[200px] truncate" title={item.error_message}>
+                                {item.error_message}
+                              </span>
                             )}
-                          >
-                            {item.status === 'completed' ? 'Merged' :
-                             item.status === 'rolled_back' ? 'Restored' :
-                             item.status === 'failed' ? 'Failed' : item.status}
-                          </Badge>
+                          </div>
                         </td>
                         <td className="py-3 px-4 text-muted-foreground">
                           {item.created_at ? new Date(item.created_at).toLocaleDateString() : "—"}
