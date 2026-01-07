@@ -102,8 +102,11 @@ class GHLClient:
 
     async def update_contact(self, contact_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Update a contact."""
+        logger.info(f"[GHL] PUT /contacts/{contact_id} with data: {data}")
         response = await self._client.put(f"/contacts/{contact_id}", json=data)
-        response.raise_for_status()
+        if response.status_code >= 400:
+            logger.error(f"[GHL] Update contact failed: {response.status_code} - {response.text}")
+            response.raise_for_status()
         return response.json()
 
     async def delete_contact(self, contact_id: str) -> None:

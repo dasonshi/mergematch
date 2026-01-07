@@ -4,6 +4,7 @@ Merge service for executing contact merges via GHL API.
 from typing import Dict, Any
 import uuid
 import logging
+import httpx
 
 from app.core.ghl.client import GHLClient
 from app.db.supabase import get_supabase
@@ -154,9 +155,22 @@ async def execute_merge(
             "fields_merged": list(merged_fields.keys()),
         }
 
+    except httpx.HTTPStatusError as e:
+        # Capture actual GHL API error response
+        error_detail = str(e)
+        try:
+            error_body = e.response.json()
+            error_detail = f"{e.response.status_code}: {error_body}"
+        except Exception:
+            error_detail = f"{e.response.status_code}: {e.response.text}"
+        logger.error(f"Merge failed (HTTP): {error_detail}")
+        supabase.table("merges").update({
+            "status": "failed",
+            "error_message": error_detail
+        }).eq("id", merge_id).execute()
+        raise
     except Exception as e:
         logger.error(f"Merge failed: {e}")
-        # Update merge status to failed
         supabase.table("merges").update({
             "status": "failed",
             "error_message": str(e)

@@ -178,6 +178,17 @@ export default function MergeDetail() {
               <p>Rolled back on: {formatDate(merge.rolled_back_at)}</p>
             )}
           </div>
+          {/* Error Message for Failed Merges */}
+          {merge.status === "failed" && merge.error_message && (
+            <div className="pt-4 border-t">
+              <p className="text-xs font-semibold uppercase tracking-wide text-destructive mb-2">Error Details</p>
+              <div className="bg-destructive/10 border border-destructive/20 rounded-md p-3">
+                <p className="text-sm text-destructive whitespace-pre-wrap break-words font-mono">
+                  {merge.error_message}
+                </p>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
