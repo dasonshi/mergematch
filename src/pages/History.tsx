@@ -164,10 +164,10 @@ export default function History() {
         return <Badge variant="outline" className="border-amber-500 text-amber-600">Restored</Badge>;
       case "failed":
         return (
-          <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
             <Badge variant="destructive">Failed</Badge>
             {errorMessage && (
-              <span className="text-xs text-destructive/80 max-w-[200px] truncate" title={errorMessage}>
+              <span className="text-xs text-destructive/80 max-w-[150px] truncate" title={errorMessage}>
                 {errorMessage}
               </span>
             )}

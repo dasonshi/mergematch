@@ -113,12 +113,21 @@ async def execute_merge(
     ]
     supabase.table("snapshots").insert(snapshots_data).execute()
 
+    # Fields that GHL accepts for contact UPDATE (from API docs)
+    # Note: companyName is read-only (derived from linked business)
+    ALLOWED_UPDATE_FIELDS = {
+        "firstName", "lastName", "name", "email", "phone",
+        "address1", "city", "state", "postalCode", "website", "timezone",
+        "dnd", "dndSettings", "inboundDndSettings", "tags", "customFields",
+        "source", "country", "assignedTo",
+    }
+
     try:
         async with GHLClient(access_token, ghl_location_id) as client:
-            # Update master record with merged fields (only non-empty fields)
+            # Update master record with merged fields (only allowed, non-empty fields)
             update_payload = {}
             for field, value in merged_fields.items():
-                if value and field not in ["id", "locationId", "dateAdded", "dateUpdated"]:
+                if value and field in ALLOWED_UPDATE_FIELDS:
                     update_payload[field] = value
 
             if update_payload:

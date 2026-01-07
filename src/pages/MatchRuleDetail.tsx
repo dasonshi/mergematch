@@ -89,7 +89,8 @@ export default function MatchRuleDetail() {
   const quickMergeMutation = useMutation({
     mutationFn: async (match: any) => {
       // Default all fields to "a" (master)
-      const fields = ["firstName", "lastName", "email", "phone", "companyName", "tags", "address1", "city", "state", "postalCode"];
+      // Note: companyName excluded - it's read-only in GHL (derived from linked business)
+        const fields = ["firstName", "lastName", "email", "phone", "tags", "address1", "city", "state", "postalCode"];
       const selections: Record<string, string> = {};
       fields.forEach(f => { selections[f] = "a"; });
       return api.executeMerge(match.id, match.record_a_id, selections);
@@ -188,7 +189,8 @@ export default function MatchRuleDetail() {
       const match = matches[i];
       try {
         // Default all fields to "a" (master)
-        const fields = ["firstName", "lastName", "email", "phone", "companyName", "tags", "address1", "city", "state", "postalCode"];
+        // Note: companyName excluded - it's read-only in GHL (derived from linked business)
+        const fields = ["firstName", "lastName", "email", "phone", "tags", "address1", "city", "state", "postalCode"];
         const selections: Record<string, string> = {};
         fields.forEach(f => { selections[f] = "a"; });
 
@@ -510,7 +512,7 @@ export default function MatchRuleDetail() {
                           {item.master_record_name || item.master_record_id?.slice(0, 8) + "..."}
                         </td>
                         <td className="py-3 px-4">
-                          <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2">
                             <Badge
                               variant={item.status === 'completed' ? 'default' : item.status === 'failed' ? 'destructive' : 'outline'}
                               className={cn(
@@ -523,7 +525,7 @@ export default function MatchRuleDetail() {
                                item.status === 'failed' ? 'Failed' : item.status}
                             </Badge>
                             {item.status === 'failed' && item.error_message && (
-                              <span className="text-xs text-destructive/80 max-w-[200px] truncate" title={item.error_message}>
+                              <span className="text-xs text-destructive/80 max-w-[150px] truncate" title={item.error_message}>
                                 {item.error_message}
                               </span>
                             )}
