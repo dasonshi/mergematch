@@ -128,8 +128,14 @@ async def execute_merge(
             # Update master record with merged fields (only allowed, non-empty fields)
             update_payload = {}
             for field, value in merged_fields.items():
-                if value and field in ALLOWED_UPDATE_FIELDS:
-                    update_payload[field] = value
+                if field not in ALLOWED_UPDATE_FIELDS:
+                    continue
+                # Skip empty/falsy values, but keep False for booleans
+                if value is None:
+                    continue
+                if isinstance(value, (list, dict, str)) and len(value) == 0:
+                    continue
+                update_payload[field] = value
 
             if update_payload:
                 logger.info(f"Updating master contact {master_record_id} with: {update_payload}")
