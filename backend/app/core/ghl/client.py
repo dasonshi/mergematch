@@ -82,17 +82,21 @@ class GHLClient:
         return response.json()
 
     async def get_contacts_count(self) -> int:
-        """Get total contact count using GET /contacts/ which returns count field."""
-        params = {"locationId": self.location_id, "limit": 1}
-        logger.info(f"[GHL] GET /contacts/ with params: {params}")
-        response = await self._client.get("/contacts/", params=params)
+        """Get total contact count using POST /contacts/search (recommended endpoint)."""
+        body = {
+            "locationId": self.location_id,
+            "page": 1,
+            "pageLimit": 1,
+        }
+        logger.info(f"[GHL] POST /contacts/search with body: {body}")
+        response = await self._client.post("/contacts/search", json=body)
         logger.info(f"[GHL] Response status: {response.status_code}")
         response.raise_for_status()
         data = response.json()
         logger.info(f"[GHL] Raw response keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}")
-        logger.info(f"[GHL] count field: {data.get('count', 'NOT FOUND')}, total field: {data.get('total', 'NOT FOUND')}")
-        # Try both 'count' and 'total' fields
-        count = data.get("count") or data.get("total") or 0
+        # Search endpoint returns 'total' for total count
+        count = data.get("total") or data.get("count") or 0
+        logger.info(f"[GHL] total field: {data.get('total', 'NOT FOUND')}, count field: {data.get('count', 'NOT FOUND')}")
         logger.info(f"[GHL] Returning count: {count}")
         return count
 
