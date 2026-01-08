@@ -274,10 +274,32 @@ async def rollback_merge(
             "restored_record_id": restored_id,
         }).eq("id", merge_id).execute()
 
-        # Update match pair status back to pending
+        # Update match pair: status back to pending AND update the record ID
+        # The restored contact has a NEW ID, so we need to update the match_pair
         match_pair_id = merge.data.get("match_pair_id")
-        if match_pair_id:
-            supabase.table("match_pairs").update({"status": "pending"}).eq("id", match_pair_id).execute()
+        old_duplicate_id = merge.data.get("duplicate_record_id")
+        if match_pair_id and restored_id:
+            # Get the match pair to check which record was the duplicate
+            match_pair = supabase.table("match_pairs").select("record_a_id, record_b_id, record_a_data, record_b_data").eq("id", match_pair_id).single().execute()
+            if match_pair.data:
+                update_data = {"status": "pending"}
+                # Update the correct record ID (a or b) with the new restored ID
+                if match_pair.data["record_a_id"] == old_duplicate_id:
+                    update_data["record_a_id"] = restored_id
+                    # Also update the snapshot data with the new ID
+                    record_data = match_pair.data.get("record_a_data", {})
+                    if record_data:
+                        record_data["id"] = restored_id
+                        update_data["record_a_data"] = record_data
+                elif match_pair.data["record_b_id"] == old_duplicate_id:
+                    update_data["record_b_id"] = restored_id
+                    record_data = match_pair.data.get("record_b_data", {})
+                    if record_data:
+                        record_data["id"] = restored_id
+                        update_data["record_b_data"] = record_data
+
+                supabase.table("match_pairs").update(update_data).eq("id", match_pair_id).execute()
+                logger.info(f"Updated match_pair {match_pair_id}: old ID {old_duplicate_id} -> new ID {restored_id}")
 
         logger.info(f"Rollback {merge_id} completed successfully")
 

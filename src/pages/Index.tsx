@@ -353,9 +353,13 @@ export default function Dashboard() {
                   </p>
                 </div>
               </div>
-              <Button variant="link" className="mt-4 p-0 h-auto font-semibold" asChild>
-                <Link to="/match-rules">Review Now <ArrowRight className="ml-1.5 h-4 w-4" /></Link>
-              </Button>
+              {rulesWithPending > 0 && (
+                <Button variant="link" className="mt-4 p-0 h-auto font-semibold" asChild>
+                  <Link to={`/match-rules/${rules.find((r: MatchRule) => pendingByRule[r.id] > 0)?.id}`}>
+                    Review Now <ArrowRight className="ml-1.5 h-4 w-4" />
+                  </Link>
+                </Button>
+              )}
             </CardContent>
           </Card>
 
