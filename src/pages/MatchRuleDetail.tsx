@@ -188,9 +188,10 @@ export default function MatchRuleDetail() {
         setShowMergeAllDialog(true);
       }
     } catch (error) {
+      console.error("Validation error:", error);
       toast({
         title: "Validation Failed",
-        description: "Could not validate matches. Please try again.",
+        description: error instanceof Error ? error.message : "Could not validate matches. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -619,7 +620,7 @@ export default function MatchRuleDetail() {
                           </div>
                         </td>
                         <td className="py-3 px-4 text-muted-foreground">
-                          {item.created_at ? new Date(item.created_at).toLocaleDateString() : "—"}
+                          {item.created_at ? new Date(item.created_at).toLocaleString() : "—"}
                         </td>
                         <td className="py-3 px-4 text-right">
                           <div className="flex justify-end gap-2">

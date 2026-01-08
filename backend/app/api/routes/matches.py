@@ -67,8 +67,8 @@ async def validate_matches(
     """
     user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
 
-    # Get GHL access token
-    tokens = await get_location_tokens(user.location_id)
+    # Get GHL access token (using ghl_location_id, not internal location_id)
+    tokens = await get_location_tokens(user.ghl_location_id)
     if not tokens:
         raise HTTPException(status_code=401, detail="No access token available")
 

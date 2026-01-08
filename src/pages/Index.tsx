@@ -527,7 +527,7 @@ export default function Dashboard() {
                       {recentMerges.map((merge: Merge) => (
                         <tr key={merge.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
                           <td className="py-3 px-4">
-                            {new Date(merge.created_at).toLocaleDateString()}
+                            {new Date(merge.created_at).toLocaleString()}
                           </td>
                           <td className="py-3 px-4 font-medium">
                             {merge.master_record_name || 'Unknown'}
@@ -557,15 +557,29 @@ export default function Dashboard() {
                             </Tooltip>
                           </td>
                           <td className="py-3 px-4">
-                            <Badge
-                              variant={merge.status === 'completed' ? 'default' : merge.status === 'failed' ? 'destructive' : merge.status === 'rolled_back' ? 'outline' : 'secondary'}
-                              className={cn(
-                                merge.status === 'completed' && 'bg-green-600 hover:bg-green-700',
-                                merge.status === 'rolled_back' && 'border-amber-500 text-amber-600'
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                variant={merge.status === 'completed' ? 'default' : merge.status === 'failed' ? 'destructive' : merge.status === 'rolled_back' ? 'outline' : 'secondary'}
+                                className={cn(
+                                  merge.status === 'completed' && 'bg-green-600 hover:bg-green-700',
+                                  merge.status === 'rolled_back' && 'border-amber-500 text-amber-600'
+                                )}
+                              >
+                                {merge.status === 'completed' ? 'Merged' : merge.status === 'rolled_back' ? 'Restored' : merge.status === 'failed' ? 'Failed' : merge.status}
+                              </Badge>
+                              {merge.status === 'failed' && merge.error_message && (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="text-xs text-destructive/80 max-w-[120px] truncate cursor-help">
+                                      {merge.error_message.slice(0, 30)}...
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="max-w-xs">
+                                    <p className="text-xs whitespace-pre-wrap">{merge.error_message}</p>
+                                  </TooltipContent>
+                                </Tooltip>
                               )}
-                            >
-                              {merge.status === 'completed' ? 'Merged' : merge.status === 'rolled_back' ? 'Restored' : merge.status === 'failed' ? 'Failed' : merge.status}
-                            </Badge>
+                            </div>
                           </td>
                           <td className="py-3 px-4 text-right">
                             <div className="flex items-center justify-end gap-1">

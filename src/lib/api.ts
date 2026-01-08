@@ -406,6 +406,7 @@ export interface Merge {
   status: string;
   created_at: string;
   rule_name?: string;
+  error_message?: string;
 }
 
 export interface ObjectField {
