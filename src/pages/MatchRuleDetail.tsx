@@ -172,25 +172,34 @@ export default function MatchRuleDetail() {
   });
 
   // Validate matches before merge - checks if contacts still exist in GHL
+  // Validation now auto-cleans stale matches in the backend
   const handleMergeAllClick = async () => {
     if (!id) return;
 
     setIsValidating(true);
     try {
       console.log("Starting validation for rule:", id);
-      const result = await api.validateMatches(id);
+      const result = await api.validateMatches(id) as { valid: string[]; stale: string[]; stale_cleaned?: number };
       console.log("Validation result:", result);
 
-      if (result.stale.length > 0) {
-        setStaleMatchIds(result.stale);
-        setValidMatchIds(result.valid);
-        setShowStaleModal(true);
-      } else if (result.valid.length > 0) {
+      // Refresh matches list (stale ones were auto-cleaned by backend)
+      queryClient.invalidateQueries({ queryKey: ["matches"] });
+
+      if (result.stale_cleaned && result.stale_cleaned > 0) {
+        toast({
+          title: "Stale Matches Cleaned",
+          description: `Removed ${result.stale_cleaned} stale match(es) - contacts no longer exist in GHL.`,
+        });
+      }
+
+      if (result.valid.length > 0) {
         setShowMergeAllDialog(true);
       } else {
         toast({
-          title: "No Matches",
-          description: "No pending matches found to merge.",
+          title: "No Valid Matches",
+          description: result.stale_cleaned
+            ? "All matches were stale and have been cleaned up."
+            : "No pending matches found to merge.",
         });
       }
     } catch (error) {

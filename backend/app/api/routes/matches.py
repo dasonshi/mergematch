@@ -128,18 +128,21 @@ async def validate_matches(
                 existing_ids.add(contact_id)
                 logger.warning(f"Contact {contact_id} check error: {e}, assuming exists")
 
-    # Categorize matches
+    # Categorize matches and mark stale ones in DB
     valid = []
     stale = []
     for m in matches.data:
         if m["record_a_id"] in existing_ids and m["record_b_id"] in existing_ids:
             valid.append(m["id"])
         else:
+            # Mark as stale directly in DB
+            supabase.table("match_pairs").update({"status": "stale"}).eq("id", m["id"]).execute()
             stale.append(m["id"])
+            logger.info(f"Marked match {m['id']} as stale - contact(s) no longer exist in GHL")
 
-    logger.info(f"Validation result: {len(valid)} valid, {len(stale)} stale")
+    logger.info(f"Validation result: {len(valid)} valid, {len(stale)} stale (auto-cleaned)")
 
-    return {"valid": valid, "stale": stale}
+    return {"valid": valid, "stale": stale, "stale_cleaned": len(stale)}
 
 
 @router.post("/cleanup-stale")
