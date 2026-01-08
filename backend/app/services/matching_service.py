@@ -246,9 +246,32 @@ async def run_scan(
         logger.info(f"Sample email field: {sample.get('email')}")
         logger.info(f"Sample phone field: {sample.get('phone')}")
 
+    # Build set of valid contact IDs from GHL response
+    valid_contact_ids = {record.get("id") for record in records if record.get("id")}
+
+    # Proactively clean up stale pending match_pairs that reference deleted contacts
+    existing_pending = supabase.table("match_pairs").select(
+        "id, record_a_id, record_b_id"
+    ).eq("rule_id", rule_id).eq("location_id", internal_location_id).eq("status", "pending").execute()
+
+    stale_count = 0
+    for match in existing_pending.data:
+        record_a_exists = match["record_a_id"] in valid_contact_ids
+        record_b_exists = match["record_b_id"] in valid_contact_ids
+
+        if not record_a_exists or not record_b_exists:
+            supabase.table("match_pairs").update({"status": "stale"}).eq("id", match["id"]).execute()
+            stale_count += 1
+            logger.info(f"Marked match {match['id']} as stale - contact(s) no longer exist in GHL")
+
+    if stale_count > 0:
+        logger.info(f"Cleaned up {stale_count} stale match pairs during scan")
+
     if len(records) < 2:
         return {
             "matches_found": 0,
+            "matches_stored": 0,
+            "stale_cleaned": stale_count,
             "records_scanned": len(records),
             "message": "Not enough records to compare"
         }
@@ -323,6 +346,7 @@ async def run_scan(
     return {
         "matches_found": len(matches_found),
         "matches_stored": len(stored_matches),
+        "stale_cleaned": stale_count,
         "records_scanned": len(records),
         "auto_approved": sum(1 for m in matches_found if m["auto_merge"]),
         "pending_review": sum(1 for m in matches_found if not m["auto_merge"]),

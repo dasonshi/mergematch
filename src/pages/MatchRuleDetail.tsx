@@ -75,10 +75,11 @@ export default function MatchRuleDetail() {
   // Scan mutation
   const scanMutation = useMutation({
     mutationFn: () => api.scanRule(id!),
-    onSuccess: (data) => {
+    onSuccess: (data: { matches_found: number; records_scanned: number; stale_cleaned?: number }) => {
+      const staleMsg = data.stale_cleaned ? ` Cleaned ${data.stale_cleaned} stale.` : '';
       toast({
         title: "Scan Complete",
-        description: `Found ${data.matches_found} matches from ${data.records_scanned} records.`,
+        description: `Found ${data.matches_found} matches from ${data.records_scanned} records.${staleMsg}`,
       });
       queryClient.invalidateQueries({ queryKey: ["matches"] });
     },
