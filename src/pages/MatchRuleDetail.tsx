@@ -171,15 +171,9 @@ export default function MatchRuleDetail() {
   });
 
   // Validate matches before merge - checks if contacts still exist in GHL
-  // TEMPORARILY BYPASSED to test if merges work without validation
   const handleMergeAllClick = async () => {
     if (!id) return;
 
-    // TEMPORARY: Skip validation, go straight to merge dialog
-    // This helps isolate whether 500 errors are from validation or merge
-    setShowMergeAllDialog(true);
-
-    /* ORIGINAL CODE - restore after debugging:
     setIsValidating(true);
     try {
       console.log("Starting validation for rule:", id);
@@ -208,7 +202,6 @@ export default function MatchRuleDetail() {
     } finally {
       setIsValidating(false);
     }
-    */
   };
 
   // Handle cleanup and continue with valid matches

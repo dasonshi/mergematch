@@ -103,10 +103,24 @@ async def validate_matches(
                 await client.get_contact(contact_id)
                 existing_ids.add(contact_id)
             except httpx.HTTPStatusError as e:
+                # GHL returns 404 OR 400 with "Contact not found" for deleted contacts
                 if e.response.status_code == 404:
                     logger.info(f"Contact {contact_id} not found in GHL (404)")
+                elif e.response.status_code == 400:
+                    # Check if it's a "Contact not found" error
+                    try:
+                        error_body = e.response.json()
+                        if "not found" in error_body.get("message", "").lower():
+                            logger.info(f"Contact {contact_id} not found in GHL (400: {error_body.get('message')})")
+                        else:
+                            # Other 400 error - assume exists
+                            existing_ids.add(contact_id)
+                            logger.warning(f"Contact {contact_id} check failed with 400: {error_body}, assuming exists")
+                    except Exception:
+                        # Can't parse response, treat as not found to be safe
+                        logger.info(f"Contact {contact_id} returned 400, treating as not found")
                 else:
-                    # Assume exists if error is not 404
+                    # Other errors (5xx, etc) - assume exists
                     existing_ids.add(contact_id)
                     logger.warning(f"Contact {contact_id} check failed with {e.response.status_code}, assuming exists")
             except Exception as e:
