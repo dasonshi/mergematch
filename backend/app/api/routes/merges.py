@@ -85,7 +85,13 @@ async def execute_merge_route(
 ):
     """Execute a merge operation."""
     user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-    tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
+
+    # Get tokens with better error handling
+    try:
+        tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Token retrieval failed: {str(e)}")
+
     if not tokens:
         raise HTTPException(status_code=401, detail="Location not authenticated or token refresh failed")
 

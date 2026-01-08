@@ -171,21 +171,32 @@ export default function MatchRuleDetail() {
   });
 
   // Validate matches before merge - checks if contacts still exist in GHL
+  // TEMPORARILY BYPASSED to test if merges work without validation
   const handleMergeAllClick = async () => {
     if (!id) return;
 
+    // TEMPORARY: Skip validation, go straight to merge dialog
+    // This helps isolate whether 500 errors are from validation or merge
+    setShowMergeAllDialog(true);
+
+    /* ORIGINAL CODE - restore after debugging:
     setIsValidating(true);
     try {
+      console.log("Starting validation for rule:", id);
       const result = await api.validateMatches(id);
+      console.log("Validation result:", result);
 
       if (result.stale.length > 0) {
-        // Some matches are stale - show modal
         setStaleMatchIds(result.stale);
         setValidMatchIds(result.valid);
         setShowStaleModal(true);
-      } else {
-        // All matches are valid - show confirmation dialog
+      } else if (result.valid.length > 0) {
         setShowMergeAllDialog(true);
+      } else {
+        toast({
+          title: "No Matches",
+          description: "No pending matches found to merge.",
+        });
       }
     } catch (error) {
       console.error("Validation error:", error);
@@ -197,6 +208,7 @@ export default function MatchRuleDetail() {
     } finally {
       setIsValidating(false);
     }
+    */
   };
 
   // Handle cleanup and continue with valid matches
