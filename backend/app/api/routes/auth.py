@@ -2,7 +2,7 @@
 Authentication routes for MergeMatch.
 Handles OAuth flow with GHL and JWT token management.
 """
-from fastapi import APIRouter, HTTPException, Query, Depends, Header
+from fastapi import APIRouter, HTTPException, Query, Depends, Header, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from typing import Optional
@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 
 from app.config import settings
+from app.core.rate_limit import limiter, RATE_LIMIT_AUTH
 from app.core.ghl.oauth import GHLOAuth
 from app.core.security import (
     create_access_token,
@@ -50,7 +51,8 @@ class RefreshRequest(BaseModel):
 
 
 @router.get("/install")
-async def install():
+@limiter.limit(RATE_LIMIT_AUTH)
+async def install(request: Request):
     """
     Start the GHL OAuth flow.
     Generates a secure state parameter for CSRF protection.
@@ -62,7 +64,9 @@ async def install():
 
 
 @router.get("/callback")
+@limiter.limit(RATE_LIMIT_AUTH)
 async def callback(
+    request: Request,
     code: str = Query(None),
     state: str = Query(None),
     error: str = Query(None),
@@ -153,7 +157,8 @@ async def callback(
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh_tokens(body: RefreshRequest):
+@limiter.limit(RATE_LIMIT_AUTH)
+async def refresh_tokens(request: Request, body: RefreshRequest):
     """
     Refresh an expired access token using a refresh token.
     """
@@ -329,7 +334,8 @@ class AppContextRequest(BaseModel):
 
 
 @router.post("/app-context")
-async def app_context(body: AppContextRequest):
+@limiter.limit(RATE_LIMIT_AUTH)
+async def app_context(request: Request, body: AppContextRequest):
     """
     GHL SSO app context endpoint.
     Decrypts user data from GHL iframe postMessage and validates authentication.

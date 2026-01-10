@@ -29,8 +29,9 @@ import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
 
-// Build GHL contact URL
-const getGhlContactUrl = (locationId: string, contactId: string) => {
+// Build CRM contact URL
+const getCrmContactUrl = (locationId: string, contactId: string) => {
+  // TODO: Make base URL configurable for whitelabel
   return `https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${contactId}`;
 };
 

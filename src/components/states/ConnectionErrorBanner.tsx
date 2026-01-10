@@ -12,7 +12,7 @@ export function ConnectionErrorBanner({ onReconnect }: ConnectionErrorBannerProp
       <AlertTriangle className="h-4 w-4 text-warning" />
       <AlertDescription className="flex items-center justify-between">
         <span className="text-warning-foreground">
-          GHL connection issue - some features may be unavailable
+          Connection issue - some features may be unavailable
         </span>
         {onReconnect && (
           <Button variant="outline" size="sm" onClick={onReconnect} className="ml-4">

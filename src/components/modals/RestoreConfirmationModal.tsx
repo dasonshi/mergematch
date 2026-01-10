@@ -46,7 +46,7 @@ export function RestoreConfirmationModal({
                 <ul className="space-y-1">
                   <li className="flex items-start gap-2">
                     <span className="text-muted-foreground">•</span>
-                    <span>Will have a NEW GHL contact ID</span>
+                    <span>Will have a NEW contact ID</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-muted-foreground">•</span>

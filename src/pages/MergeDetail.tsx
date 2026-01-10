@@ -45,9 +45,9 @@ export default function MergeDetail() {
   const masterSnapshot = merge.master_snapshot || {};
   const duplicateSnapshot = merge.duplicate_snapshot || {};
   const fieldSelections = merge.field_selections || {};
-  const ghlLocationId = merge.ghl_location_id || locationId;
+  const crmLocationId = merge.ghl_location_id || locationId;
 
-  // Build GHL contact URL
+  // Build CRM contact URL
   const getGhlContactUrl = (contactId: string) => {
     return `https://app.gohighlevel.com/v2/location/${ghlLocationId}/contacts/detail/${contactId}`;
   };

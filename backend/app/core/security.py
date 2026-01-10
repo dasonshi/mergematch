@@ -44,7 +44,7 @@ class AuthenticatedUser(BaseModel):
 
 def get_secret_key() -> str:
     """Get the secret key, validating it's properly set."""
-    if not settings.SECRET_KEY or settings.SECRET_KEY == "change-me-in-production":
+    if not settings.SECRET_KEY:
         if settings.ENVIRONMENT == "production":
             raise RuntimeError("SECRET_KEY must be set to a secure value in production!")
         # In development, use a consistent but insecure key
@@ -192,46 +192,32 @@ async def get_current_user(
 
 async def get_current_user_flexible(
     authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = None,  # Query param fallback
+    location_id: Optional[str] = None,  # Query param fallback (deprecated)
 ) -> AuthenticatedUser:
     """
-    Flexible auth dependency that supports BOTH JWT and legacy query param.
-
-    Priority:
-    1. JWT Bearer token (preferred, secure)
-    2. Query param location_id (legacy, deprecated)
-
-    This allows gradual migration from query params to JWT.
+    Auth dependency - JWT Bearer token required.
+    Legacy query param auth has been removed for security.
     """
-    # Try JWT first (preferred method)
+    import logging
+    logger = logging.getLogger(__name__)
+
+    # JWT Bearer token (required method)
     if authorization:
         parts = authorization.split()
         if len(parts) == 2 and parts[0].lower() == "bearer":
             token = parts[1]
-            try:
-                payload = verify_token(token, token_type="access")
-                return AuthenticatedUser(
-                    location_id=payload.location_id,
-                    ghl_location_id=payload.ghl_location_id,
-                    tenant_id=payload.tenant_id,
-                    plan=payload.plan,
-                )
-            except HTTPException:
-                pass  # Fall through to legacy method
-
-    # Legacy fallback: query param (deprecated, but supported for transition)
-    if location_id:
-        # Import here to avoid circular imports
-        from app.services.auth_service import get_location_tokens
-
-        tokens = await get_location_tokens(location_id)
-        if tokens:
+            payload = verify_token(token, token_type="access")
             return AuthenticatedUser(
-                location_id=str(tokens["location_id"]),
-                ghl_location_id=location_id,
-                tenant_id=str(tokens["tenant_id"]),
-                plan=tokens.get("plan", "free"),
+                location_id=payload.location_id,
+                ghl_location_id=payload.ghl_location_id,
+                tenant_id=payload.tenant_id,
+                plan=payload.plan,
             )
+
+    # Legacy query param auth - REMOVED for security
+    # If you're seeing this error, update your client to use JWT Bearer tokens
+    if location_id:
+        logger.warning(f"Rejected legacy query param auth attempt for location: {location_id}")
 
     # No valid auth provided
     raise HTTPException(
@@ -367,8 +353,8 @@ def validate_security_config():
     if settings.ENVIRONMENT == "production":
         errors = []
 
-        if not settings.SECRET_KEY or settings.SECRET_KEY == "change-me-in-production":
-            errors.append("SECRET_KEY must be set to a secure random value")
+        if not settings.SECRET_KEY:
+            errors.append("SECRET_KEY must be set to a secure random value (generate with: openssl rand -hex 32)")
         elif len(settings.SECRET_KEY) < 32:
             errors.append("SECRET_KEY should be at least 32 characters")
 
@@ -387,7 +373,7 @@ def validate_security_config():
             sys.exit(1)
     else:
         # Development warnings
-        if not settings.SECRET_KEY or settings.SECRET_KEY == "change-me-in-production":
+        if not settings.SECRET_KEY:
             print("⚠️  Warning: Using insecure default SECRET_KEY (OK for development)")
         if not settings.TOKEN_ENCRYPTION_KEY:
             print("⚠️  Warning: TOKEN_ENCRYPTION_KEY not set (OK for development)")

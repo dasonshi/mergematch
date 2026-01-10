@@ -7,9 +7,10 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
 
-    # Security - MUST be changed in production
+    # Security - MUST be set in production
     # SECRET_KEY: Used for JWT signing, must be 32+ characters
-    SECRET_KEY: str = "change-me-in-production"
+    # Generate with: openssl rand -hex 32
+    SECRET_KEY: str = ""
 
     # JWT Configuration
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60

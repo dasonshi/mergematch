@@ -133,7 +133,7 @@ export default function Settings() {
           <div className="flex items-start justify-between">
             <div className="space-y-3">
               <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">GoHighLevel Status:</span>
+                <span className="text-sm text-muted-foreground">CRM Status:</span>
                 {connectionStatus === 'connected' ? (
                   <span className="flex items-center gap-1.5">
                     <span className="h-2 w-2 rounded-full bg-success animate-pulse" />
@@ -192,7 +192,7 @@ export default function Settings() {
             )}
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">Billing:</span>
-              <span className="text-sm">Managed via GHL Marketplace</span>
+              <span className="text-sm">Managed via Marketplace</span>
             </div>
           </div>
 
@@ -411,14 +411,14 @@ export default function Settings() {
                   <Label htmlFor="company-name">Company Name</Label>
                   <div className="flex items-center gap-2">
                     <Input id="company-name" defaultValue="Acme Marketing Agency" />
-                    <span className="text-xs text-muted-foreground whitespace-nowrap">(from GHL)</span>
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">(from CRM)</span>
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="logo-url">Logo URL</Label>
                   <div className="flex items-center gap-2">
                     <Input id="logo-url" defaultValue="https://acme.com/logo.png" />
-                    <span className="text-xs text-muted-foreground whitespace-nowrap">(from GHL)</span>
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">(from CRM)</span>
                   </div>
                 </div>
               </div>
@@ -457,10 +457,10 @@ export default function Settings() {
                   <span className="font-medium">Force Full Resync</span>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Clear local cache and re-pull all records from GHL.
+                  Clear local cache and re-pull all records from your CRM.
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  Use if data seems out of sync after a large GHL import.
+                  Use if data seems out of sync after a large import.
                 </p>
               </div>
               <AlertDialog>
@@ -471,7 +471,7 @@ export default function Settings() {
                   <AlertDialogHeader>
                     <AlertDialogTitle>Force Full Resync?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      This will clear all cached data and re-pull records from GoHighLevel. 
+                      This will clear all cached data and re-pull records from your CRM.
                       This process may take several minutes depending on your data volume.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
@@ -500,7 +500,7 @@ export default function Settings() {
                   Remove all match rules, merge history, and settings.
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  Your GHL contacts will NOT be affected.
+                  Your CRM contacts will NOT be affected.
                 </p>
               </div>
               <AlertDialog>
@@ -511,8 +511,8 @@ export default function Settings() {
                   <AlertDialogHeader>
                     <AlertDialogTitle>Delete All Data?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      This will permanently delete all match rules, merge history, and settings. 
-                      Your GoHighLevel contacts will not be affected. This action cannot be undone.
+                      This will permanently delete all match rules, merge history, and settings.
+                      Your CRM contacts will not be affected. This action cannot be undone.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
@@ -540,7 +540,7 @@ export default function Settings() {
                   <span className="font-medium">Disconnect Account</span>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Revoke MergeMatch's access to this GHL location.
+                  Revoke MergeMatch's access to this location.
                 </p>
                 <p className="text-sm text-muted-foreground">
                   All data will be deleted. You can reinstall from Marketplace.
@@ -554,8 +554,8 @@ export default function Settings() {
                   <AlertDialogHeader>
                     <AlertDialogTitle>Disconnect Account?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      This will revoke MergeMatch's access to your GoHighLevel location and 
-                      permanently delete all data. You can reinstall from the GHL Marketplace 
+                      This will revoke MergeMatch's access to your CRM location and
+                      permanently delete all data. You can reinstall from the Marketplace
                       to reconnect. This action cannot be undone.
                     </AlertDialogDescription>
                   </AlertDialogHeader>

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query, Header
+from fastapi import APIRouter, HTTPException, Query, Header, Request
 from pydantic import BaseModel
 from typing import Dict, Optional
 import uuid
@@ -7,6 +7,7 @@ from app.db.supabase import get_supabase
 from app.services.auth_service import get_location_tokens_with_refresh
 from app.services.merge_service import execute_merge, rollback_merge
 from app.core.security import get_current_user_flexible
+from app.core.rate_limit import limiter, RATE_LIMIT_MERGE
 
 router = APIRouter()
 
@@ -78,8 +79,10 @@ async def list_merges(
 
 
 @router.post("/")
+@limiter.limit(RATE_LIMIT_MERGE)
 async def execute_merge_route(
-    request: MergeRequest,
+    request: Request,
+    body: MergeRequest,
     authorization: Optional[str] = Header(None, alias="Authorization"),
     location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
 ):
@@ -97,9 +100,9 @@ async def execute_merge_route(
 
     try:
         result = await execute_merge(
-            match_id=request.match_id,
-            master_record_id=request.master_record_id,
-            field_selections=request.field_selections,
+            match_id=body.match_id,
+            master_record_id=body.master_record_id,
+            field_selections=body.field_selections,
             access_token=tokens["access_token"],
             ghl_location_id=user.ghl_location_id,
             tenant_id=user.tenant_id,

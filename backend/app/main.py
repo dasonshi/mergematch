@@ -4,17 +4,13 @@ MergeMatch API - Duplicate detection & merge platform for GoHighLevel
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
 from app.api.routes import auth, health, matches, rules, merges, jobs, webhooks, contacts, companies, fields, notifications, sync, cron
 from app.core.security import validate_security_config
-
-
-# Rate limiter
-limiter = Limiter(key_func=get_remote_address)
+from app.core.rate_limit import limiter
 
 
 @asynccontextmanager

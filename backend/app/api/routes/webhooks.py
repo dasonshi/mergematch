@@ -8,6 +8,7 @@ from app.services.billing_service import (
     handle_app_uninstall,
     handle_plan_change,
 )
+from app.core.rate_limit import limiter, RATE_LIMIT_WEBHOOK
 
 router = APIRouter()
 
@@ -27,6 +28,7 @@ def verify_webhook_signature(payload: bytes, signature: str) -> bool:
 
 
 @router.post("/ghl")
+@limiter.limit(RATE_LIMIT_WEBHOOK)
 async def ghl_webhook(
     request: Request,
     x_ghl_signature: str = Header(None),
