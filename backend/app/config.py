@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     # Security
     TOKEN_ENCRYPTION_KEY: str = ""
 
+    # Cron Job Security (for Render Cron Jobs)
+    CRON_SECRET: str = ""
+
     # Frontend
     FRONTEND_URL: str = "http://localhost:8081"
 

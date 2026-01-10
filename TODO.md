@@ -24,6 +24,28 @@ GHL_PLAN_MAPPING=6957cf22476864bd99d6a09c:free,6957cf775d95882a1bda4d6c:starter,
 GHL_APP_SHARED_SECRET=616c0f6a-f8dc-4666-8e50-3a19c93463f5
 ```
 
+### Render Cron Job (Scheduled Scans)
+
+**To enable scheduled scans:**
+
+1. **Add environment variable in Render:**
+   ```
+   CRON_SECRET=<generate-with: openssl rand -hex 32>
+   ```
+
+2. **Create Cron Job in Render Dashboard:**
+   - Go to your web service → "Cron Jobs" tab → Create new
+   - Name: `process-scheduled-scans`
+   - Schedule: `0 * * * *` (every hour at minute 0)
+   - Command:
+     ```bash
+     curl -X POST https://mergematch.onrender.com/cron/process-scheduled-scans \
+       -H "X-Cron-Secret: $CRON_SECRET" \
+       -H "Content-Type: application/json"
+     ```
+
+**Note:** Scheduled scans only run for Pro/Agency tier users.
+
 ---
 
 ## Services to Implement
