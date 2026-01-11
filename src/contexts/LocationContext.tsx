@@ -180,11 +180,10 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     setConnectionStatus('connecting');
 
     try {
-      // Check for tokens from OAuth callback first
+      // Check for OAuth callback params
       const params = new URLSearchParams(window.location.search);
-      const accessToken = params.get('access_token');
-      const refreshToken = params.get('refresh_token');
-      const urlLocationId = params.get('location_id');
+      const exchangeCode = params.get('code');
+      const installed = params.get('installed');
       const oauthError = params.get('error');
 
       // Handle OAuth error
@@ -196,13 +195,47 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // If we got JWT tokens from OAuth callback, store them
-      if (accessToken && refreshToken) {
-        console.log('✅ Got JWT tokens from OAuth callback');
-        api.setTokens({ accessToken, refreshToken });
-        if (urlLocationId) {
-          localStorage.setItem('ghl_location_id', urlLocationId);
+      // If we got an exchange code from OAuth callback, exchange it for tokens
+      // This is the secure POST redirect flow - tokens never appear in URL
+      if (exchangeCode && installed === 'true') {
+        console.log('🔐 Got exchange code from OAuth callback, exchanging for tokens...');
+
+        try {
+          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+          const response = await fetch(`${apiUrl}/auth/exchange-code`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code: exchangeCode }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            console.log('✅ Token exchange successful');
+            api.setTokens({
+              accessToken: data.access_token,
+              refreshToken: data.refresh_token,
+            });
+            if (data.location_id) {
+              localStorage.setItem('ghl_location_id', data.location_id);
+            }
+          } else {
+            console.error('❌ Token exchange failed:', response.status);
+            setError('Authentication failed. Please try again.');
+            setConnectionStatus('error');
+            window.history.replaceState({}, '', window.location.pathname);
+            setIsLoading(false);
+            return;
+          }
+        } catch (err) {
+          console.error('❌ Token exchange error:', err);
+          setError('Authentication failed. Please try again.');
+          setConnectionStatus('error');
+          window.history.replaceState({}, '', window.location.pathname);
+          setIsLoading(false);
+          return;
         }
+
+        // Clear URL (remove code)
         window.history.replaceState({}, '', window.location.pathname);
       }
 

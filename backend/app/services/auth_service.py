@@ -258,3 +258,65 @@ async def get_location_tokens_with_refresh(ghl_location_id: str) -> Optional[dic
         "trial_ends_at": tenant.get("trial_ends_at"),
         "ghl_plan_id": tenant.get("ghl_plan_id"),
     }
+
+
+# ============================================================================
+# One-time Exchange Code functions (POST redirect flow for security)
+# ============================================================================
+
+async def store_exchange_code(
+    code: str,
+    location_id: str,
+    ghl_location_id: str,
+    jwt_access_token: str,
+    jwt_refresh_token: str,
+) -> None:
+    """
+    Store a one-time exchange code with JWT tokens.
+    Code expires after 5 minutes and can only be used once.
+    """
+    supabase = get_supabase()
+
+    supabase.table("auth_exchange_codes").insert({
+        "code": code,
+        "location_id": location_id,
+        "ghl_location_id": ghl_location_id,
+        "jwt_access_token": jwt_access_token,
+        "jwt_refresh_token": jwt_refresh_token,
+        # expires_at defaults to NOW() + 5 minutes in database
+    }).execute()
+
+
+async def get_and_use_exchange_code(code: str) -> Optional[dict]:
+    """
+    Get exchange code data and mark it as used (one-time use).
+    Returns None if code is invalid, expired, or already used.
+    """
+    supabase = get_supabase()
+
+    # Find unused, non-expired code
+    result = supabase.table("auth_exchange_codes").select("*").eq(
+        "code", code
+    ).is_("used_at", "null").gte(
+        "expires_at", datetime.utcnow().isoformat()
+    ).single().execute()
+
+    if not result.data:
+        logger.warning(f"Invalid or expired exchange code attempted")
+        return None
+
+    exchange_data = result.data
+
+    # Mark as used immediately (prevent replay attacks)
+    supabase.table("auth_exchange_codes").update({
+        "used_at": datetime.utcnow().isoformat()
+    }).eq("id", exchange_data["id"]).execute()
+
+    logger.info(f"Exchange code used for location {exchange_data['ghl_location_id']}")
+
+    return {
+        "jwt_access_token": exchange_data["jwt_access_token"],
+        "jwt_refresh_token": exchange_data["jwt_refresh_token"],
+        "ghl_location_id": exchange_data["ghl_location_id"],
+        "location_id": exchange_data["location_id"],
+    }

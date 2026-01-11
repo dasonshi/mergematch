@@ -188,7 +188,7 @@ export default function MatchRuleDetail() {
       if (result.stale_cleaned && result.stale_cleaned > 0) {
         toast({
           title: "Stale Matches Cleaned",
-          description: `Removed ${result.stale_cleaned} stale match(es) - contacts no longer exist in GHL.`,
+          description: `Removed ${result.stale_cleaned} stale match(es) - contacts no longer exist.`,
         });
       }
 
@@ -676,7 +676,7 @@ export default function MatchRuleDetail() {
             <AlertDialogTitle>Merge All Pending Matches?</AlertDialogTitle>
             <AlertDialogDescription>
               This will merge <span className="font-semibold">{pendingMatches.length}</span> pending matches
-              using Record A as the master for each pair. All duplicate records will be deleted from GoHighLevel.
+              using Record A as the master for each pair. All duplicate records will be deleted.
               <br /><br />
               Snapshots will be saved for 30-day rollback. This action cannot be easily undone in bulk.
             </AlertDialogDescription>
@@ -698,7 +698,7 @@ export default function MatchRuleDetail() {
             <AlertDialogDescription className="space-y-2">
               <p>
                 <span className="font-semibold text-destructive">{staleMatchIds.length}</span> match pair(s)
-                reference contacts that no longer exist in GoHighLevel (already merged or deleted).
+                reference contacts that no longer exist (already merged or deleted).
               </p>
               {validMatchIds.length > 0 ? (
                 <p>

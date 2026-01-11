@@ -38,26 +38,26 @@
 - [x] Add rate limiting to critical endpoints (auth, merges, webhooks)
 - [x] Add authentication to jobs routes
 - [x] Remove legacy query param auth (JWT-only)
-- [ ] Implement POST redirect flow for JWT tokens (tokens currently in URL)
+- [x] Implement POST redirect flow for JWT tokens (one-time exchange codes)
 
-### White-labeling (IN PROGRESS)
-Files with GHL/GoHighLevel mentions to update:
+### White-labeling (COMPLETED)
+All GHL/GoHighLevel mentions have been removed:
 
 - [x] `index.html` - Title/meta updated to MergeMatch
 - [x] `Settings.tsx` - Replace GHL with CRM
 - [x] `empty-state.tsx` - Updated
 - [x] `ConnectionErrorBanner.tsx` - Updated
 - [x] `RestoreConfirmationModal.tsx` - Updated
-- [x] `History.tsx` - Partial (function renamed, labels pending)
-- [x] `MergeDetail.tsx` - Partial
-- [ ] `Index.tsx` - "View in GHL", "Connect to GoHighLevel"
-- [ ] `Help.tsx` - GoHighLevel mentions in help text
-- [ ] `MatchRuleDetail.tsx` - Dialog text
-- [ ] `MatchReview.tsx` - Dialog text
+- [x] `History.tsx` - Updated (getCrmContactUrl, dialog text)
+- [x] `MergeDetail.tsx` - Updated (getCrmContactUrl, View Contact)
+- [x] `Index.tsx` - Updated (Connect Your CRM, simplified rollback toast)
+- [x] `Help.tsx` - Updated (removed GoHighLevel from documentation)
+- [x] `MatchRuleDetail.tsx` - Updated (dialog text)
+- [x] `MatchReview.tsx` - Updated (merge warning text)
 
-### UI Cleanup
-- [ ] Remove email notification toggles from Settings (use in-app only)
-- [ ] Add crmBaseUrl to LocationContext for whitelabel support
+### UI Cleanup (COMPLETED)
+- [x] Remove email notification toggles from Settings (use in-app only)
+- [ ] Add crmBaseUrl to LocationContext for whitelabel support (future enhancement)
 
 ### Testing Required
 - [ ] Test each subscription tier (Free, Starter, Pro, Agency)

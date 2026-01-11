@@ -324,11 +324,11 @@ export default function History() {
                       </span>
                       {item.status === "completed" && (
                         <a
-                          href={getGhlContactUrl(locationId!, item.master_record_id)}
+                          href={getCrmContactUrl(locationId!, item.master_record_id)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-primary hover:text-primary/80"
-                          title="View in GHL"
+                          title="View contact"
                         >
                           <ExternalLink className="h-3.5 w-3.5" />
                         </a>
@@ -340,11 +340,11 @@ export default function History() {
                       <span className="font-mono text-sm">← {item.duplicate_record_id?.slice(0, 12)}...</span>
                       {item.status === "rolled_back" && item.restored_record_id && (
                         <a
-                          href={getGhlContactUrl(locationId!, item.restored_record_id)}
+                          href={getCrmContactUrl(locationId!, item.restored_record_id)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-primary hover:text-primary/80"
-                          title="View restored record in GHL"
+                          title="View restored contact"
                         >
                           <ExternalLink className="h-3.5 w-3.5" />
                         </a>
@@ -401,7 +401,7 @@ export default function History() {
             <DialogTitle>Restore Merged Record</DialogTitle>
             <DialogDescription>
               Are you sure you want to restore the duplicate record that was merged?
-              This will recreate the deleted contact in GoHighLevel.
+              This will recreate the deleted contact.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

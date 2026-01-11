@@ -178,19 +178,7 @@ export default function Dashboard() {
       const restoredId = data.restored_record_id;
       toast({
         title: "Merge Rolled Back",
-        description: restoredId ? (
-          <span>
-            Record restored.{" "}
-            <a
-              href={`https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${restoredId}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline font-medium"
-            >
-              View in GHL
-            </a>
-          </span>
-        ) : "The merge has been undone.",
+        description: "The merge has been undone and the duplicate contact restored.",
       });
       queryClient.invalidateQueries({ queryKey: ["merges"] });
       queryClient.invalidateQueries({ queryKey: ["matches"] });
@@ -253,7 +241,7 @@ export default function Dashboard() {
         <p className="text-destructive">{authError}</p>
         <Button asChild>
           <a href={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/auth/install`}>
-            Connect to GoHighLevel
+            Connect Your CRM
           </a>
         </Button>
       </div>

@@ -10,6 +10,7 @@ from datetime import datetime
 import base64
 import hashlib
 import json
+import secrets
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
@@ -30,6 +31,8 @@ from app.services.auth_service import (
     store_oauth_tokens,
     get_location_tokens,
     update_tokens,
+    store_exchange_code,
+    get_and_use_exchange_code,
 )
 from app.services.billing_service import get_plan_features, get_upgrade_url
 
@@ -145,14 +148,25 @@ async def callback(
         tenant_id=str(result["tenant_id"]),
     )
 
-    # Redirect with both JWT tokens AND legacy location_id for backward compatibility
-    frontend_url = (
-        f"{settings.FRONTEND_URL}"
-        f"?installed=true"
-        f"&location_id={ghl_location_id}"  # Legacy - for backward compat
-        f"&access_token={jwt_access_token}"
-        f"&refresh_token={jwt_refresh_token}"
-    )
+    # Generate one-time exchange code (tokens never in URL for security)
+    exchange_code = secrets.token_urlsafe(32)
+
+    # Store exchange code with tokens (5-min expiry)
+    try:
+        await store_exchange_code(
+            code=exchange_code,
+            location_id=str(result["location_id"]),
+            ghl_location_id=ghl_location_id,
+            jwt_access_token=jwt_access_token,
+            jwt_refresh_token=jwt_refresh_token,
+        )
+    except Exception as e:
+        print(f"❌ Failed to store exchange code: {e}")
+        frontend_url = f"{settings.FRONTEND_URL}?error=storage_failed"
+        return RedirectResponse(url=frontend_url)
+
+    # Redirect with code only (no tokens in URL)
+    frontend_url = f"{settings.FRONTEND_URL}?installed=true&code={exchange_code}"
     return RedirectResponse(url=frontend_url)
 
 
@@ -215,6 +229,46 @@ async def refresh_tokens(request: Request, body: RefreshRequest):
     return TokenResponse(
         access_token=new_access_token,
         refresh_token=new_refresh_token,
+    )
+
+
+class ExchangeCodeRequest(BaseModel):
+    """Request body for code exchange."""
+    code: str
+
+
+class ExchangeCodeResponse(BaseModel):
+    """Response for code exchange."""
+    access_token: str
+    refresh_token: str
+    location_id: str
+
+
+@router.post("/exchange-code", response_model=ExchangeCodeResponse)
+@limiter.limit(RATE_LIMIT_AUTH)
+async def exchange_code(request: Request, body: ExchangeCodeRequest):
+    """
+    Exchange a one-time code for JWT tokens.
+
+    This is part of the secure POST redirect flow:
+    1. OAuth callback generates a one-time code (not tokens)
+    2. Frontend receives code in URL (safe - not sensitive)
+    3. Frontend POSTs code here to get tokens in response body
+    4. Tokens never appear in URL, logs, or browser history
+    """
+    # Find and validate code
+    result = await get_and_use_exchange_code(body.code)
+
+    if not result:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or expired code. Please try authenticating again."
+        )
+
+    return ExchangeCodeResponse(
+        access_token=result["jwt_access_token"],
+        refresh_token=result["jwt_refresh_token"],
+        location_id=result["ghl_location_id"],
     )
 
 

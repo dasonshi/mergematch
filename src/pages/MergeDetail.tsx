@@ -48,8 +48,9 @@ export default function MergeDetail() {
   const crmLocationId = merge.ghl_location_id || locationId;
 
   // Build CRM contact URL
-  const getGhlContactUrl = (contactId: string) => {
-    return `https://app.gohighlevel.com/v2/location/${ghlLocationId}/contacts/detail/${contactId}`;
+  const getCrmContactUrl = (contactId: string) => {
+    // TODO: Make base URL configurable for whitelabel
+    return `https://app.gohighlevel.com/v2/location/${crmLocationId}/contacts/detail/${contactId}`;
   };
 
   // Determine which record was master/duplicate based on IDs
@@ -126,12 +127,12 @@ export default function MergeDetail() {
                 </span>
                 {merge.status === "completed" && (
                   <a
-                    href={getGhlContactUrl(merge.master_record_id)}
+                    href={getCrmContactUrl(merge.master_record_id)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
                   >
-                    View in GHL <ExternalLink className="h-3 w-3" />
+                    View Contact <ExternalLink className="h-3 w-3" />
                   </a>
                 )}
               </div>
@@ -154,12 +155,12 @@ export default function MergeDetail() {
                 </span>
                 {merge.status === "rolled_back" && merge.restored_record_id && (
                   <a
-                    href={getGhlContactUrl(merge.restored_record_id)}
+                    href={getCrmContactUrl(merge.restored_record_id)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
                   >
-                    View in GHL <ExternalLink className="h-3 w-3" />
+                    View Contact <ExternalLink className="h-3 w-3" />
                   </a>
                 )}
               </div>
@@ -300,12 +301,12 @@ export default function MergeDetail() {
         {merge.status === "completed" && (
           <Button variant="outline" asChild>
             <a
-              href={getGhlContactUrl(merge.master_record_id)}
+              href={getCrmContactUrl(merge.master_record_id)}
               target="_blank"
               rel="noopener noreferrer"
             >
               <ExternalLink className="mr-2 h-4 w-4" />
-              View Master in GHL
+              View Master Contact
             </a>
           </Button>
         )}

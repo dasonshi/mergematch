@@ -43,7 +43,7 @@ const documentationSections = [
     id: "match-rules",
     icon: FileText,
     title: "Match Rules",
-    content: "Match rules define how MergeMatch identifies duplicate records in your GoHighLevel account. You can create rules based on email, phone, name, address, or custom fields. Each rule can use exact matching for precise duplicates or fuzzy matching for similar records with minor variations.",
+    content: "Match rules define how MergeMatch identifies duplicate records in your account. You can create rules based on email, phone, name, address, or custom fields. Each rule can use exact matching for precise duplicates or fuzzy matching for similar records with minor variations.",
   },
   {
     id: "merge-strategies",
@@ -73,7 +73,7 @@ const documentationSections = [
     id: "billing",
     icon: CreditCard,
     title: "Plans & Billing",
-    content: "MergeMatch is billed through the GoHighLevel Marketplace. Starter plan includes manual scans and basic matching. Pro plan adds scheduled scans and auto-merge. Agency plan includes white-labeling and unlimited locations.",
+    content: "MergeMatch is billed through the Marketplace. Starter plan includes manual scans and basic matching. Pro plan adds scheduled scans and auto-merge. Agency plan includes white-labeling and unlimited locations.",
   },
 ];
 
@@ -91,7 +91,7 @@ const faqItems = [
   {
     id: "locked-features",
     question: "Why are some features locked?",
-    answer: "Some features like scheduled scans, auto-merge, and additional object types are only available on Pro and Agency plans. Upgrade your plan through the GoHighLevel Marketplace to unlock these features.",
+    answer: "Some features like scheduled scans, auto-merge, and additional object types are only available on Pro and Agency plans. Upgrade your plan through the Marketplace to unlock these features.",
   },
   {
     id: "exact-fuzzy",

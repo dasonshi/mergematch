@@ -330,7 +330,7 @@ export default function MatchReview() {
               <div>
                 <h3 className="font-semibold text-foreground">Merge Warning</h3>
                 <p className="text-sm text-muted-foreground mt-1">
-                  "{duplicateName}" will be <span className="font-semibold text-destructive">DELETED</span> from GoHighLevel.
+                  "{duplicateName}" will be <span className="font-semibold text-destructive">DELETED</span>.
                 </p>
                 <p className="text-sm text-muted-foreground">
                   A snapshot will be saved for 30-day rollback.
