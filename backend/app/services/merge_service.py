@@ -55,7 +55,9 @@ async def execute_merge(
     # Build master record name for display
     master_record_name = ""
     if master_data.get("firstName") or master_data.get("lastName"):
-        master_record_name = f"{master_data.get('firstName', '')} {master_data.get('lastName', '')}".strip()
+        first_name = master_data.get("firstName") or ""
+        last_name = master_data.get("lastName") or ""
+        master_record_name = f"{first_name} {last_name}".strip()
     elif master_data.get("name"):
         master_record_name = master_data.get("name")
     elif master_data.get("email"):

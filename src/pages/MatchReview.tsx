@@ -191,7 +191,7 @@ export default function MatchReview() {
               className="flex-1"
             >
               <Star className={cn("h-4 w-4 mr-2", masterId === "a" && "fill-current")} />
-              {recordA.firstName} {recordA.lastName}
+              {recordA.firstName || ''} {recordA.lastName || ''}
             </Button>
             <Button
               variant={masterId === "b" ? "default" : "outline"}
@@ -199,7 +199,7 @@ export default function MatchReview() {
               className="flex-1"
             >
               <Star className={cn("h-4 w-4 mr-2", masterId === "b" && "fill-current")} />
-              {recordB.firstName} {recordB.lastName}
+              {recordB.firstName || ''} {recordB.lastName || ''}
             </Button>
           </div>
           <p className="text-sm text-muted-foreground mt-2">
@@ -230,7 +230,7 @@ export default function MatchReview() {
                       </span>
                     </div>
                     <div className="text-sm font-normal text-muted-foreground mt-1">
-                      {recordA.firstName} {recordA.lastName}
+                      {recordA.firstName || ''} {recordA.lastName || ''}
                     </div>
                   </TableHead>
                   <TableHead className="min-w-40">
@@ -241,7 +241,7 @@ export default function MatchReview() {
                       </span>
                     </div>
                     <div className="text-sm font-normal text-muted-foreground mt-1">
-                      {recordB.firstName} {recordB.lastName}
+                      {recordB.firstName || ''} {recordB.lastName || ''}
                     </div>
                   </TableHead>
                   <TableHead className="min-w-40 bg-muted/50">

@@ -123,7 +123,7 @@ export default function MergeDetail() {
               <div className="flex items-center gap-2 mt-1">
                 <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
                 <span className="font-medium">
-                  {masterSnapshot?.firstName} {masterSnapshot?.lastName}
+                  {masterSnapshot?.firstName || ''} {masterSnapshot?.lastName || ''}
                 </span>
                 {merge.status === "completed" && (
                   <a
@@ -151,7 +151,7 @@ export default function MergeDetail() {
                   <X className="h-4 w-4 text-red-500" />
                 )}
                 <span className="font-medium">
-                  {duplicateSnapshot?.firstName} {duplicateSnapshot?.lastName}
+                  {duplicateSnapshot?.firstName || ''} {duplicateSnapshot?.lastName || ''}
                 </span>
                 {merge.status === "rolled_back" && merge.restored_record_id && (
                   <a
@@ -212,7 +212,7 @@ export default function MergeDetail() {
                       <span className="font-semibold text-foreground">Master</span>
                     </div>
                     <div className="text-sm font-normal text-muted-foreground mt-1">
-                      {recordA?.firstName} {recordA?.lastName}
+                      {recordA?.firstName || ''} {recordA?.lastName || ''}
                     </div>
                   </th>
                   <th className="min-w-40 py-3 px-4 text-left">
@@ -220,7 +220,7 @@ export default function MergeDetail() {
                       <span className="font-semibold text-foreground">Duplicate</span>
                     </div>
                     <div className="text-sm font-normal text-muted-foreground mt-1">
-                      {recordB?.firstName} {recordB?.lastName}
+                      {recordB?.firstName || ''} {recordB?.lastName || ''}
                     </div>
                   </th>
                   <th className="min-w-40 py-3 px-4 text-left bg-muted/50">
