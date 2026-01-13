@@ -202,7 +202,8 @@ async def run_scan(
     access_token: str,
     tenant_id: str,
     internal_location_id: str,
-    limit: int = 100,
+    limit: int = 1000,
+    plan: str = "free",
 ) -> dict:
     """
     Run a duplicate scan for a given rule.
@@ -315,8 +316,9 @@ async def run_scan(
         match_id = str(uuid.uuid4())
 
         # Determine status based on confidence
+        # Only auto_approve for paid plans (free tier always requires review)
         status = "pending"
-        if match["auto_merge"]:
+        if match["auto_merge"] and plan != "free":
             status = "auto_approved"
 
         match_data = {

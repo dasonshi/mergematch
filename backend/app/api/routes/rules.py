@@ -18,6 +18,20 @@ class MatchField(BaseModel):
     operator: str = "AND"
 
 
+class FieldPreservationMapping(BaseModel):
+    source: str  # e.g., "email", "phone"
+    target: str  # custom field ID or name
+
+
+class FieldPreservationSettings(BaseModel):
+    enabled: bool = False
+    mappings: List[FieldPreservationMapping] = []
+
+
+class MergeSettings(BaseModel):
+    field_preservation: FieldPreservationSettings = FieldPreservationSettings()
+
+
 class MatchRuleCreate(BaseModel):
     name: str
     source_object: str  # contacts, companies, opportunities
@@ -27,6 +41,7 @@ class MatchRuleCreate(BaseModel):
     merge_strategy: str = "standard"
     schedule_frequency: str = "manual"
     is_active: bool = True
+    merge_settings: MergeSettings = MergeSettings()
 
 
 @router.get("/")
@@ -54,6 +69,15 @@ async def create_rule(
 
     supabase = get_supabase()
 
+    # Free tier: limit to 1 rule
+    if user.plan == "free":
+        existing_rules = supabase.table("match_rules").select("id").eq("location_id", user.location_id).execute()
+        if len(existing_rules.data) >= 1:
+            raise HTTPException(
+                status_code=403,
+                detail="Free plan is limited to 1 match rule. Upgrade to create more rules."
+            )
+
     rule_id = str(uuid.uuid4())
     # Convert percentage thresholds to decimals if > 1 (e.g., 95 -> 0.95)
     auto_threshold = rule.auto_merge_threshold / 100 if rule.auto_merge_threshold > 1 else rule.auto_merge_threshold
@@ -71,6 +95,7 @@ async def create_rule(
         "merge_strategy": rule.merge_strategy,
         "schedule_frequency": rule.schedule_frequency,
         "is_active": rule.is_active,
+        "merge_settings": rule.merge_settings.model_dump(),
     }
 
     result = supabase.table("match_rules").insert(rule_data).execute()
@@ -106,6 +131,13 @@ async def update_rule(
     """Update a match rule."""
     user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
 
+    # Free tier: cannot edit rules
+    if user.plan == "free":
+        raise HTTPException(
+            status_code=403,
+            detail="Upgrade to edit match rules."
+        )
+
     # Convert percentage thresholds to decimals if > 1
     auto_threshold = rule.auto_merge_threshold / 100 if rule.auto_merge_threshold > 1 else rule.auto_merge_threshold
     review_threshold = rule.review_threshold / 100 if rule.review_threshold > 1 else rule.review_threshold
@@ -121,6 +153,7 @@ async def update_rule(
         "merge_strategy": rule.merge_strategy,
         "schedule_frequency": rule.schedule_frequency,
         "is_active": rule.is_active,
+        "merge_settings": rule.merge_settings.model_dump(),
     }
 
     result = supabase.table("match_rules").update(update_data).eq("id", rule_id).eq("location_id", user.location_id).execute()
@@ -139,6 +172,13 @@ async def delete_rule(
 ):
     """Delete a match rule."""
     user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
+
+    # Free tier: cannot delete rules
+    if user.plan == "free":
+        raise HTTPException(
+            status_code=403,
+            detail="Upgrade to delete match rules."
+        )
 
     supabase = get_supabase()
     supabase.table("match_rules").delete().eq("id", rule_id).eq("location_id", user.location_id).execute()
@@ -173,13 +213,23 @@ async def scan_rule(
     rule_id: str,
     authorization: Optional[str] = Header(None, alias="Authorization"),
     location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
-    limit: int = Query(100, le=500, description="Max records to scan"),
+    limit: int = Query(None, description="Max records to scan (defaults based on plan)"),
 ):
     """Run a duplicate scan for this rule."""
     user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
     tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
     if not tokens:
         raise HTTPException(status_code=401, detail="Location not authenticated or token refresh failed")
+
+    # Plan-based scan limits
+    plan_limits = {
+        "free": 1000,
+        "starter": 99999,
+        "pro": 99999,
+        "agency": 99999,
+    }
+    max_limit = plan_limits.get(user.plan, 1000)
+    actual_limit = min(limit, max_limit) if limit else max_limit
 
     try:
         result = await run_scan(
@@ -188,7 +238,8 @@ async def scan_rule(
             access_token=tokens["access_token"],
             tenant_id=user.tenant_id,
             internal_location_id=user.location_id,
-            limit=limit,
+            limit=actual_limit,
+            plan=user.plan,  # Pass plan for auto_approve logic
         )
 
         # Update last_scan_at on the rule

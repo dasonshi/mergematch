@@ -394,6 +394,10 @@ export interface Company {
   [key: string]: unknown;
 }
 
+export interface RuleMergeSettings {
+  field_preservation: FieldPreservationSettings;
+}
+
 export interface MatchRule {
   id: string;
   name: string;
@@ -406,6 +410,7 @@ export interface MatchRule {
   is_active: boolean;
   last_scan_at?: string;
   created_at?: string;
+  merge_settings?: RuleMergeSettings;
 }
 
 export interface MatchField {
@@ -417,6 +422,7 @@ export interface MatchField {
 
 export interface MatchPair {
   id: string;
+  rule_id: string;
   record_a_id: string;
   record_a_data: Record<string, unknown>;
   record_b_id: string;

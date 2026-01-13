@@ -78,50 +78,54 @@ async def execute_merge(
 
     # Apply field preservation if enabled
     if preserve_alternates:
-        # Get location settings for field preservation mappings
-        location_result = supabase.table("locations").select(
-            "settings"
-        ).eq("ghl_location_id", ghl_location_id).single().execute()
+        # Get rule's merge_settings for field preservation mappings
+        rule_id = match.data.get("rule_id")
+        preservation = {}
 
-        if location_result.data:
-            settings = location_result.data.get("settings") or {}
-            preservation = settings.get("field_preservation", {})
+        if rule_id:
+            rule_result = supabase.table("match_rules").select(
+                "merge_settings"
+            ).eq("id", rule_id).single().execute()
 
-            if preservation.get("enabled"):
-                mappings = preservation.get("mappings", [])
-                custom_fields = merged_fields.get("customFields", [])
-                if not isinstance(custom_fields, list):
-                    custom_fields = []
+            if rule_result.data:
+                merge_settings = rule_result.data.get("merge_settings") or {}
+                preservation = merge_settings.get("field_preservation", {})
 
-                for mapping in mappings:
-                    source_field = mapping.get("source")
-                    target_field = mapping.get("target")
+        if preservation.get("enabled"):
+            mappings = preservation.get("mappings", [])
+            custom_fields = merged_fields.get("customFields", [])
+            if not isinstance(custom_fields, list):
+                custom_fields = []
 
-                    if not source_field or not target_field:
-                        continue
+            for mapping in mappings:
+                source_field = mapping.get("source")
+                target_field = mapping.get("target")
 
-                    # Get which record was selected for this field
-                    selected = field_selections.get(source_field)
-                    if not selected:
-                        continue
+                if not source_field or not target_field:
+                    continue
 
-                    # Get the NON-selected value (the alternate)
-                    if selected == "a":
-                        alternate_value = record_b_data.get(source_field)
-                    else:
-                        alternate_value = record_a_data.get(source_field)
+                # Get which record was selected for this field
+                selected = field_selections.get(source_field)
+                if not selected:
+                    continue
 
-                    # Only preserve if there's an alternate value that differs from selected
-                    selected_value = merged_fields.get(source_field)
-                    if alternate_value and alternate_value != selected_value:
-                        custom_fields.append({
-                            "key": target_field,
-                            "field_value": alternate_value
-                        })
-                        logger.info(f"Preserving alternate {source_field} value '{alternate_value}' to custom field '{target_field}'")
+                # Get the NON-selected value (the alternate)
+                if selected == "a":
+                    alternate_value = record_b_data.get(source_field)
+                else:
+                    alternate_value = record_a_data.get(source_field)
 
-                if custom_fields:
-                    merged_fields["customFields"] = custom_fields
+                # Only preserve if there's an alternate value that differs from selected
+                selected_value = merged_fields.get(source_field)
+                if alternate_value and alternate_value != selected_value:
+                    custom_fields.append({
+                        "key": target_field,
+                        "field_value": alternate_value
+                    })
+                    logger.info(f"Preserving alternate {source_field} value '{alternate_value}' to custom field '{target_field}'")
+
+            if custom_fields:
+                merged_fields["customFields"] = custom_fields
 
     logger.info(f"Merging {duplicate_id} into {master_record_id}")
     logger.info(f"Field selections: {field_selections}")

@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { cn } from "@/lib/utils";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
-import { api, MergeStrategySettings } from "@/lib/api";
+import { api } from "@/lib/api";
 
 // Fields to display and their labels
 const fieldLabels: Record<string, string> = {
@@ -49,16 +49,9 @@ export default function MatchReview() {
     enabled: !!locationId && !!ruleId,
   });
 
-  // Fetch merge strategy settings to check if preservation is configured
-  const { data: mergeStrategy } = useQuery({
-    queryKey: ["mergeStrategy"],
-    queryFn: () => api.getMergeStrategy(),
-    staleTime: 60000,
-  });
-
-  // Check if field preservation is enabled and has mappings
-  const preservationEnabled = mergeStrategy?.field_preservation?.enabled
-    && (mergeStrategy?.field_preservation?.mappings?.length || 0) > 0;
+  // Check if field preservation is enabled in the rule's merge_settings
+  const preservationEnabled = rule?.merge_settings?.field_preservation?.enabled
+    && (rule?.merge_settings?.field_preservation?.mappings?.length || 0) > 0;
 
   // Merge mutation
   const mergeMutation = useMutation({
