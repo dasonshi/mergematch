@@ -2,11 +2,14 @@ from fastapi import APIRouter, HTTPException, Query, Header
 from pydantic import BaseModel
 from typing import List, Optional
 import uuid
+import logging
 
 from app.db.supabase import get_supabase
 from app.services.auth_service import get_location_tokens_with_refresh
 from app.services.matching_service import run_scan
 from app.core.security import get_current_user_flexible
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -99,8 +102,42 @@ async def create_rule(
     }
 
     result = supabase.table("match_rules").insert(rule_data).execute()
+    created_rule = result.data[0] if result.data else rule_data
 
-    return result.data[0] if result.data else rule_data
+    # Auto-trigger initial scan after rule creation
+    initial_scan = None
+    try:
+        tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
+        if tokens:
+            # Plan-based scan limits
+            plan_limits = {
+                "free": 1000,
+                "starter": 99999,
+                "pro": 99999,
+                "agency": 99999,
+            }
+            scan_limit = plan_limits.get(user.plan, 1000)
+
+            initial_scan = await run_scan(
+                ghl_location_id=user.ghl_location_id,
+                rule_id=rule_id,
+                access_token=tokens["access_token"],
+                tenant_id=user.tenant_id,
+                internal_location_id=user.location_id,
+                limit=scan_limit,
+                plan=user.plan,
+            )
+            logger.info(f"Initial scan for rule {rule_id}: {initial_scan}")
+
+            # Update last_scan_at
+            supabase.table("match_rules").update({
+                "last_scan_at": "now()"
+            }).eq("id", rule_id).execute()
+    except Exception as e:
+        # Don't fail rule creation if scan fails
+        logger.warning(f"Initial scan failed for rule {rule_id}: {e}")
+
+    return {**created_rule, "initial_scan": initial_scan}
 
 
 @router.get("/{rule_id}")

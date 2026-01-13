@@ -22,12 +22,22 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, MatchRule, MatchField, ObjectField } from "@/lib/api";
 import { useLocation } from "@/contexts/LocationContext";
 
-// Standard object types (custom objects loaded dynamically)
-const standardObjectTypes = [
-  { id: "contacts", name: "Contacts", tier: "free", available: true },
-  { id: "companies", name: "Companies", tier: "starter", available: true },
-  { id: "opportunities", name: "Opportunities", tier: "pro", available: false },
-];
+// Standard object types with tier requirements
+const standardObjectTiers: Record<string, string> = {
+  contacts: "free",
+  companies: "starter",
+  opportunities: "pro",
+};
+
+// Tier hierarchy for comparison
+const tierOrder = ["free", "starter", "pro", "agency"] as const;
+type Tier = typeof tierOrder[number];
+
+function hasAccess(userPlan: string, requiredTier: string): boolean {
+  const userIdx = tierOrder.indexOf(userPlan as Tier);
+  const reqIdx = tierOrder.indexOf(requiredTier as Tier);
+  return userIdx >= reqIdx;
+}
 
 // Fallback fields if API fails
 const fallbackFields: Record<string, { id: string; name: string }[]> = {
@@ -104,7 +114,7 @@ export default function MatchRuleForm() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { locationId, isAuthenticated } = useLocation();
+  const { locationId, isAuthenticated, plan } = useLocation();
   const isEditing = !!id;
 
   const [ruleName, setRuleName] = useState("");
@@ -125,6 +135,14 @@ export default function MatchRuleForm() {
     enabled: isEditing && isAuthenticated && !!locationId,
   });
 
+  // Fetch available objects (standard + custom from GHL)
+  const { data: fetchedObjects } = useQuery({
+    queryKey: ['available-objects'],
+    queryFn: () => api.getAvailableObjects(),
+    enabled: isAuthenticated,
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+  });
+
   // Fetch available fields for selected object type
   const { data: fetchedFields, isLoading: fieldsLoading } = useQuery({
     queryKey: ['object-fields', objectType],
@@ -138,17 +156,40 @@ export default function MatchRuleForm() {
     ? fetchedFields.map(f => ({ id: f.id, name: f.name, isCustom: f.isCustom }))
     : (fallbackFields[objectType] || []).map(f => ({ ...f, isCustom: false }));
 
-  // Object types (could be extended with custom objects in future)
-  const objectTypes = standardObjectTypes;
+  // Build object types with tier requirements and availability
+  const objectTypes = (fetchedObjects || [
+    { id: "contacts", name: "Contacts", standard: true },
+    { id: "companies", name: "Companies", standard: true },
+    { id: "opportunities", name: "Opportunities", standard: true },
+  ]).map(obj => {
+    // Custom objects require pro tier
+    const tier = obj.standard ? (standardObjectTiers[obj.id] || "pro") : "pro";
+    return {
+      id: obj.id,
+      name: obj.name,
+      tier,
+      available: hasAccess(plan, tier),
+      isCustom: !obj.standard,
+    };
+  });
 
   // Create mutation
   const createMutation = useMutation({
     mutationFn: (rule: Partial<MatchRule>) => api.createMatchRule(rule),
-    onSuccess: () => {
+    onSuccess: (data: MatchRule & { initial_scan?: { matches_found: number; records_scanned: number } }) => {
       queryClient.invalidateQueries({ queryKey: ['rules'] });
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+
+      // Build description with scan results
+      let description = `"${ruleName}" has been created successfully.`;
+      if (data.initial_scan) {
+        const { matches_found, records_scanned } = data.initial_scan;
+        description = `"${ruleName}" created. Scanned ${records_scanned.toLocaleString()} records, found ${matches_found} potential duplicate${matches_found !== 1 ? 's' : ''}.`;
+      }
+
       toast({
         title: "Rule created",
-        description: `"${ruleName}" has been created successfully.`,
+        description,
       });
       navigate("/");
     },
@@ -384,10 +425,13 @@ export default function MatchRuleForm() {
                     >
                       <span className="flex items-center gap-2">
                         {obj.name}
+                        {obj.isCustom && (
+                          <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">Custom</span>
+                        )}
                         {!obj.available && (
                           <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                            <Crown className="h-3 w-3" />
-                            {obj.tier === "pro" ? "Pro" : "Agency"}
+                            <Lock className="h-3 w-3" />
+                            {obj.tier === "starter" ? "Starter" : obj.tier === "pro" ? "Pro" : "Agency"}
                           </span>
                         )}
                       </span>
@@ -757,7 +801,9 @@ export default function MatchRuleForm() {
           </Button>
           <Button type="submit" disabled={isSaving}>
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isEditing ? "Save Changes" : "Create Rule"}
+            {isSaving
+              ? (isEditing ? "Saving..." : "Creating & Scanning...")
+              : (isEditing ? "Save Changes" : "Create Rule")}
           </Button>
         </div>
       </form>
