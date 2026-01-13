@@ -9,6 +9,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
 from app.api.routes import auth, health, matches, rules, merges, jobs, webhooks, contacts, companies, fields, notifications, sync, cron
+from app.api.routes import settings as settings_routes
 from app.core.security import validate_security_config
 from app.core.rate_limit import limiter
 
@@ -114,6 +115,7 @@ app.include_router(fields.router, prefix="/v1/fields", tags=["Fields"])
 app.include_router(notifications.router, prefix="/v1/notifications", tags=["Notifications"])
 app.include_router(sync.router, prefix="/v1/sync", tags=["Sync"])
 app.include_router(cron.router, prefix="/cron", tags=["Cron"])
+app.include_router(settings_routes.router, prefix="/v1/settings", tags=["Settings"])
 
 
 @app.get("/")

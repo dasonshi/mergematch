@@ -267,10 +267,15 @@ class ApiClient {
     return this.fetch<Merge & { master_snapshot?: Record<string, unknown>; duplicate_snapshot?: Record<string, unknown>; field_selections?: Record<string, string>; rolled_back_at?: string; restored_record_id?: string; ghl_location_id?: string }>(`/v1/merges/${id}`);
   }
 
-  async executeMerge(matchId: string, masterRecordId: string, fieldSelections: Record<string, string>) {
+  async executeMerge(matchId: string, masterRecordId: string, fieldSelections: Record<string, string>, preserveAlternates = false) {
     return this.fetch<Merge>('/v1/merges/', {
       method: 'POST',
-      body: { match_id: matchId, master_record_id: masterRecordId, field_selections: fieldSelections },
+      body: {
+        match_id: matchId,
+        master_record_id: masterRecordId,
+        field_selections: fieldSelections,
+        preserve_alternates: preserveAlternates,
+      },
     });
   }
 
@@ -340,6 +345,29 @@ class ApiClient {
 
   async triggerSync() {
     return this.fetch<SyncTriggerResponse>('/v1/sync/trigger', { method: 'POST' });
+  }
+
+  // Settings - Merge Strategy
+  async getMergeStrategy() {
+    return this.fetch<MergeStrategySettings>('/v1/settings/merge-strategy');
+  }
+
+  async updateMergeStrategy(settings: MergeStrategySettings) {
+    return this.fetch<MergeStrategySettings>('/v1/settings/merge-strategy', {
+      method: 'PUT',
+      body: settings,
+    });
+  }
+
+  async getCustomFields() {
+    return this.fetch<CustomField[]>('/v1/settings/custom-fields');
+  }
+
+  async createCustomField(name: string, dataType = 'TEXT') {
+    return this.fetch<CustomField>('/v1/settings/custom-fields', {
+      method: 'POST',
+      body: { name, data_type: dataType },
+    });
   }
 }
 
@@ -449,6 +477,28 @@ export interface SyncStatus {
 export interface SyncTriggerResponse {
   success: boolean;
   last_synced_at: string;
+}
+
+export interface FieldPreservationMapping {
+  source: string;
+  target: string;
+}
+
+export interface FieldPreservationSettings {
+  enabled: boolean;
+  auto_create_fields: boolean;
+  mappings: FieldPreservationMapping[];
+}
+
+export interface MergeStrategySettings {
+  field_preservation: FieldPreservationSettings;
+}
+
+export interface CustomField {
+  id: string;
+  name: string;
+  fieldKey: string;
+  dataType: string;
 }
 
 export const api = new ApiClient();

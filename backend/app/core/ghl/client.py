@@ -236,6 +236,33 @@ class GHLClient:
         response.raise_for_status()
         return response.json().get("customFields", [])
 
+    async def create_custom_field(
+        self,
+        name: str,
+        data_type: str = "TEXT",
+        model: str = "contact"
+    ) -> Dict[str, Any]:
+        """Create a custom field for contacts or opportunities.
+
+        Args:
+            name: Display name of the field
+            data_type: TEXT, LARGE_TEXT, NUMERICAL, PHONE, EMAIL, MONETARY, etc.
+            model: 'contact' or 'opportunity'
+
+        Returns created custom field definition.
+        """
+        payload = {
+            "name": name,
+            "dataType": data_type,
+            "model": model,
+        }
+        response = await self._client.post(
+            f"/locations/{self.location_id}/customFields",
+            json=payload
+        )
+        response.raise_for_status()
+        return response.json()
+
     async def get_object_schema(
         self,
         object_key: str,

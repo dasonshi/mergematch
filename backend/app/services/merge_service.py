@@ -20,13 +20,15 @@ async def execute_merge(
     ghl_location_id: str,
     tenant_id: str,
     internal_location_id: str,
+    preserve_alternates: bool = False,
 ) -> Dict[str, Any]:
     """
     Execute a merge operation:
     1. Store snapshots of both records for rollback
     2. Update master record with selected fields from duplicate
-    3. Delete the duplicate record from GHL
-    4. Update database records
+    3. Optionally preserve alternate values in custom fields
+    4. Delete the duplicate record from GHL
+    5. Update database records
     """
     supabase = get_supabase()
 
@@ -74,9 +76,57 @@ async def execute_merge(
         if value is not None:
             merged_fields[field] = value
 
+    # Apply field preservation if enabled
+    if preserve_alternates:
+        # Get location settings for field preservation mappings
+        location_result = supabase.table("locations").select(
+            "settings"
+        ).eq("ghl_location_id", ghl_location_id).single().execute()
+
+        if location_result.data:
+            settings = location_result.data.get("settings") or {}
+            preservation = settings.get("field_preservation", {})
+
+            if preservation.get("enabled"):
+                mappings = preservation.get("mappings", [])
+                custom_fields = merged_fields.get("customFields", [])
+                if not isinstance(custom_fields, list):
+                    custom_fields = []
+
+                for mapping in mappings:
+                    source_field = mapping.get("source")
+                    target_field = mapping.get("target")
+
+                    if not source_field or not target_field:
+                        continue
+
+                    # Get which record was selected for this field
+                    selected = field_selections.get(source_field)
+                    if not selected:
+                        continue
+
+                    # Get the NON-selected value (the alternate)
+                    if selected == "a":
+                        alternate_value = record_b_data.get(source_field)
+                    else:
+                        alternate_value = record_a_data.get(source_field)
+
+                    # Only preserve if there's an alternate value that differs from selected
+                    selected_value = merged_fields.get(source_field)
+                    if alternate_value and alternate_value != selected_value:
+                        custom_fields.append({
+                            "key": target_field,
+                            "field_value": alternate_value
+                        })
+                        logger.info(f"Preserving alternate {source_field} value '{alternate_value}' to custom field '{target_field}'")
+
+                if custom_fields:
+                    merged_fields["customFields"] = custom_fields
+
     logger.info(f"Merging {duplicate_id} into {master_record_id}")
     logger.info(f"Field selections: {field_selections}")
     logger.info(f"Merged fields to apply: {merged_fields}")
+    logger.info(f"Preserve alternates: {preserve_alternates}")
 
     # Create merge record BEFORE making changes
     merge_id = str(uuid.uuid4())

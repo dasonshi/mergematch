@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Star, AlertTriangle, Loader2 } from "lucide-react";
+import { ArrowLeft, Star, AlertTriangle, Loader2, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { cn } from "@/lib/utils";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/lib/api";
+import { api, MergeStrategySettings } from "@/lib/api";
 
 // Fields to display and their labels
 const fieldLabels: Record<string, string> = {
@@ -49,10 +49,21 @@ export default function MatchReview() {
     enabled: !!locationId && !!ruleId,
   });
 
+  // Fetch merge strategy settings to check if preservation is configured
+  const { data: mergeStrategy } = useQuery({
+    queryKey: ["mergeStrategy"],
+    queryFn: () => api.getMergeStrategy(),
+    staleTime: 60000,
+  });
+
+  // Check if field preservation is enabled and has mappings
+  const preservationEnabled = mergeStrategy?.field_preservation?.enabled
+    && (mergeStrategy?.field_preservation?.mappings?.length || 0) > 0;
+
   // Merge mutation
   const mergeMutation = useMutation({
-    mutationFn: async (data: { matchId: string; masterId: string; selections: Record<string, string> }) => {
-      return api.executeMerge(data.matchId, data.masterId, data.selections);
+    mutationFn: async (data: { matchId: string; masterId: string; selections: Record<string, string>; preserveAlternates: boolean }) => {
+      return api.executeMerge(data.matchId, data.masterId, data.selections, data.preserveAlternates);
     },
     onSuccess: () => {
       toast({
@@ -98,6 +109,7 @@ export default function MatchReview() {
   const [selections, setSelections] = useState<Record<string, string>>({});
   const [hideWarning, setHideWarning] = useState(false);
   const [masterId, setMasterId] = useState<string>("a");
+  const [preserveAlternates, setPreserveAlternates] = useState(false);
 
   // Initialize selections when match loads
   if (match && Object.keys(selections).length === 0) {
@@ -126,6 +138,7 @@ export default function MatchReview() {
       matchId: matchId!,
       masterId: actualMasterId,
       selections,
+      preserveAlternates: preservationEnabled && preserveAlternates,
     });
   };
 
@@ -320,6 +333,35 @@ export default function MatchReview() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Field Preservation Option (only show if configured in settings) */}
+      {preservationEnabled && (
+        <Card className="border-primary/50 bg-primary/5 shadow-md">
+          <CardContent className="pt-6">
+            <div className="flex gap-3">
+              <Save className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
+              <div className="space-y-3">
+                <div>
+                  <h3 className="font-semibold text-foreground">Preserve Alternate Values</h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Save non-selected email/phone values to custom fields.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="preserve-alternates"
+                    checked={preserveAlternates}
+                    onCheckedChange={(checked) => setPreserveAlternates(checked as boolean)}
+                  />
+                  <label htmlFor="preserve-alternates" className="text-sm cursor-pointer">
+                    Save alternate values to custom fields
+                  </label>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Merge Warning */}
       <Card className="border-yellow-500/50 bg-yellow-500/8 shadow-md">

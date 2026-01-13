@@ -6,14 +6,22 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   RefreshCw,
   Trash2,
   Unplug,
   Rocket,
   ExternalLink,
-  Lightbulb
+  Lightbulb,
+  Plus,
+  X,
+  ArrowRight,
+  Loader2,
+  Save,
 } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { api, MergeStrategySettings, FieldPreservationMapping, CustomField } from "@/lib/api";
 // Note: Email notifications removed - using in-app notifications only
 import {
   AlertDialog,
@@ -30,8 +38,16 @@ import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
 import { useLocation } from "@/contexts/LocationContext";
 
+// Source fields that can be preserved
+const PRESERVABLE_FIELDS = [
+  { value: 'email', label: 'Email' },
+  { value: 'phone', label: 'Phone' },
+  { value: 'address1', label: 'Address' },
+];
+
 export default function Settings() {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const {
     locationId,
     locationName,
@@ -50,12 +66,129 @@ export default function Settings() {
 
   // Format trial end date
   const trialEndDate = trialEndsAt ? new Date(trialEndsAt).toLocaleDateString() : null;
-  
+
   const [preferences, setPreferences] = useState({
     showIndividualMergeWarning: true,
     showBulkMergeWarning: true,
     showRestoreWarning: true,
   });
+
+  // Merge Strategy state
+  const [mergeStrategyDirty, setMergeStrategyDirty] = useState(false);
+  const [fieldPreservation, setFieldPreservation] = useState<{
+    enabled: boolean;
+    auto_create_fields: boolean;
+    mappings: FieldPreservationMapping[];
+  }>({
+    enabled: false,
+    auto_create_fields: false,
+    mappings: [],
+  });
+  const [newFieldName, setNewFieldName] = useState('');
+
+  // Fetch merge strategy settings
+  const { data: mergeStrategy, isLoading: loadingStrategy } = useQuery({
+    queryKey: ['mergeStrategy'],
+    queryFn: () => api.getMergeStrategy(),
+    staleTime: 60000,
+  });
+
+  // Fetch custom fields from GHL
+  const { data: customFields = [], isLoading: loadingFields } = useQuery({
+    queryKey: ['customFields'],
+    queryFn: () => api.getCustomFields(),
+    staleTime: 60000,
+  });
+
+  // Initialize state when data loads
+  useState(() => {
+    if (mergeStrategy) {
+      setFieldPreservation(mergeStrategy.field_preservation);
+    }
+  });
+
+  // Update state when mergeStrategy changes
+  if (mergeStrategy && !mergeStrategyDirty) {
+    if (JSON.stringify(fieldPreservation) !== JSON.stringify(mergeStrategy.field_preservation)) {
+      setFieldPreservation(mergeStrategy.field_preservation);
+    }
+  }
+
+  // Save merge strategy mutation
+  const saveMergeStrategy = useMutation({
+    mutationFn: (settings: MergeStrategySettings) => api.updateMergeStrategy(settings),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['mergeStrategy'] });
+      setMergeStrategyDirty(false);
+      toast({
+        title: 'Settings saved',
+        description: 'Merge strategy settings have been updated.',
+      });
+    },
+    onError: () => {
+      toast({
+        title: 'Error',
+        description: 'Failed to save settings. Please try again.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  // Create custom field mutation
+  const createCustomField = useMutation({
+    mutationFn: (name: string) => api.createCustomField(name),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customFields'] });
+      setNewFieldName('');
+      toast({
+        title: 'Field created',
+        description: 'Custom field has been created in your CRM.',
+      });
+    },
+    onError: () => {
+      toast({
+        title: 'Error',
+        description: 'Failed to create custom field. Please try again.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const handleAddMapping = () => {
+    setFieldPreservation(prev => ({
+      ...prev,
+      mappings: [...prev.mappings, { source: '', target: '' }],
+    }));
+    setMergeStrategyDirty(true);
+  };
+
+  const handleRemoveMapping = (index: number) => {
+    setFieldPreservation(prev => ({
+      ...prev,
+      mappings: prev.mappings.filter((_, i) => i !== index),
+    }));
+    setMergeStrategyDirty(true);
+  };
+
+  const handleUpdateMapping = (index: number, field: 'source' | 'target', value: string) => {
+    setFieldPreservation(prev => ({
+      ...prev,
+      mappings: prev.mappings.map((m, i) =>
+        i === index ? { ...m, [field]: value } : m
+      ),
+    }));
+    setMergeStrategyDirty(true);
+  };
+
+  const handleSaveMergeStrategy = () => {
+    saveMergeStrategy.mutate({ field_preservation: fieldPreservation });
+  };
+
+  const handleCreateCustomField = () => {
+    if (newFieldName.trim()) {
+      createCustomField.mutate(newFieldName.trim());
+    }
+  };
 
   const handleResetWarnings = () => {
     setPreferences({
@@ -276,6 +409,165 @@ export default function Settings() {
           <Button variant="outline" onClick={handleResetWarnings}>
             Reset All Warnings
           </Button>
+        </CardContent>
+      </Card>
+
+      {/* Merge Strategies Section */}
+      <Card className="animate-fade-in shadow-md" style={{ animationDelay: "100ms" }}>
+        <CardHeader className="bg-muted/30 border-b">
+          <CardTitle className="text-lg font-bold">Merge Strategies</CardTitle>
+          <CardDescription>Configure how alternate values are preserved during merges</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6 pt-6">
+          {loadingStrategy ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <>
+              {/* Enable Field Preservation */}
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="enable-preservation"
+                  checked={fieldPreservation.enabled}
+                  onCheckedChange={(checked) => {
+                    setFieldPreservation(prev => ({ ...prev, enabled: checked as boolean }));
+                    setMergeStrategyDirty(true);
+                  }}
+                />
+                <label htmlFor="enable-preservation" className="text-sm cursor-pointer">
+                  Enable field preservation (save alternate values to custom fields)
+                </label>
+              </div>
+
+              {fieldPreservation.enabled && (
+                <>
+                  {/* Field Mappings */}
+                  <div className="space-y-3">
+                    <Label className="text-base font-semibold">Field Mappings</Label>
+                    <p className="text-sm text-muted-foreground">
+                      When merging, the non-selected value will be saved to the target custom field.
+                    </p>
+
+                    {fieldPreservation.mappings.length === 0 ? (
+                      <p className="text-sm text-muted-foreground italic py-2">
+                        No mappings configured. Add a mapping to preserve alternate values.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {fieldPreservation.mappings.map((mapping, index) => (
+                          <div key={index} className="flex items-center gap-2">
+                            <Select
+                              value={mapping.source}
+                              onValueChange={(value) => handleUpdateMapping(index, 'source', value)}
+                            >
+                              <SelectTrigger className="w-[140px]">
+                                <SelectValue placeholder="Source field" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {PRESERVABLE_FIELDS.map(f => (
+                                  <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+
+                            <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+
+                            <Select
+                              value={mapping.target}
+                              onValueChange={(value) => handleUpdateMapping(index, 'target', value)}
+                            >
+                              <SelectTrigger className="w-[200px]">
+                                <SelectValue placeholder="Target custom field" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {customFields.map((f: CustomField) => (
+                                  <SelectItem key={f.id} value={f.name}>{f.name}</SelectItem>
+                                ))}
+                                {customFields.length === 0 && (
+                                  <SelectItem value="" disabled>No custom fields found</SelectItem>
+                                )}
+                              </SelectContent>
+                            </Select>
+
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleRemoveMapping(index)}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <Button variant="outline" size="sm" onClick={handleAddMapping}>
+                      <Plus className="h-4 w-4 mr-1" />
+                      Add Mapping
+                    </Button>
+                  </div>
+
+                  {/* Auto-create fields */}
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="auto-create-fields"
+                      checked={fieldPreservation.auto_create_fields}
+                      onCheckedChange={(checked) => {
+                        setFieldPreservation(prev => ({ ...prev, auto_create_fields: checked as boolean }));
+                        setMergeStrategyDirty(true);
+                      }}
+                    />
+                    <label htmlFor="auto-create-fields" className="text-sm cursor-pointer">
+                      Auto-create custom fields if they don't exist
+                    </label>
+                  </div>
+
+                  {/* Create Custom Field */}
+                  <div className="space-y-2 pt-2">
+                    <Label className="text-sm font-medium">Create New Custom Field</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="e.g., Secondary Email"
+                        value={newFieldName}
+                        onChange={(e) => setNewFieldName(e.target.value)}
+                        className="max-w-[250px]"
+                      />
+                      <Button
+                        variant="outline"
+                        onClick={handleCreateCustomField}
+                        disabled={!newFieldName.trim() || createCustomField.isPending}
+                      >
+                        {createCustomField.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <>
+                            <Plus className="h-4 w-4 mr-1" />
+                            Create
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Save Button */}
+              <div className="pt-2">
+                <Button
+                  onClick={handleSaveMergeStrategy}
+                  disabled={!mergeStrategyDirty || saveMergeStrategy.isPending}
+                >
+                  {saveMergeStrategy.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4 mr-2" />
+                  )}
+                  Save Changes
+                </Button>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 

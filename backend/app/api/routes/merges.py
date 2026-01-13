@@ -16,6 +16,7 @@ class MergeRequest(BaseModel):
     match_id: str
     master_record_id: str
     field_selections: Dict[str, str]  # field -> "a" or "b"
+    preserve_alternates: bool = False  # Save alternate values to custom fields
 
 
 @router.get("/stats")
@@ -107,6 +108,7 @@ async def execute_merge_route(
             ghl_location_id=user.ghl_location_id,
             tenant_id=user.tenant_id,
             internal_location_id=user.location_id,
+            preserve_alternates=body.preserve_alternates,
         )
         return result
     except ValueError as e:
