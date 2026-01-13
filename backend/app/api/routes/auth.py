@@ -320,6 +320,7 @@ async def get_current_location(
         "is_on_trial": tokens.get("is_on_trial", False),
         "trial_ends_at": tokens.get("trial_ends_at"),
         "upgrade_url": get_upgrade_url(user.ghl_location_id),
+        "last_webhook_at": tokens.get("last_webhook_at"),
         "features": {
             "unlimited_merges": features.unlimited_merges,
             "auto_merge": features.auto_merge,

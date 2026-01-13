@@ -77,13 +77,17 @@
 
 ## 4. Match Rule Detail Page
 
-### 4.1 Rule Summary Card
+### 4.1 Top-Level Stats Cards
+- [ ] **Total Records**: Shows count of contacts in location
+- [ ] **Last Scan**: Shows date/time of last scan (or "Never")
+- [ ] **Last Data Update**: Shows last webhook event timestamp (or "—")
+
+### 4.2 Rule Summary Card
 - [ ] Shows object type, strategy, status, fields
 - [ ] Shows thresholds (Auto/Review percentages)
 - [ ] Shows schedule frequency
-- [ ] Shows last scan timestamp
 
-### 4.2 Pending Matches Display
+### 4.3 Pending Matches Display
 - [ ] **Matches table shows:**
   - [ ] Record A (name, email/phone)
   - [ ] Record B (name, email/phone)

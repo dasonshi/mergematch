@@ -3,6 +3,7 @@ import hmac
 import hashlib
 
 from app.config import settings
+from app.db.supabase import get_supabase
 from app.services.billing_service import (
     handle_app_install,
     handle_app_uninstall,
@@ -11,6 +12,19 @@ from app.services.billing_service import (
 from app.core.rate_limit import limiter, RATE_LIMIT_WEBHOOK
 
 router = APIRouter()
+
+
+async def update_last_webhook_at(location_id: str):
+    """Update the last_webhook_at timestamp for a location."""
+    if not location_id:
+        return
+    try:
+        supabase = get_supabase()
+        supabase.table("locations").update({
+            "last_webhook_at": "now()"
+        }).eq("ghl_location_id", location_id).execute()
+    except Exception as e:
+        print(f"   ⚠️ Failed to update last_webhook_at: {e}")
 
 
 def verify_webhook_signature(payload: bytes, signature: str) -> bool:
@@ -84,13 +98,18 @@ async def ghl_webhook(
         print(f"   ✅ Plan change processed: {result}")
         return {"received": True, "event": event_type, "result": result}
 
-    # Handle data webhooks
+    # Handle data webhooks (contact/company updates)
     elif event_type in ["contact.created", "contact.updated", "ContactCreate", "ContactUpdate"]:
+        location_id = payload.get("locationId") or data.get("locationId")
+        await update_last_webhook_at(location_id)
         # TODO: Queue real-time duplicate check
-        pass
+        return {"received": True, "event": event_type, "location_id": location_id}
+
     elif event_type in ["company.created", "company.updated", "RecordCreate", "RecordUpdate"]:
+        location_id = payload.get("locationId") or data.get("locationId")
+        await update_last_webhook_at(location_id)
         # TODO: Queue company duplicate check
-        pass
+        return {"received": True, "event": event_type, "location_id": location_id}
 
     return {"received": True, "event": event_type}
 

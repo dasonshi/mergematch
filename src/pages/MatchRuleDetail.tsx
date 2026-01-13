@@ -25,7 +25,7 @@ import { cn } from "@/lib/utils";
 export default function MatchRuleDetail() {
   const { id } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { locationId, isLoading: authLoading, canUseStrategies } = useLocation();
+  const { locationId, isLoading: authLoading, canUseStrategies, lastWebhookAt } = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [matchesExpanded, setMatchesExpanded] = useState(true);
@@ -59,6 +59,14 @@ export default function MatchRuleDetail() {
     queryKey: ["merges", locationId],
     queryFn: () => api.getMerges(10),
     enabled: !!locationId,
+  });
+
+  // Fetch total contacts count
+  const { data: contactsStats } = useQuery({
+    queryKey: ["contacts-stats", locationId],
+    queryFn: () => api.getContactsStats(),
+    enabled: !!locationId,
+    staleTime: 60000, // Cache for 1 minute
   });
 
   // Auto-trigger merge all dialog from URL param
@@ -428,6 +436,49 @@ export default function MatchRuleDetail() {
         </div>
       </div>
 
+      {/* Top-Level Stats */}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Card className="shadow-md">
+          <CardContent className="p-4">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total Records</span>
+            <p className="text-2xl font-bold mt-1">
+              {contactsStats?.total?.toLocaleString() ?? "—"}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1 capitalize">{rule.source_object}</p>
+          </CardContent>
+        </Card>
+        <Card className="shadow-md">
+          <CardContent className="p-4">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Last Scan</span>
+            <p className="text-lg font-bold mt-1">
+              {rule.last_scan_at
+                ? new Date(rule.last_scan_at).toLocaleDateString()
+                : "Never"}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {rule.last_scan_at
+                ? new Date(rule.last_scan_at).toLocaleTimeString()
+                : "Run a scan to find duplicates"}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="shadow-md">
+          <CardContent className="p-4">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Last Data Update</span>
+            <p className="text-lg font-bold mt-1">
+              {lastWebhookAt
+                ? new Date(lastWebhookAt).toLocaleDateString()
+                : "—"}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {lastWebhookAt
+                ? new Date(lastWebhookAt).toLocaleTimeString()
+                : "Via webhook from GHL"}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Rule Summary Card */}
       <Card className="shadow-md border-t-4 border-t-primary">
         <CardContent className="p-6">
@@ -472,14 +523,6 @@ export default function MatchRuleDetail() {
             <div>
               <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Schedule</span>
               <p className="font-medium capitalize mt-1">{rule.schedule_frequency || "manual"}</p>
-            </div>
-            <div>
-              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Last Scan</span>
-              <p className="font-medium mt-1">
-                {rule.last_scan_at
-                  ? new Date(rule.last_scan_at).toLocaleString()
-                  : "Never"}
-              </p>
             </div>
           </div>
         </CardContent>

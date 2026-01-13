@@ -28,6 +28,8 @@ interface LocationContextType {
   trialEndsAt: string | null;
   upgradeUrl: string | null;
   features: PlanFeatures;
+  // Stats
+  lastWebhookAt: string | null;
 }
 
 const defaultFeatures: PlanFeatures = {
@@ -53,6 +55,7 @@ const LocationContext = createContext<LocationContextType>({
   trialEndsAt: null,
   upgradeUrl: null,
   features: defaultFeatures,
+  lastWebhookAt: null,
 });
 
 // GHL allowed origins for postMessage
@@ -167,6 +170,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
   const [upgradeUrl, setUpgradeUrl] = useState<string | null>(null);
   const [features, setFeatures] = useState<PlanFeatures>(defaultFeatures);
+  const [lastWebhookAt, setLastWebhookAt] = useState<string | null>(null);
 
   const canUseStrategies = plan !== 'free';
 
@@ -286,6 +290,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
           setIsOnTrial(data.is_on_trial || false);
           setTrialEndsAt(data.trial_ends_at || null);
           setUpgradeUrl(data.upgrade_url || null);
+          setLastWebhookAt(data.last_webhook_at || null);
           if (data.features) {
             setFeatures(data.features);
           }
@@ -323,6 +328,9 @@ export function LocationProvider({ children }: { children: ReactNode }) {
           }
           if ('upgrade_url' in result) {
             setUpgradeUrl((result as any).upgrade_url || null);
+          }
+          if ('last_webhook_at' in result) {
+            setLastWebhookAt((result as any).last_webhook_at || null);
           }
           if ('features' in result) {
             setFeatures((result as any).features);
@@ -388,6 +396,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       trialEndsAt,
       upgradeUrl,
       features,
+      lastWebhookAt,
     }}>
       {children}
     </LocationContext.Provider>
