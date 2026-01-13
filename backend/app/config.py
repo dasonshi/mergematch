@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     GHL_WEBHOOK_SECRET: str = ""
     GHL_APP_ID: str = ""  # Your GHL Marketplace app ID
     GHL_APP_SHARED_SECRET: str = ""  # SSO shared secret from GHL Marketplace
+    GHL_CUSTOM_PAGE_LINK_ID: str = ""  # Custom page link ID for redirect after OAuth
 
     # GHL Marketplace Plan IDs (set these after creating plans in marketplace)
     # Format: comma-separated plan_id:tier pairs

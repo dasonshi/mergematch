@@ -166,8 +166,18 @@ async def callback(
         return RedirectResponse(url=frontend_url)
 
     # Redirect with code only (no tokens in URL)
-    frontend_url = f"{settings.FRONTEND_URL}?installed=true&code={exchange_code}"
-    return RedirectResponse(url=frontend_url)
+    # If GHL custom page link is configured, redirect back to GHL iframe
+    if settings.GHL_CUSTOM_PAGE_LINK_ID:
+        redirect_url = (
+            f"https://app.gohighlevel.com/v2/location/{ghl_location_id}"
+            f"/custom-page-link/{settings.GHL_CUSTOM_PAGE_LINK_ID}"
+            f"?installed=true&code={exchange_code}"
+        )
+    else:
+        # Fallback to standalone frontend
+        redirect_url = f"{settings.FRONTEND_URL}?installed=true&code={exchange_code}"
+
+    return RedirectResponse(url=redirect_url)
 
 
 @router.post("/refresh", response_model=TokenResponse)
