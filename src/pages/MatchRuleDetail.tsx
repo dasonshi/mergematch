@@ -48,25 +48,27 @@ export default function MatchRuleDetail() {
   });
 
   // Fetch pending matches for this rule
-  const { data: matchesData, isLoading: matchesLoading, isFetching: matchesFetching } = useQuery({
+  const { data: matchesData, isLoading: matchesLoading } = useQuery({
     queryKey: ["matches", id, locationId],
     queryFn: () => api.getMatches("pending", id),
     enabled: !!locationId && !!id,
+    gcTime: 0, // No cache - always fresh
   });
 
   // Fetch merge history
-  const { data: mergesData, isFetching: mergesFetching } = useQuery({
+  const { data: mergesData, isLoading: mergesLoading } = useQuery({
     queryKey: ["merges", locationId],
     queryFn: () => api.getMerges(10),
     enabled: !!locationId,
+    gcTime: 0, // No cache - always fresh
   });
 
   // Fetch total contacts count
-  const { data: contactsStats, isFetching: contactsStatsFetching } = useQuery({
+  const { data: contactsStats, isLoading: contactsStatsLoading } = useQuery({
     queryKey: ["contacts-stats", locationId],
     queryFn: () => api.getContactsStats(),
     enabled: !!locationId,
-    staleTime: 0, // Always fetch fresh on mount
+    gcTime: 0, // No cache - always fresh
   });
 
   // Auto-trigger merge all dialog from URL param
@@ -442,7 +444,7 @@ export default function MatchRuleDetail() {
           <CardContent className="p-4">
             <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total Records</span>
             <p className="text-2xl font-bold mt-1">
-              {contactsStatsFetching ? (
+              {contactsStatsLoading ? (
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               ) : (
                 contactsStats?.total?.toLocaleString() ?? "—"
@@ -539,7 +541,7 @@ export default function MatchRuleDetail() {
           className="flex items-center gap-2 text-xl font-bold hover:text-primary transition-colors w-full text-left"
         >
           {matchesExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
-          Pending Matches ({matchesFetching ? <Loader2 className="h-4 w-4 animate-spin inline" /> : pendingMatches.length})
+          Pending Matches ({matchesLoading ? <Loader2 className="h-4 w-4 animate-spin inline" /> : pendingMatches.length})
         </button>
 
         {matchesExpanded && (
@@ -634,7 +636,7 @@ export default function MatchRuleDetail() {
 
       {/* Merge History Section */}
       <div className="space-y-4">
-        <h2 className="text-xl font-bold">Merge History ({mergesFetching ? <Loader2 className="h-4 w-4 animate-spin inline" /> : mergeHistory.length})</h2>
+        <h2 className="text-xl font-bold">Merge History ({mergesLoading ? <Loader2 className="h-4 w-4 animate-spin inline" /> : mergeHistory.length})</h2>
 
         {mergeHistory.length === 0 ? (
           <Card className="shadow-md">
