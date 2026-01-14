@@ -114,7 +114,10 @@ class GHLClient:
     async def delete_contact(self, contact_id: str) -> None:
         """Delete a contact."""
         response = await self._client.delete(f"/contacts/{contact_id}")
-        response.raise_for_status()
+        if response.status_code >= 400:
+            error_detail = response.text
+            logger.error(f"[GHL] Delete contact failed: {response.status_code} - {error_detail}")
+            raise Exception(f"GHL API error ({response.status_code}): {error_detail}")
 
     async def create_contact(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new contact (for rollback)."""
