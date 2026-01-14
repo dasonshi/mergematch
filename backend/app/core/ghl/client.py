@@ -105,8 +105,10 @@ class GHLClient:
         logger.info(f"[GHL] PUT /contacts/{contact_id} with data: {data}")
         response = await self._client.put(f"/contacts/{contact_id}", json=data)
         if response.status_code >= 400:
-            logger.error(f"[GHL] Update contact failed: {response.status_code} - {response.text}")
-            response.raise_for_status()
+            error_detail = response.text
+            logger.error(f"[GHL] Update contact failed: {response.status_code} - {error_detail}")
+            # Raise with actual GHL error message
+            raise Exception(f"GHL API error ({response.status_code}): {error_detail}")
         return response.json()
 
     async def delete_contact(self, contact_id: str) -> None:
