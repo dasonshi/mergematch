@@ -353,3 +353,113 @@ async def run_scan(
         "auto_approved": sum(1 for m in matches_found if m["auto_merge"]),
         "pending_review": sum(1 for m in matches_found if not m["auto_merge"]),
     }
+
+
+async def check_single_contact(
+    contact_id: str,
+    ghl_location_id: str,
+    access_token: str,
+    tenant_id: str,
+    internal_location_id: str,
+    rule_id: Optional[str] = None,
+    plan: str = "free",
+) -> dict:
+    """
+    Check a single contact for duplicates against all existing contacts.
+    Used for real-time duplicate detection in workflows.
+
+    Returns dict with:
+        - is_duplicate: bool
+        - matches: List of matched contacts with scores
+        - best_match: The highest confidence match (if any)
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    supabase = get_supabase()
+
+    # Get rules to check against
+    rules_query = supabase.table("match_rules").select("*").eq(
+        "location_id", internal_location_id
+    ).eq("is_active", True).eq("source_object", "contacts")
+
+    if rule_id:
+        rules_query = rules_query.eq("id", rule_id)
+
+    rules_result = rules_query.execute()
+
+    if not rules_result.data:
+        return {
+            "is_duplicate": False,
+            "matches": [],
+            "best_match": None,
+            "message": "No active rules found for contacts"
+        }
+
+    # Fetch the new contact from GHL (fresh data)
+    async with GHLClient(access_token, ghl_location_id) as client:
+        try:
+            new_contact_result = await client.get_contact(contact_id)
+            new_contact = new_contact_result.get("contact", new_contact_result)
+        except Exception as e:
+            logger.error(f"Failed to fetch contact {contact_id}: {e}")
+            return {
+                "is_duplicate": False,
+                "matches": [],
+                "best_match": None,
+                "error": f"Contact not found: {contact_id}"
+            }
+
+        # Fetch ALL existing contacts from GHL (fresh data for consecutive duplicate handling)
+        all_contacts_result = await client.get_contacts(limit=10000)
+        all_contacts = all_contacts_result.get("contacts", [])
+
+    logger.info(f"Checking contact {contact_id} against {len(all_contacts)} existing contacts")
+
+    # Filter out the new contact itself
+    existing_contacts = [c for c in all_contacts if c.get("id") != contact_id]
+
+    all_matches = []
+
+    # Check against each rule
+    for rule in rules_result.data:
+        match_fields = rule.get("match_fields", [])
+        review_threshold = float(rule.get("review_threshold", 0.70)) * 100
+        auto_merge_threshold = float(rule.get("auto_merge_threshold", 0.95)) * 100
+
+        # Compare new contact against each existing contact
+        for existing in existing_contacts:
+            is_match, confidence, field_scores = compare_records(
+                new_contact, existing, match_fields
+            )
+
+            if is_match and confidence >= review_threshold:
+                all_matches.append({
+                    "matched_contact_id": existing.get("id"),
+                    "matched_contact_data": existing,
+                    "confidence_score": round(confidence, 2),
+                    "field_scores": field_scores,
+                    "auto_merge_eligible": confidence >= auto_merge_threshold and plan != "free",
+                    "rule_id": rule["id"],
+                    "rule_name": rule.get("name", "Unknown Rule"),
+                })
+
+    # Sort by confidence score (highest first)
+    all_matches.sort(key=lambda x: x["confidence_score"], reverse=True)
+
+    # Get the best match
+    best_match = all_matches[0] if all_matches else None
+
+    return {
+        "is_duplicate": len(all_matches) > 0,
+        "matches": all_matches,
+        "best_match": best_match,
+        "contact_data": new_contact,  # Full contact data for merge
+        "contact_checked": {
+            "id": contact_id,
+            "email": new_contact.get("email"),
+            "phone": new_contact.get("phone"),
+            "name": f"{new_contact.get('firstName', '')} {new_contact.get('lastName', '')}".strip(),
+        },
+        "contacts_scanned": len(existing_contacts),
+    }
