@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Plus, Trash2, Lock, Info, Crown, Loader2 } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Lock, Info, Crown, Loader2, ArrowRight, Check } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,6 +18,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { StepIndicator } from "@/components/ui/step-indicator";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, MatchRule, MatchField, ObjectField } from "@/lib/api";
@@ -109,6 +111,14 @@ function getOrdinalSuffix(n: number): string {
   return s[(v - 20) % 10] || s[v] || s[0];
 }
 
+// Wizard steps
+const STEPS = [
+  { id: 1, name: "Basics", description: "Name & object" },
+  { id: 2, name: "Conditions", description: "Match fields" },
+  { id: 3, name: "Strategy", description: "Merge behavior" },
+  { id: 4, name: "Review", description: "Confirm & create" },
+];
+
 export default function MatchRuleForm() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -116,6 +126,9 @@ export default function MatchRuleForm() {
   const queryClient = useQueryClient();
   const { locationId, isAuthenticated, plan } = useLocation();
   const isEditing = !!id;
+
+  // Wizard step state
+  const [currentStep, setCurrentStep] = useState(1);
 
   const [ruleName, setRuleName] = useState("");
   const [objectType, setObjectType] = useState("contacts");
@@ -277,26 +290,55 @@ export default function MatchRuleForm() {
     return currentGroup.join("");
   };
 
+  // Step validation
+  const validateStep = (step: number): boolean => {
+    switch (step) {
+      case 1:
+        if (!ruleName.trim()) {
+          toast({
+            title: "Rule name required",
+            description: "Please enter a name for your rule.",
+            variant: "destructive",
+          });
+          return false;
+        }
+        return true;
+      case 2:
+        if (fields.some(f => !f.name)) {
+          toast({
+            title: "Match conditions incomplete",
+            description: "Please select a field for all match conditions.",
+            variant: "destructive",
+          });
+          return false;
+        }
+        return true;
+      case 3:
+        return true; // Strategy always has a default
+      default:
+        return true;
+    }
+  };
+
+  const handleNext = () => {
+    if (validateStep(currentStep)) {
+      setCurrentStep(prev => Math.min(prev + 1, 4));
+    }
+  };
+
+  const handlePrevious = () => {
+    setCurrentStep(prev => Math.max(prev - 1, 1));
+  };
+
+  const handleStepClick = (stepId: number) => {
+    // Only allow going back to previous steps
+    if (stepId < currentStep) {
+      setCurrentStep(stepId);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!ruleName.trim()) {
-      toast({
-        title: "Validation error",
-        description: "Please enter a rule name.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (fields.some(f => !f.name)) {
-      toast({
-        title: "Validation error",
-        description: "Please select a field for all match conditions.",
-        variant: "destructive",
-      });
-      return;
-    }
 
     // Build the rule payload
     const rulePayload: Partial<MatchRule> = {
@@ -336,8 +378,15 @@ export default function MatchRuleForm() {
     navigate(isEditing ? `/match-rules/${id}` : "/");
   };
 
+  // Animation variants for step transitions
+  const stepVariants = {
+    enter: { opacity: 0, x: 20 },
+    center: { opacity: 1, x: 0 },
+    exit: { opacity: 0, x: -20 },
+  };
+
   return (
-    <div className="space-y-6 ">
+    <div className="space-y-6">
       {/* Header */}
       <div className="space-y-1">
         <Link
@@ -352,126 +401,398 @@ export default function MatchRuleForm() {
         </h1>
       </div>
 
+      {/* Step Indicator - only show for create mode */}
+      {!isEditing && (
+        <StepIndicator
+          steps={STEPS}
+          currentStep={currentStep}
+          onStepClick={handleStepClick}
+          className="mb-8"
+        />
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Rule Name - First and Prominent */}
-        <Card className="shadow-md">
-          <CardHeader className="bg-muted/30 border-b">
-            <CardTitle className="text-lg font-bold">Rule Name</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-6">
-            <div className="space-y-2">
-              <Input
-                placeholder="e.g., Email + Phone Match"
-                value={ruleName}
-                onChange={(e) => setRuleName(e.target.value.slice(0, 100))}
-                className="text-lg"
-                maxLength={100}
-              />
-              <p className="text-sm text-muted-foreground text-right">
-                {ruleName.length}/100
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+        <AnimatePresence mode="wait">
+          {/* Step 1: Basics */}
+          {(currentStep === 1 || isEditing) && (
+            <motion.div
+              key="step1"
+              variants={stepVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.2 }}
+              className="space-y-6"
+            >
+              {/* Rule Name */}
+              <Card className="shadow-md">
+                <CardHeader className="bg-muted/30 border-b">
+                  <CardTitle className="text-lg font-bold">Rule Name</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-6">
+                  <div className="space-y-2">
+                    <Input
+                      placeholder="e.g., Email + Phone Match"
+                      value={ruleName}
+                      onChange={(e) => setRuleName(e.target.value.slice(0, 100))}
+                      className="text-lg"
+                      maxLength={100}
+                      autoFocus
+                    />
+                    <p className="text-sm text-muted-foreground text-right">
+                      {ruleName.length}/100
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
 
-        {/* Object Type */}
-        <Card className="shadow-md">
-          <CardHeader className="bg-muted/30 border-b">
-            <CardTitle className="text-lg font-bold flex items-center gap-2">
-              Object Type
-              {isEditing && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="inline-flex items-center gap-1 text-sm text-muted-foreground font-normal">
-                      <Lock className="h-4 w-4" />
-                      Locked
-                      <Info className="h-4 w-4" />
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p className="max-w-xs">Object type cannot be changed. Create a new rule for a different object.</p>
-                  </TooltipContent>
-                </Tooltip>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-6">
-            {isEditing ? (
-              <div className="flex items-center gap-2 p-3 bg-muted rounded-md">
-                <Lock className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium">
-                  {objectTypes.find(o => o.id === objectType)?.name || objectType}
-                </span>
-              </div>
-            ) : (
-              <Select value={objectType} onValueChange={(val) => {
-                const selected = objectTypes.find(o => o.id === val);
-                if (selected?.available) {
-                  setObjectType(val);
-                  // Reset fields when object type changes since fields are different
-                  setFields([{ name: "", matchType: "exact", operator: "AND" }]);
-                }
-              }}>
-                <SelectTrigger className="w-full sm:w-[280px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {objectTypes.map((obj) => (
-                    <SelectItem
-                      key={obj.id}
-                      value={obj.id}
-                      disabled={!obj.available}
-                      className={!obj.available ? "opacity-60" : ""}
-                    >
-                      <span className="flex items-center gap-2">
-                        {obj.name}
-                        {obj.isCustom && (
-                          <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">Custom</span>
-                        )}
-                        {!obj.available && (
-                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                            <Lock className="h-3 w-3" />
-                            {obj.tier === "starter" ? "Starter" : obj.tier === "pro" ? "Pro" : "Agency"}
+              {/* Object Type */}
+              <Card className="shadow-md">
+                <CardHeader className="bg-muted/30 border-b">
+                  <CardTitle className="text-lg font-bold flex items-center gap-2">
+                    Object Type
+                    {isEditing && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="inline-flex items-center gap-1 text-sm text-muted-foreground font-normal">
+                            <Lock className="h-4 w-4" />
+                            Locked
+                            <Info className="h-4 w-4" />
                           </span>
-                        )}
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-xs">Object type cannot be changed. Create a new rule for a different object.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-6">
+                  {isEditing ? (
+                    <div className="flex items-center gap-2 p-3 bg-muted rounded-md">
+                      <Lock className="h-4 w-4 text-muted-foreground" />
+                      <span className="font-medium">
+                        {objectTypes.find(o => o.id === objectType)?.name || objectType}
                       </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Match Conditions with Inline Logic */}
-        <Card className="shadow-md">
-          <CardHeader className="bg-muted/30 border-b">
-            <CardTitle className="text-lg font-bold">Match Conditions</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Define which fields to compare and how they should be combined
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-3 pt-6">
-            {fields.map((field, index) => (
-              <div key={index} className="space-y-3">
-                {/* Condition Row */}
-                <div className="flex gap-2 items-center p-4 bg-muted/40 rounded-lg border hover:bg-muted/50 transition-colors">
-                  <div className="flex-1 min-w-0">
-                    <Select
-                      value={field.name}
-                      onValueChange={(val) => updateField(index, "name", val)}
-                      disabled={fieldsLoading}
-                    >
-                      <SelectTrigger className="bg-background">
-                        <SelectValue placeholder={fieldsLoading ? "Loading fields..." : "Select field..."} />
+                    </div>
+                  ) : (
+                    <Select value={objectType} onValueChange={(val) => {
+                      const selected = objectTypes.find(o => o.id === val);
+                      if (selected?.available) {
+                        setObjectType(val);
+                        // Reset fields when object type changes since fields are different
+                        setFields([{ name: "", matchType: "exact", operator: "AND" }]);
+                      }
+                    }}>
+                      <SelectTrigger className="w-full sm:w-[280px]">
+                        <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {fieldOptions.map((opt) => (
-                          <SelectItem key={opt.id} value={opt.id}>
+                        {objectTypes.map((obj) => (
+                          <SelectItem
+                            key={obj.id}
+                            value={obj.id}
+                            disabled={!obj.available}
+                            className={!obj.available ? "opacity-60" : ""}
+                          >
                             <span className="flex items-center gap-2">
-                              {opt.name}
-                              {opt.isCustom && (
+                              {obj.name}
+                              {obj.isCustom && (
                                 <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">Custom</span>
+                              )}
+                              {!obj.available && (
+                                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                  <Lock className="h-3 w-3" />
+                                  {obj.tier === "starter" ? "Starter" : obj.tier === "pro" ? "Pro" : "Agency"}
+                                </span>
+                              )}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+
+          {/* Step 2: Match Conditions */}
+          {(currentStep === 2 || isEditing) && (
+            <motion.div
+              key="step2"
+              variants={stepVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.2 }}
+            >
+              <Card className="shadow-md">
+                <CardHeader className="bg-muted/30 border-b">
+                  <CardTitle className="text-lg font-bold">Match Conditions</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Define which fields to compare and how they should be combined
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-3 pt-6">
+                  {fields.map((field, index) => (
+                    <div key={index} className="space-y-3">
+                      {/* Condition Row */}
+                      <div className="flex gap-2 items-center p-4 bg-muted/40 rounded-lg border hover:bg-muted/50 transition-colors">
+                        <div className="flex-1 min-w-0">
+                          <Select
+                            value={field.name}
+                            onValueChange={(val) => updateField(index, "name", val)}
+                            disabled={fieldsLoading}
+                          >
+                            <SelectTrigger className="bg-background">
+                              <SelectValue placeholder={fieldsLoading ? "Loading fields..." : "Select field..."} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {fieldOptions.map((opt) => (
+                                <SelectItem key={opt.id} value={opt.id}>
+                                  <span className="flex items-center gap-2">
+                                    {opt.name}
+                                    {opt.isCustom && (
+                                      <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">Custom</span>
+                                    )}
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <Select
+                            value={field.matchType}
+                            onValueChange={(val) => updateField(index, "matchType", val)}
+                          >
+                            <SelectTrigger className="bg-background">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {matchTypes.map((opt) => (
+                                <SelectItem key={opt.id} value={opt.id}>
+                                  {opt.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeField(index)}
+                          disabled={fields.length === 1}
+                          className="shrink-0"
+                        >
+                          <Trash2 className="h-4 w-4 text-muted-foreground" />
+                        </Button>
+                      </div>
+
+                      {/* Operator Row - shown after each condition except the last */}
+                      {index < fields.length - 1 && (
+                        <div className="flex items-center gap-2 pl-4">
+                          <div className="flex gap-1 bg-muted rounded-md p-1">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={field.operator === "AND" ? "default" : "ghost"}
+                              className="h-7 px-3 text-xs font-semibold"
+                              onClick={() => updateField(index, "operator", "AND")}
+                            >
+                              AND
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={field.operator === "OR" ? "default" : "ghost"}
+                              className="h-7 px-3 text-xs font-semibold"
+                              onClick={() => updateField(index, "operator", "OR")}
+                            >
+                              OR
+                            </Button>
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {field.operator === "AND" ? "Both must match" : "Either can match"}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  {/* Add Condition Buttons */}
+                  <div className="flex gap-2 pt-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => addField("AND")}
+                    >
+                      <Plus className="mr-1 h-4 w-4" />
+                      Add AND condition
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => addField("OR")}
+                    >
+                      <Plus className="mr-1 h-4 w-4" />
+                      Add OR condition
+                    </Button>
+                  </div>
+
+                  {/* Logic Preview */}
+                  {fields.length > 0 && fields[0].name && (
+                    <div className="mt-4 p-4 bg-primary/8 border-l-4 border-l-primary rounded-lg">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Match Logic Preview</p>
+                      <p className="text-sm font-mono">
+                        {getLogicExpression()}
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+
+          {/* Step 3: Strategy & Schedule */}
+          {(currentStep === 3 || isEditing) && (
+            <motion.div
+              key="step3"
+              variants={stepVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.2 }}
+              className="space-y-6"
+            >
+              {/* Merge Strategy */}
+              <Card className="shadow-md">
+                <CardHeader className="bg-muted/30 border-b">
+                  <CardTitle className="text-lg font-bold">Merge Strategy</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Define how duplicate records should be merged
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-4 pt-6">
+                  {/* Prebuilt Strategies */}
+                  <div className="space-y-2">
+                    <Label>Prebuilt Strategies</Label>
+                    <div className="grid gap-2">
+                      {strategies.map((s) => (
+                        <div
+                          key={s.id}
+                          onClick={() => setStrategy(s.id)}
+                          className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                            strategy === s.id
+                              ? "border-primary bg-primary/8 shadow-md"
+                              : "border-muted hover:border-muted-foreground/50 hover:bg-muted/40 hover:shadow-sm"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold">{s.name}</span>
+                            {strategy === s.id && (
+                              <span className="text-xs text-primary font-semibold">Selected</span>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground mt-1">{s.description}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Divider */}
+                  <div className="relative">
+                    <div className="absolute inset-0 flex items-center">
+                      <span className="w-full border-t" />
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                      <span className="bg-background px-2 text-muted-foreground">or</span>
+                    </div>
+                  </div>
+
+                  {/* Custom Strategy Option */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label>Custom Strategy</Label>
+                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                        <Crown className="h-3 w-3" />
+                        Pro+
+                      </span>
+                    </div>
+                    <div
+                      onClick={() => {
+                        // In real app, check if user has Pro+ tier
+                        const hasProPlan = false; // mock
+                        if (!hasProPlan) {
+                          toast({
+                            title: "Upgrade Required",
+                            description: "Custom merge strategies require Pro plan or higher.",
+                          });
+                          return;
+                        }
+                        // Navigate to create custom strategy
+                        navigate("/merge-strategies/new");
+                      }}
+                      className="p-4 rounded-lg border-2 border-dashed border-muted bg-muted/20 cursor-not-allowed transition-all"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Plus className="h-4 w-4 text-muted-foreground" />
+                        <span className="font-medium">Create Custom Strategy</span>
+                        <Lock className="h-3 w-3 text-muted-foreground ml-auto" />
+                      </div>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Define custom field-level merge rules for complete control
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Schedule */}
+              <Card className="shadow-md">
+                <CardHeader className="bg-muted/30 border-b">
+                  <CardTitle className="text-lg font-bold">Schedule</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Configure when this rule automatically scans for duplicates
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-4 pt-6">
+                  {/* Frequency Selection */}
+                  <div className="space-y-2">
+                    <Label>Frequency</Label>
+                    <Select
+                      value={frequency}
+                      onValueChange={(val) => {
+                        const selected = frequencies.find(f => f.id === val);
+                        if (selected?.available) {
+                          setFrequency(val);
+                        } else {
+                          toast({
+                            title: "Upgrade Required",
+                            description: "Scheduled scans require Starter plan or higher.",
+                          });
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="w-full sm:w-[200px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {frequencies.map((f) => (
+                          <SelectItem
+                            key={f.id}
+                            value={f.id}
+                            disabled={!f.available}
+                            className={!f.available ? "opacity-60" : ""}
+                          >
+                            <span className="flex items-center gap-2">
+                              {f.name}
+                              {!f.available && (
+                                <Lock className="h-3 w-3 text-muted-foreground" />
                               )}
                             </span>
                           </SelectItem>
@@ -479,332 +800,206 @@ export default function MatchRuleForm() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <Select
-                      value={field.matchType}
-                      onValueChange={(val) => updateField(index, "matchType", val)}
-                    >
-                      <SelectTrigger className="bg-background">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {matchTypes.map((opt) => (
-                          <SelectItem key={opt.id} value={opt.id}>
-                            {opt.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => removeField(index)}
-                    disabled={fields.length === 1}
-                    className="shrink-0"
-                  >
-                    <Trash2 className="h-4 w-4 text-muted-foreground" />
-                  </Button>
-                </div>
 
-                {/* Operator Row - shown after each condition except the last */}
-                {index < fields.length - 1 && (
-                  <div className="flex items-center gap-2 pl-4">
-                    <div className="flex gap-1 bg-muted rounded-md p-1">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={field.operator === "AND" ? "default" : "ghost"}
-                        className="h-7 px-3 text-xs font-semibold"
-                        onClick={() => updateField(index, "operator", "AND")}
-                      >
-                        AND
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={field.operator === "OR" ? "default" : "ghost"}
-                        className="h-7 px-3 text-xs font-semibold"
-                        onClick={() => updateField(index, "operator", "OR")}
-                      >
-                        OR
-                      </Button>
+                  {/* Time Selection - shown for all scheduled options */}
+                  {frequency !== "manual" && (
+                    <div className="space-y-2">
+                      <Label>Time</Label>
+                      <Select value={scheduleTime} onValueChange={setScheduleTime}>
+                        <SelectTrigger className="w-full sm:w-[140px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-[200px]">
+                          {timeOptions.map((t) => (
+                            <SelectItem key={t.id} value={t.id}>
+                              {t.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
-                    <span className="text-xs text-muted-foreground">
-                      {field.operator === "AND" ? "Both must match" : "Either can match"}
-                    </span>
+                  )}
+
+                  {/* Day of Week - shown for weekly/biweekly */}
+                  {(frequency === "weekly" || frequency === "biweekly") && (
+                    <div className="space-y-2">
+                      <Label>Day of Week</Label>
+                      <Select value={scheduleDayOfWeek} onValueChange={setScheduleDayOfWeek}>
+                        <SelectTrigger className="w-full sm:w-[160px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {daysOfWeek.map((d) => (
+                            <SelectItem key={d.id} value={d.id}>
+                              {d.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {/* Day of Month - shown for monthly */}
+                  {frequency === "monthly" && (
+                    <div className="space-y-2">
+                      <Label>Day of Month</Label>
+                      <Select value={scheduleDayOfMonth} onValueChange={setScheduleDayOfMonth}>
+                        <SelectTrigger className="w-full sm:w-[120px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-[200px]">
+                          {daysOfMonth.map((d) => (
+                            <SelectItem key={d.id} value={d.id}>
+                              {d.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {/* Schedule Preview */}
+                  {frequency !== "manual" && (
+                    <div className="p-4 bg-muted/40 rounded-lg border-l-4 border-l-primary">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Schedule Preview</p>
+                      <p className="font-medium">
+                        {frequency === "daily" && `Every day at ${timeOptions.find(t => t.id === scheduleTime)?.name}`}
+                        {frequency === "weekly" && `Every ${daysOfWeek.find(d => d.id === scheduleDayOfWeek)?.name} at ${timeOptions.find(t => t.id === scheduleTime)?.name}`}
+                        {frequency === "biweekly" && `Every other ${daysOfWeek.find(d => d.id === scheduleDayOfWeek)?.name} at ${timeOptions.find(t => t.id === scheduleTime)?.name}`}
+                        {frequency === "monthly" && `${daysOfMonth.find(d => d.id === scheduleDayOfMonth)?.name} of each month at ${timeOptions.find(t => t.id === scheduleTime)?.name}`}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Tier Gate Note */}
+                  {frequency !== "manual" && (
+                    <p className="text-sm text-muted-foreground flex items-center gap-1">
+                      <Info className="h-4 w-4 text-warning" />
+                      Scheduled scans require Starter plan or higher.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+
+          {/* Step 4: Review */}
+          {currentStep === 4 && !isEditing && (
+            <motion.div
+              key="step4"
+              variants={stepVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              transition={{ duration: 0.2 }}
+            >
+              <Card className="shadow-md">
+                <CardHeader className="bg-muted/30 border-b">
+                  <CardTitle className="text-lg font-bold flex items-center gap-2">
+                    <Check className="h-5 w-5 text-primary" />
+                    Review Your Rule
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Confirm your settings before creating the rule
+                  </p>
+                </CardHeader>
+                <CardContent className="pt-6 space-y-6">
+                  {/* Summary Grid */}
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="p-4 bg-muted/40 rounded-lg">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Rule Name</p>
+                      <p className="font-semibold text-lg">{ruleName}</p>
+                    </div>
+                    <div className="p-4 bg-muted/40 rounded-lg">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Object Type</p>
+                      <p className="font-semibold text-lg">{objectTypes.find(o => o.id === objectType)?.name}</p>
+                    </div>
                   </div>
-                )}
-              </div>
-            ))}
 
-            {/* Add Condition Buttons */}
-            <div className="flex gap-2 pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => addField("AND")}
-              >
-                <Plus className="mr-1 h-4 w-4" />
-                Add AND condition
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => addField("OR")}
-              >
-                <Plus className="mr-1 h-4 w-4" />
-                Add OR condition
-              </Button>
-            </div>
+                  {/* Match Logic */}
+                  <div className="p-4 bg-primary/8 border-l-4 border-l-primary rounded-lg">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Match Logic</p>
+                    <p className="font-mono text-sm">{getLogicExpression() || "No conditions set"}</p>
+                  </div>
 
-            {/* Logic Preview */}
-            {fields.length > 0 && fields[0].name && (
-              <div className="mt-4 p-4 bg-primary/8 border-l-4 border-l-primary rounded-lg">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Match Logic Preview</p>
-                <p className="text-sm font-mono">
-                  {getLogicExpression()}
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Merge Strategy */}
-        <Card className="shadow-md">
-          <CardHeader className="bg-muted/30 border-b">
-            <CardTitle className="text-lg font-bold">Merge Strategy</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Define how duplicate records should be merged
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-4 pt-6">
-            {/* Prebuilt Strategies */}
-            <div className="space-y-2">
-              <Label>Prebuilt Strategies</Label>
-              <div className="grid gap-2">
-                {strategies.map((s) => (
-                  <div
-                    key={s.id}
-                    onClick={() => setStrategy(s.id)}
-                    className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
-                      strategy === s.id
-                        ? "border-primary bg-primary/8 shadow-md"
-                        : "border-muted hover:border-muted-foreground/50 hover:bg-muted/40 hover:shadow-sm"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold">{s.name}</span>
-                      {strategy === s.id && (
-                        <span className="text-xs text-primary font-semibold">Selected</span>
+                  {/* Strategy & Schedule */}
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="p-4 bg-muted/40 rounded-lg">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Merge Strategy</p>
+                      <p className="font-semibold">{strategies.find(s => s.id === strategy)?.name}</p>
+                      <p className="text-sm text-muted-foreground">{strategies.find(s => s.id === strategy)?.description}</p>
+                    </div>
+                    <div className="p-4 bg-muted/40 rounded-lg">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Schedule</p>
+                      <p className="font-semibold">{frequencies.find(f => f.id === frequency)?.name}</p>
+                      {frequency !== "manual" && (
+                        <p className="text-sm text-muted-foreground">
+                          {frequency === "daily" && `Every day at ${timeOptions.find(t => t.id === scheduleTime)?.name}`}
+                          {frequency === "weekly" && `Every ${daysOfWeek.find(d => d.id === scheduleDayOfWeek)?.name}`}
+                          {frequency === "biweekly" && `Every other ${daysOfWeek.find(d => d.id === scheduleDayOfWeek)?.name}`}
+                          {frequency === "monthly" && `${daysOfMonth.find(d => d.id === scheduleDayOfMonth)?.name} of each month`}
+                        </p>
                       )}
                     </div>
-                    <p className="text-sm text-muted-foreground mt-1">{s.description}</p>
                   </div>
-                ))}
-              </div>
-            </div>
 
-            {/* Divider */}
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">or</span>
-              </div>
-            </div>
-
-            {/* Custom Strategy Option */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label>Custom Strategy</Label>
-                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                  <Crown className="h-3 w-3" />
-                  Pro+
-                </span>
-              </div>
-              <div
-                onClick={() => {
-                  // In real app, check if user has Pro+ tier
-                  const hasProPlan = false; // mock
-                  if (!hasProPlan) {
-                    toast({
-                      title: "Upgrade Required",
-                      description: "Custom merge strategies require Pro plan or higher.",
-                    });
-                    return;
-                  }
-                  // Navigate to create custom strategy
-                  navigate("/merge-strategies/new");
-                }}
-                className="p-4 rounded-lg border-2 border-dashed border-muted bg-muted/20 cursor-not-allowed transition-all"
-              >
-                <div className="flex items-center gap-2">
-                  <Plus className="h-4 w-4 text-muted-foreground" />
-                  <span className="font-medium">Create Custom Strategy</span>
-                  <Lock className="h-3 w-3 text-muted-foreground ml-auto" />
-                </div>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Define custom field-level merge rules for complete control
-                </p>
-              </div>
-            </div>
-
-            {/* Selected Strategy Preview */}
-            {strategy && (
-              <div className="p-4 bg-muted/40 rounded-lg border-l-4 border-l-primary">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Selected Strategy</p>
-                <p className="font-semibold">{strategies.find(s => s.id === strategy)?.name}</p>
-                <p className="text-sm text-muted-foreground">{strategies.find(s => s.id === strategy)?.description}</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Schedule */}
-        <Card className="shadow-md">
-          <CardHeader className="bg-muted/30 border-b">
-            <CardTitle className="text-lg font-bold">Schedule</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Configure when this rule automatically scans for duplicates
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-4 pt-6">
-            {/* Frequency Selection */}
-            <div className="space-y-2">
-              <Label>Frequency</Label>
-              <Select
-                value={frequency}
-                onValueChange={(val) => {
-                  const selected = frequencies.find(f => f.id === val);
-                  if (selected?.available) {
-                    setFrequency(val);
-                  } else {
-                    toast({
-                      title: "Upgrade Required",
-                      description: "Scheduled scans require Starter plan or higher.",
-                    });
-                  }
-                }}
-              >
-                <SelectTrigger className="w-full sm:w-[200px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {frequencies.map((f) => (
-                    <SelectItem
-                      key={f.id}
-                      value={f.id}
-                      disabled={!f.available}
-                      className={!f.available ? "opacity-60" : ""}
-                    >
-                      <span className="flex items-center gap-2">
-                        {f.name}
-                        {!f.available && (
-                          <Lock className="h-3 w-3 text-muted-foreground" />
-                        )}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Time Selection - shown for all scheduled options */}
-            {frequency !== "manual" && (
-              <div className="space-y-2">
-                <Label>Time</Label>
-                <Select value={scheduleTime} onValueChange={setScheduleTime}>
-                  <SelectTrigger className="w-full sm:w-[140px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-[200px]">
-                    {timeOptions.map((t) => (
-                      <SelectItem key={t.id} value={t.id}>
-                        {t.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            {/* Day of Week - shown for weekly/biweekly */}
-            {(frequency === "weekly" || frequency === "biweekly") && (
-              <div className="space-y-2">
-                <Label>Day of Week</Label>
-                <Select value={scheduleDayOfWeek} onValueChange={setScheduleDayOfWeek}>
-                  <SelectTrigger className="w-full sm:w-[160px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {daysOfWeek.map((d) => (
-                      <SelectItem key={d.id} value={d.id}>
-                        {d.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            {/* Day of Month - shown for monthly */}
-            {frequency === "monthly" && (
-              <div className="space-y-2">
-                <Label>Day of Month</Label>
-                <Select value={scheduleDayOfMonth} onValueChange={setScheduleDayOfMonth}>
-                  <SelectTrigger className="w-full sm:w-[120px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-[200px]">
-                    {daysOfMonth.map((d) => (
-                      <SelectItem key={d.id} value={d.id}>
-                        {d.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            {/* Schedule Preview */}
-            {frequency !== "manual" && (
-              <div className="p-4 bg-muted/40 rounded-lg border-l-4 border-l-primary">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Schedule Preview</p>
-                <p className="font-medium">
-                  {frequency === "daily" && `Every day at ${timeOptions.find(t => t.id === scheduleTime)?.name}`}
-                  {frequency === "weekly" && `Every ${daysOfWeek.find(d => d.id === scheduleDayOfWeek)?.name} at ${timeOptions.find(t => t.id === scheduleTime)?.name}`}
-                  {frequency === "biweekly" && `Every other ${daysOfWeek.find(d => d.id === scheduleDayOfWeek)?.name} at ${timeOptions.find(t => t.id === scheduleTime)?.name}`}
-                  {frequency === "monthly" && `${daysOfMonth.find(d => d.id === scheduleDayOfMonth)?.name} of each month at ${timeOptions.find(t => t.id === scheduleTime)?.name}`}
-                </p>
-              </div>
-            )}
-
-            {/* Tier Gate Note */}
-            {frequency !== "manual" && (
-              <p className="text-sm text-muted-foreground flex items-center gap-1">
-                <Info className="h-4 w-4 text-warning" />
-                Scheduled scans require Starter plan or higher.
-              </p>
-            )}
-          </CardContent>
-        </Card>
+                  {/* Info Box */}
+                  <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg flex items-start gap-3">
+                    <Info className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-medium text-blue-900 dark:text-blue-100">What happens next?</p>
+                      <p className="text-sm text-blue-700 dark:text-blue-200 mt-1">
+                        After you create this rule, we'll automatically scan your {objectTypes.find(o => o.id === objectType)?.name?.toLowerCase()} for duplicates. 
+                        You'll be able to review matches before merging.
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Footer Actions */}
         <div className="flex justify-between items-center pt-6 mt-6 border-t-2 border-t-muted">
-          <Button type="button" variant="outline" onClick={handleCancel} disabled={isSaving}>
-            Cancel
-          </Button>
-          <Button type="submit" disabled={isSaving}>
-            {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isSaving
-              ? (isEditing ? "Saving..." : "Creating & Scanning...")
-              : (isEditing ? "Save Changes" : "Create Rule")}
-          </Button>
+          {isEditing ? (
+            <>
+              <Button type="button" variant="outline" onClick={handleCancel} disabled={isSaving}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSaving}>
+                {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {isSaving ? "Saving..." : "Save Changes"}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={currentStep === 1 ? handleCancel : handlePrevious}
+                disabled={isSaving}
+              >
+                {currentStep === 1 ? "Cancel" : (
+                  <>
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    Back
+                  </>
+                )}
+              </Button>
+              {currentStep < 4 ? (
+                <Button type="button" onClick={handleNext}>
+                  Next
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              ) : (
+                <Button type="submit" disabled={isSaving}>
+                  {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {isSaving ? "Creating & Scanning..." : "Create Rule"}
+                </Button>
+              )}
+            </>
+          )}
         </div>
       </form>
     </div>
