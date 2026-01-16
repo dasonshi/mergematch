@@ -559,6 +559,47 @@ export default function MatchRuleForm() {
                                   </span>
                                 </SelectItem>
                               ))}
+                              {/* Custom Field Option - locked for free tier */}
+                              <div className="px-2 py-1.5 mt-1 border-t border-border">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <div
+                                      className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-sm text-sm ${
+                                        plan === "free"
+                                          ? "opacity-60 cursor-not-allowed"
+                                          : "cursor-pointer hover:bg-accent"
+                                      }`}
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        if (plan !== "free") {
+                                          toast({
+                                            title: "Custom Field",
+                                            description: "Enter a custom field name to match on.",
+                                          });
+                                        }
+                                      }}
+                                    >
+                                      <span className="flex items-center gap-2">
+                                        <Plus className="h-4 w-4" />
+                                        Custom Field
+                                      </span>
+                                      {plan === "free" && (
+                                        <span className="flex items-center gap-1 text-xs text-amber-600">
+                                          <Lock className="h-3 w-3" />
+                                          <Crown className="h-3 w-3" />
+                                          Pro
+                                        </span>
+                                      )}
+                                    </div>
+                                  </TooltipTrigger>
+                                  {plan === "free" && (
+                                    <TooltipContent side="right">
+                                      <p>Upgrade to Pro to use custom fields</p>
+                                    </TooltipContent>
+                                  )}
+                                </Tooltip>
+                              </div>
                             </SelectContent>
                           </Select>
                         </div>
