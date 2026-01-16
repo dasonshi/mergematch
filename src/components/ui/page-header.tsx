@@ -26,7 +26,7 @@ export function PageHeader({ title, description, children, className, backLink }
             {backLink.label}
           </Link>
         )}
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground lg:text-3xl animate-fade-in">
+        <h1 className="text-3xl font-bold tracking-tight text-foreground lg:text-4xl animate-fade-in">
           {title}
         </h1>
         {description && (

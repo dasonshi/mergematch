@@ -466,29 +466,30 @@ export default function Dashboard() {
           )}
         </PageHeader>
 
-        {/* Quick Stats */}
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        {/* Quick Stats - Enhanced */}
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {/* Pending Review */}
-          <Card className="overflow-hidden">
-            <CardContent className="p-5">
+          <Card className="overflow-hidden border-0 shadow-md card-hover group">
+            <div className="h-1 bg-gradient-primary" />
+            <CardContent className="p-6">
               <div className="flex items-start gap-4">
-                <div className="rounded-lg bg-primary/10 p-3">
-                  <ClipboardList className="h-5 w-5 text-primary" />
+                <div className="rounded-xl bg-gradient-primary p-3.5 shadow-glow">
+                  <ClipboardList className="h-6 w-6 text-white" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs text-muted-foreground">Pending Review</p>
-                  <p className="text-3xl font-semibold tracking-tight mt-1">
+                  <p className="text-sm font-medium text-muted-foreground">Pending Review</p>
+                  <p className="text-4xl font-extrabold tracking-tight mt-1 text-gradient">
                     {pendingMatches.length}
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    across {rulesWithPending} rules
+                  <p className="text-sm text-muted-foreground mt-1">
+                    across <span className="font-semibold text-foreground">{rulesWithPending}</span> rules
                   </p>
                 </div>
               </div>
               {rulesWithPending > 0 && (
-                <Button variant="link" className="mt-3" asChild>
+                <Button className="mt-4 w-full bg-gradient-primary hover:opacity-90 transition-opacity" asChild>
                   <Link to={`/match-rules/${rules.find((r: MatchRule) => pendingByRule[r.id] > 0)?.id}`}>
-                    Review Now <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                    Review Now <ArrowRight className="ml-2 h-4 w-4" />
                   </Link>
                 </Button>
               )}
@@ -496,45 +497,50 @@ export default function Dashboard() {
           </Card>
 
           {/* Merged Total */}
-          <Card className="overflow-hidden">
-            <CardContent className="p-5">
+          <Card className="overflow-hidden border-0 shadow-md card-hover group">
+            <div className="h-1 bg-gradient-success" />
+            <CardContent className="p-6">
               <div className="flex items-start gap-4">
-                <div className="rounded-lg bg-emerald-500/10 p-3">
-                  <Check className="h-5 w-5 text-emerald-600" />
+                <div className="rounded-xl bg-gradient-success p-3.5">
+                  <Check className="h-6 w-6 text-white" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs text-muted-foreground">Duplicates Merged</p>
-                  <p className="text-3xl font-semibold tracking-tight mt-1">
+                  <p className="text-sm font-medium text-muted-foreground">Duplicates Merged</p>
+                  <p className="text-4xl font-extrabold tracking-tight mt-1 text-success">
                     {mergeStatsData?.completed ?? 0}
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">
+                  <p className="text-sm text-muted-foreground mt-1">
                     total successful
                   </p>
                 </div>
               </div>
-              <Button variant="link" className="mt-3" asChild>
-                <Link to="/history">View History <ArrowRight className="ml-1 h-3.5 w-3.5" /></Link>
+              <Button variant="outline" className="mt-4 w-full border-success/30 text-success hover:bg-success/10" asChild>
+                <Link to="/history">View History <ArrowRight className="ml-2 h-4 w-4" /></Link>
               </Button>
             </CardContent>
           </Card>
 
           {/* Total Records */}
-          <Card className="overflow-hidden sm:col-span-2 lg:col-span-1">
-            <CardContent className="p-5">
+          <Card className="overflow-hidden border-0 shadow-md sm:col-span-2 lg:col-span-1 card-hover">
+            <div className="h-1 bg-gradient-to-r from-muted-foreground/30 to-muted-foreground/10" />
+            <CardContent className="p-6">
               <div className="flex items-start gap-4">
-                <div className="rounded-lg bg-muted p-3">
-                  <FolderOpen className="h-5 w-5 text-muted-foreground" />
+                <div className="rounded-xl bg-muted p-3.5">
+                  <FolderOpen className="h-6 w-6 text-muted-foreground" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs text-muted-foreground">Total Records</p>
-                  <p className="text-3xl font-semibold tracking-tight mt-1">
+                  <p className="text-sm font-medium text-muted-foreground">Total Records</p>
+                  <p className="text-4xl font-extrabold tracking-tight mt-1">
                     {(contactsCount + companiesCount).toLocaleString()}
                   </p>
-                  <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-xs text-muted-foreground">
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
                     {objectCounts.map(obj => (
-                      <span key={obj.name} className="flex items-center gap-1">
-                        {obj.icon}
-                        {obj.count.toLocaleString()}
+                      <span key={obj.name} className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                        <span className="flex items-center justify-center h-5 w-5 rounded bg-muted">
+                          {obj.icon}
+                        </span>
+                        <span className="font-semibold text-foreground">{obj.count.toLocaleString()}</span>
+                        <span className="text-xs">{obj.name}</span>
                       </span>
                     ))}
                   </div>
