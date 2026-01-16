@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { RefreshCw, ArrowRight, Plus, Check, ClipboardList, FolderOpen, Building2, Users, Loader2, RotateCcw, Eye, MoreHorizontal } from "lucide-react";
+import { RefreshCw, ArrowRight, Plus, Check, ClipboardList, FolderOpen, Building2, Users, Loader2, RotateCcw, Eye, MoreHorizontal, Trophy } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, MatchRule, Merge, MatchPair } from "@/lib/api";
@@ -13,6 +13,8 @@ import { useToast } from "@/hooks/use-toast";
 import { DataTable, DataTableColumn } from "@/components/ui/data-table";
 import { NoRulesEmpty, NoMergesEmpty } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
+import { AnimatedCounter } from "@/components/ui/animated-counter";
+import { AchievementRow } from "@/components/ui/achievement-badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -466,6 +468,31 @@ export default function Dashboard() {
           )}
         </PageHeader>
 
+        {/* Achievements Row */}
+        {(mergeStatsData?.total ?? 0) > 0 && (
+          <Card className="border-0 shadow-md overflow-hidden">
+            <div className="h-1 bg-gradient-to-r from-yellow-500 via-purple-500 to-blue-500" />
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between flex-wrap gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="rounded-xl bg-gradient-to-br from-yellow-500/20 to-orange-500/20 p-2.5">
+                    <Trophy className="h-5 w-5 text-yellow-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold">Your Achievements</p>
+                    <p className="text-xs text-muted-foreground">Keep merging to unlock more!</p>
+                  </div>
+                </div>
+                <AchievementRow
+                  totalMerges={mergeStatsData?.completed ?? 0}
+                  activeRules={rules.filter((r: MatchRule) => r.is_active).length}
+                  rollbackCount={mergeStatsData?.rolled_back ?? 0}
+                />
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Quick Stats - Enhanced */}
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {/* Pending Review */}
@@ -479,7 +506,7 @@ export default function Dashboard() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-muted-foreground">Pending Review</p>
                   <p className="text-4xl font-extrabold tracking-tight mt-1 text-gradient">
-                    {pendingMatches.length}
+                    <AnimatedCounter value={pendingMatches.length} />
                   </p>
                   <p className="text-sm text-muted-foreground mt-1">
                     across <span className="font-semibold text-foreground">{rulesWithPending}</span> rules
