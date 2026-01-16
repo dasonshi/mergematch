@@ -376,6 +376,7 @@ export default function MatchRuleDetail() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button
+            variant="secondary"
             onClick={() => scanMutation.mutate()}
             disabled={scanMutation.isPending}
           >
@@ -387,7 +388,6 @@ export default function MatchRuleDetail() {
             {scanMutation.isPending ? "Scanning..." : "Scan Now"}
           </Button>
           <Button
-            variant="secondary"
             onClick={handleMergeAllClick}
             disabled={pendingMatches.length === 0 || bulkMergeProgress.inProgress || isValidating}
           >
