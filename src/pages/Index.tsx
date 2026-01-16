@@ -4,15 +4,21 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { RefreshCw, ArrowRight, Plus, Check, ClipboardList, FolderOpen, Building2, Users, Loader2, RotateCcw, Eye, Pencil, GitMerge } from "lucide-react";
+import { RefreshCw, ArrowRight, Plus, Check, ClipboardList, FolderOpen, Building2, Users, Loader2, RotateCcw, Eye, MoreHorizontal } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, MatchRule, Merge, MatchPair } from "@/lib/api";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
-import { ResponsiveTable, ResponsiveTableContent } from "@/components/ui/responsive-table";
+import { DataTable, DataTableColumn } from "@/components/ui/data-table";
 import { NoRulesEmpty, NoMergesEmpty } from "@/components/ui/empty-state";
-import { cn } from "@/lib/utils";
+import { PageHeader } from "@/components/ui/page-header";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export default function Dashboard() {
   const { locationId, locationName, isAuthenticated, isLoading: authLoading, error: authError, connectionStatus, reconnect } = useLocation();
@@ -248,79 +254,217 @@ export default function Dashboard() {
     );
   }
 
+  // Define columns for Match Rules table
+  const rulesColumns: DataTableColumn<MatchRule>[] = [
+    {
+      header: "Name",
+      accessor: (rule) => (
+        <Link to={`/match-rules/${rule.id}`} className="font-medium text-foreground hover:text-primary transition-colors">
+          {rule.name}
+        </Link>
+      ),
+    },
+    {
+      header: "Object",
+      accessor: (rule) => <span className="capitalize text-muted-foreground">{rule.source_object}</span>,
+    },
+    {
+      header: "Strategy",
+      accessor: (rule) => <span className="text-muted-foreground">{rule.merge_strategy || 'standard'}</span>,
+      hideOnMobile: true,
+    },
+    {
+      header: "Schedule",
+      accessor: (rule) => <span className="capitalize text-muted-foreground">{rule.schedule_frequency}</span>,
+      hideOnMobile: true,
+    },
+    {
+      header: "Last Scan",
+      accessor: (rule) => <span className="text-muted-foreground">{formatLastScan(rule.last_scan_at)}</span>,
+      hideOnMobile: true,
+    },
+    {
+      header: "Pending",
+      align: "right",
+      accessor: (rule) => (
+        <Badge variant={pendingByRule[rule.id] > 0 ? 'default' : 'muted'}>
+          {pendingByRule[rule.id] || 0}
+        </Badge>
+      ),
+    },
+    {
+      header: "Status",
+      align: "center",
+      accessor: (rule) => (
+        <Switch
+          checked={rule.is_active}
+          onCheckedChange={() => toggleStatusMutation.mutate(rule.id)}
+          disabled={toggleStatusMutation.isPending}
+          aria-label={`${rule.is_active ? 'Disable' : 'Enable'} ${rule.name} rule`}
+        />
+      ),
+    },
+    {
+      header: "Actions",
+      align: "right",
+      accessor: (rule) => (
+        <div className="flex items-center justify-end gap-1">
+          {pendingByRule[rule.id] > 0 && (
+            <Button size="sm" asChild>
+              <Link to={`/match-rules/${rule.id}?action=merge-all`}>Merge All</Link>
+            </Button>
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem asChild>
+                <Link to={`/match-rules/${rule.id}`}>View Details</Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link to={`/match-rules/${rule.id}/edit`}>Edit Rule</Link>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      ),
+    },
+  ];
+
+  // Define columns for Recent Activity table
+  const activityColumns: DataTableColumn<Merge>[] = [
+    {
+      header: "Date",
+      accessor: (merge) => (
+        <span className="text-muted-foreground">
+          {new Date(merge.created_at).toLocaleDateString()}
+        </span>
+      ),
+    },
+    {
+      header: "Record",
+      accessor: (merge) => (
+        <span className="font-medium">{merge.master_record_name || 'Unknown'}</span>
+      ),
+    },
+    {
+      header: "Status",
+      accessor: (merge) => (
+        <Badge
+          variant={
+            merge.status === 'completed' ? 'success' :
+            merge.status === 'failed' ? 'destructive' :
+            merge.status === 'rolled_back' ? 'warning' : 'secondary'
+          }
+        >
+          {merge.status === 'completed' ? 'Merged' :
+           merge.status === 'rolled_back' ? 'Restored' :
+           merge.status === 'failed' ? 'Failed' : merge.status}
+        </Badge>
+      ),
+    },
+    {
+      header: "Actions",
+      align: "right",
+      accessor: (merge) => (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem asChild>
+              <Link to={`/history/${merge.id}`}>
+                <Eye className="h-4 w-4 mr-2" />
+                View Details
+              </Link>
+            </DropdownMenuItem>
+            {merge.status === 'completed' && (
+              <DropdownMenuItem
+                onClick={() => rollbackMutation.mutate(merge.id)}
+                disabled={rollbackMutation.isPending}
+              >
+                <RotateCcw className="h-4 w-4 mr-2" />
+                Restore
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ),
+    },
+  ];
+
   return (
     <TooltipProvider>
-      <div className="space-y-8 ">
+      <div className="space-y-8">
         {/* Header */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Welcome back!</h1>
-            <p className="text-muted-foreground mt-1">
-              {locationName || `Location ${locationId?.slice(0, 8)}...`}
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            {connectionStatus === 'connected' && (
-              <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-success animate-pulse" />
-                <span className="text-sm text-muted-foreground">Connected</span>
-              </div>
-            )}
-            {connectionStatus === 'token_expired' && (
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-destructive" />
-                <span className="text-sm text-destructive">Token Expired</span>
-                <Button variant="outline" size="sm" onClick={reconnect}>
-                  Reconnect
-                </Button>
-              </div>
-            )}
-            {connectionStatus === 'connecting' && (
-              <div className="flex items-center gap-1.5">
-                <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Connecting...</span>
-              </div>
-            )}
-            {(connectionStatus === 'disconnected' || connectionStatus === 'error') && (
-              <div className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Disconnected</span>
-              </div>
-            )}
-            {connectionStatus === 'connected' && (
-              <div className="flex items-center gap-3">
-                {lastSyncedAt && cooldownRemaining === 0 && (
-                  <span className="text-sm text-muted-foreground">
-                    Synced {formatLastSynced(lastSyncedAt)}
-                  </span>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleSync}
-                  disabled={cooldownRemaining > 0 || isSyncing}
-                  className={cn(cooldownRemaining > 0 && "opacity-50")}
-                  aria-label={
-                    cooldownRemaining > 0
-                      ? `Sync available in ${formatCooldown(cooldownRemaining)}`
-                      : "Sync data"
-                  }
-                >
-                  <RefreshCw
-                    className={cn("mr-2 h-4 w-4", isSyncing && "animate-spin")}
-                    aria-hidden="true"
-                  />
-                  {isSyncing
-                    ? "Syncing..."
-                    : cooldownRemaining > 0
-                      ? formatCooldown(cooldownRemaining)
-                      : "Sync"
-                  }
-                </Button>
-              </div>
-            )}
-          </div>
-        </div>
+        <PageHeader
+          title="Welcome back!"
+          description={locationName || `Location ${locationId?.slice(0, 8)}...`}
+        >
+          {connectionStatus === 'connected' && (
+            <div className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-success animate-pulse" />
+              <span className="text-sm text-muted-foreground">Connected</span>
+            </div>
+          )}
+          {connectionStatus === 'token_expired' && (
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-destructive" />
+              <span className="text-sm text-destructive">Token Expired</span>
+              <Button variant="outline" size="sm" onClick={reconnect}>
+                Reconnect
+              </Button>
+            </div>
+          )}
+          {connectionStatus === 'connecting' && (
+            <div className="flex items-center gap-1.5">
+              <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Connecting...</span>
+            </div>
+          )}
+          {(connectionStatus === 'disconnected' || connectionStatus === 'error') && (
+            <div className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Disconnected</span>
+            </div>
+          )}
+          {connectionStatus === 'connected' && (
+            <div className="flex items-center gap-3">
+              {lastSyncedAt && cooldownRemaining === 0 && (
+                <span className="text-sm text-muted-foreground">
+                  Synced {formatLastSynced(lastSyncedAt)}
+                </span>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSync}
+                disabled={cooldownRemaining > 0 || isSyncing}
+                aria-label={
+                  cooldownRemaining > 0
+                    ? `Sync available in ${formatCooldown(cooldownRemaining)}`
+                    : "Sync data"
+                }
+              >
+                <RefreshCw
+                  className={isSyncing ? "mr-2 h-4 w-4 animate-spin" : "mr-2 h-4 w-4"}
+                  aria-hidden="true"
+                />
+                {isSyncing
+                  ? "Syncing..."
+                  : cooldownRemaining > 0
+                    ? formatCooldown(cooldownRemaining)
+                    : "Sync"
+                }
+              </Button>
+            </div>
+          )}
+        </PageHeader>
 
         {/* Quick Stats */}
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -412,79 +556,14 @@ export default function Dashboard() {
             </Button>
           </CardHeader>
           <CardContent className="p-0">
-            {rulesLoading ? (
-              <div className="flex justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              </div>
-            ) : rules.length === 0 ? (
-              <NoRulesEmpty />
-            ) : (
-              <ResponsiveTable>
-                  <ResponsiveTableContent minWidth="700px">
-                    <thead>
-                      <tr className="border-y bg-muted/40">
-                        <th scope="col" className="text-left py-3 px-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">Name</th>
-                        <th scope="col" className="text-left py-3 px-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">Object</th>
-                        <th scope="col" className="text-left py-3 px-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">Strategy</th>
-                        <th scope="col" className="text-left py-3 px-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">Schedule</th>
-                        <th scope="col" className="text-left py-3 px-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">Last Scan</th>
-                        <th scope="col" className="text-right py-3 px-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">Pending</th>
-                        <th scope="col" className="text-center py-3 px-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">Status</th>
-                        <th scope="col" className="text-right py-3 px-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {rules.map((rule: MatchRule, index: number) => (
-                        <tr key={rule.id} className={cn(
-                          "hover:bg-muted/50 transition-colors",
-                          index % 2 === 1 && "bg-muted/20"
-                        )}>
-                          <td className="py-3 px-4">
-                            <Link to={`/match-rules/${rule.id}`} className="font-medium text-foreground hover:text-primary transition-colors">
-                              {rule.name}
-                            </Link>
-                          </td>
-                          <td className="py-3 px-4 capitalize text-muted-foreground">{rule.source_object}</td>
-                          <td className="py-3 px-4 text-muted-foreground">{rule.merge_strategy || 'standard'}</td>
-                          <td className="py-3 px-4 capitalize text-muted-foreground">{rule.schedule_frequency}</td>
-                          <td className="py-3 px-4 text-muted-foreground">{formatLastScan(rule.last_scan_at)}</td>
-                          <td className="py-3 px-4 text-right">
-                            <Badge
-                              variant={pendingByRule[rule.id] > 0 ? 'default' : 'muted'}
-                            >
-                              {pendingByRule[rule.id] || 0}
-                            </Badge>
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            <Switch
-                              checked={rule.is_active}
-                              onCheckedChange={() => toggleStatusMutation.mutate(rule.id)}
-                              disabled={toggleStatusMutation.isPending}
-                              aria-label={`${rule.is_active ? 'Disable' : 'Enable'} ${rule.name} rule`}
-                            />
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              {pendingByRule[rule.id] > 0 && (
-                                <Button size="sm" asChild>
-                                  <Link to={`/match-rules/${rule.id}?action=merge-all`} aria-label={`Merge all for ${rule.name}`}>
-                                    Merge All
-                                  </Link>
-                                </Button>
-                              )}
-                              <Button variant="ghost" size="sm" asChild>
-                                <Link to={`/match-rules/${rule.id}`} aria-label={`Edit ${rule.name}`}>
-                                  <Pencil className="h-4 w-4" aria-hidden="true" />
-                                </Link>
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </ResponsiveTableContent>
-              </ResponsiveTable>
-            )}
+            <DataTable
+              data={rules}
+              columns={rulesColumns}
+              keyField="id"
+              loading={rulesLoading}
+              emptyState={<NoRulesEmpty />}
+              minWidth="700px"
+            />
           </CardContent>
         </Card>
 
@@ -497,65 +576,13 @@ export default function Dashboard() {
             </Button>
           </CardHeader>
           <CardContent className="p-0">
-            {recentMerges.length === 0 ? (
-              <NoMergesEmpty />
-            ) : (
-              <ResponsiveTable>
-                  <ResponsiveTableContent minWidth="650px">
-                    <thead>
-                      <tr className="border-y bg-muted/40">
-                        <th scope="col" className="text-left py-3 px-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">Date</th>
-                        <th scope="col" className="text-left py-3 px-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">Record</th>
-                        <th scope="col" className="text-left py-3 px-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">Status</th>
-                        <th scope="col" className="text-right py-3 px-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {recentMerges.map((merge: Merge, index: number) => (
-                        <tr key={merge.id} className={cn(
-                          "hover:bg-muted/50 transition-colors",
-                          index % 2 === 1 && "bg-muted/20"
-                        )}>
-                          <td className="py-3 px-4 text-muted-foreground">
-                            {new Date(merge.created_at).toLocaleDateString()}
-                          </td>
-                          <td className="py-3 px-4 font-medium">
-                            {merge.master_record_name || 'Unknown'}
-                          </td>
-                          <td className="py-3 px-4">
-                            <Badge
-                              variant={merge.status === 'completed' ? 'success' : merge.status === 'failed' ? 'destructive' : merge.status === 'rolled_back' ? 'warning' : 'secondary'}
-                            >
-                              {merge.status === 'completed' ? 'Merged' : merge.status === 'rolled_back' ? 'Restored' : merge.status === 'failed' ? 'Failed' : merge.status}
-                            </Badge>
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0" asChild>
-                                <Link to={`/history/${merge.id}`} aria-label={`View merge details for ${merge.master_record_name || 'record'}`}>
-                                  <Eye className="h-4 w-4" aria-hidden="true" />
-                                </Link>
-                              </Button>
-                              {merge.status === 'completed' && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-8 w-8 p-0"
-                                  onClick={() => rollbackMutation.mutate(merge.id)}
-                                  disabled={rollbackMutation.isPending}
-                                  aria-label={`Restore duplicate record from merge with ${merge.master_record_name || 'record'}`}
-                                >
-                                  <RotateCcw className="h-4 w-4" aria-hidden="true" />
-                                </Button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </ResponsiveTableContent>
-              </ResponsiveTable>
-            )}
+            <DataTable
+              data={recentMerges}
+              columns={activityColumns}
+              keyField="id"
+              emptyState={<NoMergesEmpty />}
+              minWidth="500px"
+            />
           </CardContent>
         </Card>
       </div>
