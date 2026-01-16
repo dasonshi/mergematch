@@ -1,7 +1,8 @@
 import { useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Eye, RotateCcw, Loader2, ExternalLink, Search, X, Filter, ChevronDown, MoreHorizontal } from "lucide-react";
+import { DateRange } from "react-day-picker";
+import { Eye, RotateCcw, Loader2, ExternalLink, Search, X, Filter, ChevronDown, MoreHorizontal, Download } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -35,6 +36,8 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, DataTableColumn } from "@/components/ui/data-table";
+import { DateRangePicker } from "@/components/ui/date-range-picker";
+import { HistoryStats } from "@/components/ui/history-stats";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 
@@ -72,8 +75,7 @@ export default function History() {
   // Filter state
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
 
   // Fetch merges
   const { data: mergesData, isLoading } = useQuery({
@@ -107,6 +109,14 @@ export default function History() {
 
   const allMerges = mergesData?.data || [];
 
+  // Calculate stats
+  const stats = useMemo(() => {
+    const total = allMerges.length;
+    const completed = allMerges.filter((m: MergeItem) => m.status === "completed").length;
+    const rolledBack = allMerges.filter((m: MergeItem) => m.status === "rolled_back").length;
+    return { total, completed, rolledBack };
+  }, [allMerges]);
+
   // Filter merges
   const filteredMerges = useMemo(() => {
     return allMerges.filter((item: MergeItem) => {
@@ -126,15 +136,15 @@ export default function History() {
       }
 
       // Date range filter
-      if (startDate || endDate) {
+      if (dateRange?.from || dateRange?.to) {
         const itemDate = new Date(item.created_at);
-        if (startDate) {
-          const start = new Date(startDate);
+        if (dateRange.from) {
+          const start = new Date(dateRange.from);
           start.setHours(0, 0, 0, 0);
           if (itemDate < start) return false;
         }
-        if (endDate) {
-          const end = new Date(endDate);
+        if (dateRange.to) {
+          const end = new Date(dateRange.to);
           end.setHours(23, 59, 59, 999);
           if (itemDate > end) return false;
         }
@@ -142,16 +152,47 @@ export default function History() {
 
       return true;
     });
-  }, [allMerges, searchQuery, statusFilter, startDate, endDate]);
+  }, [allMerges, searchQuery, statusFilter, dateRange]);
 
-  const hasActiveFilters = searchQuery || statusFilter !== "all" || startDate || endDate;
-  const activeFilterCount = [searchQuery, statusFilter !== "all", startDate, endDate].filter(Boolean).length;
+  const hasActiveFilters = searchQuery || statusFilter !== "all" || dateRange?.from || dateRange?.to;
+  const activeFilterCount = [searchQuery, statusFilter !== "all", dateRange?.from || dateRange?.to].filter(Boolean).length;
 
   const clearFilters = () => {
     setSearchQuery("");
     setStatusFilter("all");
-    setStartDate("");
-    setEndDate("");
+    setDateRange(undefined);
+  };
+
+  const handleExport = () => {
+    // Create CSV content
+    const headers = ["Rule", "Master Record", "Master Record ID", "Duplicate ID", "Status", "Date"];
+    const rows = filteredMerges.map((item: MergeItem) => [
+      item.rule_name || "-",
+      item.master_record_name || "-",
+      item.master_record_id,
+      item.duplicate_record_id,
+      item.status,
+      new Date(item.created_at).toISOString(),
+    ]);
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(",")),
+    ].join("\n");
+
+    // Download file
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `merge-history-${new Date().toISOString().split("T")[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+
+    toast({
+      title: "Export complete",
+      description: `Exported ${filteredMerges.length} records to CSV.`,
+    });
   };
 
   const formatDateTime = (dateString: string) => {
@@ -291,7 +332,20 @@ export default function History() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Merge History" />
+      <div className="flex items-center justify-between">
+        <PageHeader title="Merge History" />
+        <Button variant="outline" size="sm" onClick={handleExport} disabled={filteredMerges.length === 0}>
+          <Download className="h-4 w-4 mr-2" />
+          Export CSV
+        </Button>
+      </div>
+
+      {/* Stats Dashboard */}
+      <HistoryStats
+        totalMerges={stats.total}
+        completedMerges={stats.completed}
+        rollbackCount={stats.rolledBack}
+      />
 
       {/* Collapsible Filters */}
       <Card>
@@ -348,23 +402,13 @@ export default function History() {
                   </Select>
                 </div>
 
-                {/* Date Range */}
-                <div className="w-full lg:w-40 space-y-2">
-                  <Label htmlFor="start-date" className="text-sm font-medium">From</Label>
-                  <Input
-                    id="start-date"
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                  />
-                </div>
-                <div className="w-full lg:w-40 space-y-2">
-                  <Label htmlFor="end-date" className="text-sm font-medium">To</Label>
-                  <Input
-                    id="end-date"
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
+                {/* Date Range Picker */}
+                <div className="w-full lg:w-auto space-y-2">
+                  <Label className="text-sm font-medium">Date Range</Label>
+                  <DateRangePicker
+                    dateRange={dateRange}
+                    onDateRangeChange={setDateRange}
+                    className="w-full lg:w-[280px]"
                   />
                 </div>
               </div>
