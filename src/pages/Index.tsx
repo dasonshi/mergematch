@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { RefreshCw, ArrowRight, Plus, Check, ClipboardList, FolderOpen, Building2, Users, Loader2, RotateCcw, Eye, MoreHorizontal, Trophy } from "lucide-react";
+import { RefreshCw, ArrowRight, Plus, Check, ClipboardList, FolderOpen, Building2, Users, Loader2, RotateCcw, Eye, MoreHorizontal, TrendingUp } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, MatchRule, Merge, MatchPair } from "@/lib/api";
@@ -14,7 +14,7 @@ import { DataTable, DataTableColumn } from "@/components/ui/data-table";
 import { NoRulesEmpty, NoMergesEmpty } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { AnimatedCounter } from "@/components/ui/animated-counter";
-import { AchievementRow } from "@/components/ui/achievement-badge";
+import { StatsRow } from "@/components/ui/achievement-badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -468,23 +468,24 @@ export default function Dashboard() {
           )}
         </PageHeader>
 
-        {/* Achievements Row */}
+        {/* Stats Row */}
         {(mergeStatsData?.total ?? 0) > 0 && (
           <Card className="border-0 shadow-md overflow-hidden">
-            <div className="h-1 bg-gradient-to-r from-yellow-500 via-purple-500 to-blue-500" />
+            <div className="h-1 bg-gradient-to-r from-emerald-500 via-blue-500 to-purple-500" />
             <CardContent className="p-4">
               <div className="flex items-center justify-between flex-wrap gap-4">
                 <div className="flex items-center gap-3">
-                  <div className="rounded-xl bg-gradient-to-br from-yellow-500/20 to-orange-500/20 p-2.5">
-                    <Trophy className="h-5 w-5 text-yellow-500" />
+                  <div className="rounded-xl bg-gradient-to-br from-emerald-500/20 to-blue-500/20 p-2.5">
+                    <TrendingUp className="h-5 w-5 text-emerald-500" />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold">Your Achievements</p>
-                    <p className="text-xs text-muted-foreground">Keep merging to unlock more!</p>
+                    <p className="text-sm font-semibold">Your Stats</p>
+                    <p className="text-xs text-muted-foreground">Track your merge progress</p>
                   </div>
                 </div>
-                <AchievementRow
-                  totalMerges={mergeStatsData?.completed ?? 0}
+                <StatsRow
+                  totalMerges={mergeStatsData?.total ?? 0}
+                  completedMerges={mergeStatsData?.completed ?? 0}
                   activeRules={rules.filter((r: MatchRule) => r.is_active).length}
                   rollbackCount={mergeStatsData?.rolled_back ?? 0}
                 />
