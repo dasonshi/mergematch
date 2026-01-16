@@ -118,11 +118,11 @@ export default function MatchReview() {
     setMasterId(newMaster);
   };
 
-  const getResultValue = (field: string) => {
+  const getResultValue = (field: string): string => {
     const source = selections[field];
     const value = source === "a" ? recordA[field] : recordB[field];
     if (Array.isArray(value)) return value.join(", ");
-    return value || "(empty)";
+    return value ? String(value) : "(empty)";
   };
 
   const handleMerge = () => {
@@ -177,9 +177,9 @@ export default function MatchReview() {
       </div>
 
       {/* Master Selection */}
-      <Card className="shadow-md">
-        <CardHeader className="pb-4 bg-muted/30 border-b">
-          <CardTitle className="text-lg font-bold">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-semibold">
             Select Master Record
           </CardTitle>
         </CardHeader>
@@ -191,7 +191,7 @@ export default function MatchReview() {
               className="flex-1"
             >
               <Star className={cn("h-4 w-4 mr-2", masterId === "a" && "fill-current")} />
-              {recordA.firstName || ''} {recordA.lastName || ''}
+              {String(recordA.firstName || '')} {String(recordA.lastName || '')}
             </Button>
             <Button
               variant={masterId === "b" ? "default" : "outline"}
@@ -199,7 +199,7 @@ export default function MatchReview() {
               className="flex-1"
             >
               <Star className={cn("h-4 w-4 mr-2", masterId === "b" && "fill-current")} />
-              {recordB.firstName || ''} {recordB.lastName || ''}
+              {String(recordB.firstName || '')} {String(recordB.lastName || '')}
             </Button>
           </div>
           <p className="text-sm text-muted-foreground mt-2">
@@ -209,11 +209,11 @@ export default function MatchReview() {
       </Card>
 
       {/* Field Comparison Table */}
-      <Card className="shadow-md">
-        <CardHeader className="pb-4 bg-muted/30 border-b">
-          <CardTitle className="text-lg font-bold">Field Comparison</CardTitle>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-semibold">Field Comparison</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Click any cell to select which value to keep for each field.
+            Click any cell to select which value to keep.
           </p>
         </CardHeader>
         <CardContent className="pt-6">
@@ -230,7 +230,7 @@ export default function MatchReview() {
                       </span>
                     </div>
                     <div className="text-sm font-normal text-muted-foreground mt-1">
-                      {recordA.firstName || ''} {recordA.lastName || ''}
+                      {String(recordA.firstName || '')} {String(recordA.lastName || '')}
                     </div>
                   </TableHead>
                   <TableHead className="min-w-40">
@@ -241,7 +241,7 @@ export default function MatchReview() {
                       </span>
                     </div>
                     <div className="text-sm font-normal text-muted-foreground mt-1">
-                      {recordB.firstName || ''} {recordB.lastName || ''}
+                      {String(recordB.firstName || '')} {String(recordB.lastName || '')}
                     </div>
                   </TableHead>
                   <TableHead className="min-w-40 bg-muted/50">
@@ -253,8 +253,8 @@ export default function MatchReview() {
                 {displayFields.map((field) => {
                   const valueA = recordA[field];
                   const valueB = recordB[field];
-                  const displayValueA = Array.isArray(valueA) ? valueA.join(", ") : valueA;
-                  const displayValueB = Array.isArray(valueB) ? valueB.join(", ") : valueB;
+                  const displayValueA = Array.isArray(valueA) ? valueA.join(", ") : String(valueA ?? "");
+                  const displayValueB = Array.isArray(valueB) ? valueB.join(", ") : String(valueB ?? "");
 
                   return (
                     <TableRow key={field}>
@@ -329,7 +329,7 @@ export default function MatchReview() {
 
       {/* Field Preservation Option (only show if configured in settings) */}
       {preservationEnabled && (
-        <Card className="border-primary/50 bg-primary/5 shadow-md">
+        <Card className="border-primary/30 bg-primary/5">
           <CardContent className="pt-6">
             <div className="flex gap-3">
               <Save className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
@@ -357,10 +357,10 @@ export default function MatchReview() {
       )}
 
       {/* Merge Warning */}
-      <Card className="border-yellow-500/50 bg-yellow-500/8 shadow-md">
+      <Card className="border-warning/30 bg-warning/5">
         <CardContent className="pt-6">
           <div className="flex gap-3">
-            <AlertTriangle className="h-5 w-5 text-yellow-500 flex-shrink-0 mt-0.5" />
+            <AlertTriangle className="h-5 w-5 text-warning flex-shrink-0 mt-0.5" />
             <div className="space-y-3">
               <div>
                 <h3 className="font-semibold text-foreground">Merge Warning</h3>
@@ -387,15 +387,11 @@ export default function MatchReview() {
       </Card>
 
       {/* Footer Actions */}
-      <div className="flex justify-between items-center pt-6 mt-6 border-t-2 border-t-muted">
+      <div className="flex justify-between items-center pt-6">
         <Button variant="outline" asChild>
           <Link to={`/match-rules/${ruleId}`}>Cancel</Link>
         </Button>
-        <Button
-          className="bg-green-600 hover:bg-green-700 text-white"
-          onClick={handleMerge}
-          disabled={mergeMutation.isPending}
-        >
+        <Button variant="success" onClick={handleMerge} disabled={mergeMutation.isPending}>
           {mergeMutation.isPending ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />

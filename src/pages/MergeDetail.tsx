@@ -110,9 +110,9 @@ export default function MergeDetail() {
       </div>
 
       {/* Merge Info Card */}
-      <Card className="shadow-md border-l-4 border-l-primary">
-        <CardHeader className="pb-3 bg-muted/30 border-b">
-          <CardTitle className="text-lg font-bold">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-semibold">
             Merge Information
           </CardTitle>
         </CardHeader>
@@ -123,7 +123,7 @@ export default function MergeDetail() {
               <div className="flex items-center gap-2 mt-1">
                 <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
                 <span className="font-medium">
-                  {masterSnapshot?.firstName || ''} {masterSnapshot?.lastName || ''}
+                  {String(masterSnapshot?.firstName || '')} {String(masterSnapshot?.lastName || '')}
                 </span>
                 {merge.status === "completed" && (
                   <a
@@ -151,7 +151,7 @@ export default function MergeDetail() {
                   <X className="h-4 w-4 text-red-500" />
                 )}
                 <span className="font-medium">
-                  {duplicateSnapshot?.firstName || ''} {duplicateSnapshot?.lastName || ''}
+                  {String(duplicateSnapshot?.firstName || '')} {String(duplicateSnapshot?.lastName || '')}
                 </span>
                 {merge.status === "rolled_back" && merge.restored_record_id && (
                   <a
@@ -194,9 +194,9 @@ export default function MergeDetail() {
       </Card>
 
       {/* Field Comparison Table */}
-      <Card className="shadow-md">
-        <CardHeader className="pb-3 bg-muted/30 border-b">
-          <CardTitle className="text-lg font-bold">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-semibold">
             Field Values at Time of Merge
           </CardTitle>
         </CardHeader>
@@ -212,7 +212,7 @@ export default function MergeDetail() {
                       <span className="font-semibold text-foreground">Master</span>
                     </div>
                     <div className="text-sm font-normal text-muted-foreground mt-1">
-                      {recordA?.firstName || ''} {recordA?.lastName || ''}
+                      {String(recordA?.firstName || '')} {String(recordA?.lastName || '')}
                     </div>
                   </th>
                   <th className="min-w-40 py-3 px-4 text-left">
@@ -220,7 +220,7 @@ export default function MergeDetail() {
                       <span className="font-semibold text-foreground">Duplicate</span>
                     </div>
                     <div className="text-sm font-normal text-muted-foreground mt-1">
-                      {recordB?.firstName || ''} {recordB?.lastName || ''}
+                      {String(recordB?.firstName || '')} {String(recordB?.lastName || '')}
                     </div>
                   </th>
                   <th className="min-w-40 py-3 px-4 text-left bg-muted/50">
@@ -294,7 +294,7 @@ export default function MergeDetail() {
       </Card>
 
       {/* Footer Actions */}
-      <div className="flex justify-between items-center pt-6 mt-6 border-t-2 border-t-muted">
+      <div className="flex justify-between items-center pt-6">
         <Button variant="outline" asChild>
           <Link to="/history">Back to History</Link>
         </Button>
