@@ -17,6 +17,7 @@ export type FeatureKey =
   | "custom_fields"
   | "custom_strategy"
   | "company_matching"
+  | "opportunities_matching"
   | "scheduled_scans"
   | "auto_merge"
   | "white_label"
@@ -46,6 +47,7 @@ const PLANS: PlanConfig[] = [
       { key: "merge_strategies", label: "Basic merge strategies", icon: Merge, included: true },
       { key: "custom_fields", label: "Custom fields", icon: Zap, included: false },
       { key: "company_matching", label: "Company matching", icon: Building2, included: false },
+      { key: "opportunities_matching", label: "Opportunity matching", icon: Zap, included: false },
       { key: "scheduled_scans", label: "Scheduled scans", icon: Calendar, included: false },
       { key: "auto_merge", label: "Auto-merge", icon: Sparkles, included: false },
       { key: "white_label", label: "White label", icon: Palette, included: false },
@@ -60,6 +62,7 @@ const PLANS: PlanConfig[] = [
       { key: "merge_strategies", label: "Advanced merge strategies", icon: Merge, included: true },
       { key: "custom_fields", label: "Custom fields", icon: Zap, included: true },
       { key: "company_matching", label: "Company matching", icon: Building2, included: true },
+      { key: "opportunities_matching", label: "Opportunity matching", icon: Zap, included: false },
       { key: "scheduled_scans", label: "Scheduled scans", icon: Calendar, included: false },
       { key: "auto_merge", label: "Auto-merge", icon: Sparkles, included: false },
       { key: "white_label", label: "White label", icon: Palette, included: false },
@@ -75,6 +78,7 @@ const PLANS: PlanConfig[] = [
       { key: "merge_strategies", label: "Advanced merge strategies", icon: Merge, included: true },
       { key: "custom_fields", label: "Custom fields", icon: Zap, included: true },
       { key: "company_matching", label: "Company matching", icon: Building2, included: true },
+      { key: "opportunities_matching", label: "Opportunity matching", icon: Zap, included: true },
       { key: "scheduled_scans", label: "Scheduled scans", icon: Calendar, included: true },
       { key: "auto_merge", label: "Auto-merge", icon: Sparkles, included: true },
       { key: "white_label", label: "White label", icon: Palette, included: false },
@@ -89,6 +93,7 @@ const PLANS: PlanConfig[] = [
       { key: "merge_strategies", label: "Advanced merge strategies", icon: Merge, included: true },
       { key: "custom_fields", label: "Custom fields", icon: Zap, included: true },
       { key: "company_matching", label: "Company matching", icon: Building2, included: true },
+      { key: "opportunities_matching", label: "Opportunity matching", icon: Zap, included: true },
       { key: "scheduled_scans", label: "Scheduled scans", icon: Calendar, included: true },
       { key: "auto_merge", label: "Auto-merge", icon: Sparkles, included: true },
       { key: "white_label", label: "White label branding", icon: Palette, included: true },
@@ -102,6 +107,7 @@ const FEATURE_TIER_MAP: Record<FeatureKey, "free" | "starter" | "pro" | "agency"
   custom_fields: "starter",
   custom_strategy: "pro",
   company_matching: "starter",
+  opportunities_matching: "pro",
   scheduled_scans: "pro",
   auto_merge: "pro",
   white_label: "agency",
