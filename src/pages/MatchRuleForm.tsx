@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -571,33 +572,35 @@ export default function MatchRuleForm() {
 
                         {/* Custom Objects Section - always show */}
                         <SelectSeparator />
-                        <SelectLabel className="flex items-center gap-2">
-                          Custom Objects
-                          {!hasAccess(plan, "pro") && (
-                            <UpgradeBadge tier="pro" size="sm" showTooltip={false} feature="custom_objects" />
-                          )}
-                        </SelectLabel>
-                        {objectTypes.filter(o => o.isCustom).length > 0 ? (
-                          objectTypes.filter(o => o.isCustom).map((obj) => (
-                            <SelectItem
-                              key={obj.id}
-                              value={obj.id}
-                              disabled={!obj.available}
-                              className={!obj.available ? "opacity-50" : ""}
-                            >
-                              <span className="flex items-center gap-2">
-                                {obj.name}
-                                {!obj.available && (
-                                  <Lock className="h-3 w-3 text-muted-foreground" />
-                                )}
-                              </span>
+                        <SelectGroup>
+                          <SelectLabel className="flex items-center gap-2">
+                            Custom Objects
+                            {!hasAccess(plan, "pro") && (
+                              <UpgradeBadge tier="pro" size="sm" showTooltip={false} feature="custom_objects" />
+                            )}
+                          </SelectLabel>
+                          {objectTypes.filter(o => o.isCustom).length > 0 ? (
+                            objectTypes.filter(o => o.isCustom).map((obj) => (
+                              <SelectItem
+                                key={obj.id}
+                                value={obj.id}
+                                disabled={!obj.available}
+                                className={!obj.available ? "opacity-50" : ""}
+                              >
+                                <span className="flex items-center gap-2">
+                                  {obj.name}
+                                  {!obj.available && (
+                                    <Lock className="h-3 w-3 text-muted-foreground" />
+                                  )}
+                                </span>
+                              </SelectItem>
+                            ))
+                          ) : (
+                            <SelectItem value="_none_" disabled className="text-xs text-muted-foreground italic">
+                              No custom objects in this location
                             </SelectItem>
-                          ))
-                        ) : (
-                          <SelectItem value="_none_" disabled className="text-xs text-muted-foreground italic">
-                            No custom objects in this location
-                          </SelectItem>
-                        )}
+                          )}
+                        </SelectGroup>
                       </SelectContent>
                     </Select>
                   )}
