@@ -12,6 +12,115 @@ from app.db.supabase import get_supabase
 logger = logging.getLogger(__name__)
 
 
+def evaluate_condition(record: dict, condition: dict) -> bool:
+    """Evaluate a single condition against a record."""
+    field = condition.get("field", "")
+    operator = condition.get("operator", "=")
+    value = condition.get("value", "")
+
+    record_value = record.get(field)
+
+    # Handle empty checks
+    if operator == "is_empty":
+        return record_value is None or record_value == "" or record_value == []
+    if operator == "is_not_empty":
+        return record_value is not None and record_value != "" and record_value != []
+
+    # Convert values for comparison
+    if record_value is None:
+        return False
+
+    # Numeric comparisons
+    try:
+        if operator in (">", "<", ">=", "<="):
+            record_num = float(record_value) if record_value else 0
+            compare_num = float(value) if value else 0
+
+            if operator == ">":
+                return record_num > compare_num
+            elif operator == "<":
+                return record_num < compare_num
+            elif operator == ">=":
+                return record_num >= compare_num
+            elif operator == "<=":
+                return record_num <= compare_num
+    except (ValueError, TypeError):
+        return False
+
+    # String comparisons
+    record_str = str(record_value).lower() if record_value else ""
+    value_str = str(value).lower() if value else ""
+
+    if operator == "=":
+        return record_str == value_str
+    elif operator == "!=":
+        return record_str != value_str
+    elif operator == "contains":
+        return value_str in record_str
+    elif operator == "not_contains":
+        return value_str not in record_str
+    elif operator == "starts_with":
+        return record_str.startswith(value_str)
+    elif operator == "ends_with":
+        return record_str.endswith(value_str)
+
+    return False
+
+
+def evaluate_custom_logic(record: dict, logic_config: dict) -> bool:
+    """Evaluate custom logic against a record."""
+    conditions = logic_config.get("conditions", [])
+    operator = logic_config.get("operator", "AND")
+
+    if not conditions:
+        return True  # No conditions = include all
+
+    results = [evaluate_condition(record, c) for c in conditions]
+
+    if operator == "AND":
+        return all(results)
+    else:  # OR
+        return any(results)
+
+
+async def reassign_opportunities_with_custom_logic(
+    client,
+    from_contact_id: str,
+    to_contact_id: str,
+    logic_config: dict,
+) -> int:
+    """
+    Reassign opportunities that match custom logic conditions.
+
+    Args:
+        client: GHL client instance
+        from_contact_id: Source contact (duplicate)
+        to_contact_id: Target contact (master)
+        logic_config: Custom logic configuration with conditions
+
+    Returns count of opportunities reassigned.
+    """
+    opportunities = await client.get_contact_opportunities(from_contact_id)
+    if not opportunities:
+        return 0
+
+    # Filter by custom logic
+    matching_opps = [opp for opp in opportunities if evaluate_custom_logic(opp, logic_config)]
+    logger.info(f"Custom logic matched {len(matching_opps)}/{len(opportunities)} opportunities")
+
+    reassigned = 0
+    for opp in matching_opps:
+        opp_id = opp.get("id")
+        if opp_id:
+            try:
+                await client.update_opportunity(opp_id, {"contactId": to_contact_id})
+                reassigned += 1
+            except Exception as e:
+                logger.warning(f"Failed to reassign opportunity {opp_id}: {e}")
+
+    return reassigned
+
+
 async def execute_merge(
     match_id: str,
     master_record_id: str,
@@ -234,9 +343,16 @@ async def execute_merge(
                 opps_handling = related_records_config.get("opportunities")
                 if opps_handling and opps_handling != "dont_copy":
                     try:
-                        opps_reassigned = await client.reassign_contact_opportunities(
-                            duplicate_id, master_record_id, handling=opps_handling
-                        )
+                        if opps_handling == "custom_logic":
+                            # Custom logic filtering
+                            custom_logic = related_records_config.get("opportunities_custom_logic", {})
+                            opps_reassigned = await reassign_opportunities_with_custom_logic(
+                                client, duplicate_id, master_record_id, custom_logic
+                            )
+                        else:
+                            opps_reassigned = await client.reassign_contact_opportunities(
+                                duplicate_id, master_record_id, handling=opps_handling
+                            )
                         logger.info(f"Reassigned {opps_reassigned} opportunities to master")
                     except Exception as e:
                         logger.warning(f"Failed to reassign opportunities: {e}")

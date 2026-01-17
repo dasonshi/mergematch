@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/tooltip";
 import { StepIndicator } from "@/components/ui/step-indicator";
 import { UpgradeBadge } from "@/components/ui/upgrade-badge";
+import { CustomLogicBuilder, CustomLogicConfig, createEmptyLogicConfig } from "@/components/ui/custom-logic-builder";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, MatchRule, MatchField, ObjectField } from "@/lib/api";
@@ -146,7 +147,17 @@ export default function MatchRuleForm() {
   const [relatedRecordsConfig, setRelatedRecordsConfig] = useState<{
     notes?: "copy_to_master" | "dont_copy";
     tasks?: "copy_to_master" | "dont_copy";
-    opportunities?: "keep_all" | "keep_master_only" | "keep_highest_value";
+    opportunities?: "keep_all" | "keep_master_only" | "keep_highest_value" | "custom_logic";
+    opportunities_custom_logic?: {
+      operator: "AND" | "OR";
+      conditions: Array<{
+        id: string;
+        field: string;
+        operator: string;
+        value: string;
+        valueType: "static" | "field_reference";
+      }>;
+    };
   }>({
     notes: "copy_to_master",
     tasks: "copy_to_master",
@@ -268,6 +279,7 @@ export default function MatchRuleForm() {
         notes: relatedRecords.notes || "copy_to_master",
         tasks: relatedRecords.tasks || "copy_to_master",
         opportunities: relatedRecords.opportunities || "keep_all",
+        opportunities_custom_logic: relatedRecords.opportunities_custom_logic || undefined,
       });
     }
   }, [existingRule]);
@@ -914,7 +926,41 @@ export default function MatchRuleForm() {
                           />
                           <span className="text-sm">Keep highest monetary value</span>
                         </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="opportunities"
+                            checked={relatedRecordsConfig.opportunities === "custom_logic"}
+                            onChange={() => setRelatedRecordsConfig(prev => ({
+                              ...prev,
+                              opportunities: "custom_logic",
+                              opportunities_custom_logic: prev.opportunities_custom_logic || createEmptyLogicConfig(),
+                            }))}
+                            className="h-4 w-4"
+                          />
+                          <span className="text-sm">Custom logic (filter by conditions)</span>
+                        </label>
                       </div>
+
+                      {/* Custom Logic Builder */}
+                      {relatedRecordsConfig.opportunities === "custom_logic" && (
+                        <div className="mt-3 p-3 border rounded-lg bg-muted/20">
+                          <CustomLogicBuilder
+                            value={relatedRecordsConfig.opportunities_custom_logic || createEmptyLogicConfig()}
+                            onChange={(config) => setRelatedRecordsConfig(prev => ({
+                              ...prev,
+                              opportunities_custom_logic: config,
+                            }))}
+                            availableFields={[
+                              { id: "monetaryValue", name: "Monetary Value", dataType: "number" },
+                              { id: "status", name: "Status", dataType: "text" },
+                              { id: "name", name: "Name", dataType: "text" },
+                              { id: "pipelineStageId", name: "Pipeline Stage", dataType: "text" },
+                            ]}
+                            objectLabel="opportunity"
+                          />
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -1135,8 +1181,19 @@ export default function MatchRuleForm() {
                             {relatedRecordsConfig.opportunities === "keep_all" && "Keep all"}
                             {relatedRecordsConfig.opportunities === "keep_master_only" && "Keep master only"}
                             {relatedRecordsConfig.opportunities === "keep_highest_value" && "Keep highest value"}
+                            {relatedRecordsConfig.opportunities === "custom_logic" && "Custom logic"}
                           </span>
                         </div>
+                        {relatedRecordsConfig.opportunities === "custom_logic" && relatedRecordsConfig.opportunities_custom_logic?.conditions?.length > 0 && (
+                          <div className="mt-1 pl-2 text-xs text-muted-foreground font-mono">
+                            {relatedRecordsConfig.opportunities_custom_logic.conditions.map((c, i) => (
+                              <span key={c.id}>
+                                {i > 0 && ` ${relatedRecordsConfig.opportunities_custom_logic?.operator} `}
+                                {c.field} {c.operator} {c.value ? `"${c.value}"` : ""}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
