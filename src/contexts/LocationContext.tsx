@@ -172,7 +172,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   const [features, setFeatures] = useState<PlanFeatures>(defaultFeatures);
   const [lastWebhookAt, setLastWebhookAt] = useState<string | null>(null);
 
-  const canUseStrategies = plan !== 'free';
+  const canUseStrategies = plan === 'pro' || plan === 'agency';
 
   const markTokenExpired = useCallback(() => {
     setConnectionStatus('token_expired');
