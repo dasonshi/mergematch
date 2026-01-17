@@ -173,22 +173,37 @@ async def list_available_objects(
         {"id": "opportunities", "name": "Opportunities", "standard": True},
     ]
 
+    # Known standard object keys to filter out
+    STANDARD_KEYS = {"contact", "business", "opportunity", "conversation", "appointment", "task", "note"}
+
     async with GHLClient(tokens["access_token"], user.ghl_location_id) as client:
         try:
             # Fetch custom objects
             ghl_objects = await client.list_objects()
             for obj in ghl_objects:
-                # Only add custom objects (standard ones already in list)
-                if not obj.get("standard", True):
-                    key = obj.get("key", "")
+                key = obj.get("key", "")
+                # Check if it's a custom object:
+                # - standard: false OR isSystemDefined: false
+                # - OR key is not in standard keys
+                # - OR key starts with custom_objects.
+                is_standard = obj.get("standard", obj.get("isSystemDefined", True))
+                is_standard_key = key.lower() in STANDARD_KEYS
+
+                if not is_standard or (not is_standard_key and key):
+                    # Skip if already added via standard list
+                    if key.lower() in STANDARD_KEYS:
+                        continue
+
                     labels = obj.get("labels", {})
                     objects.append({
                         "id": key,
-                        "name": labels.get("plural") or labels.get("singular") or key,
+                        "name": labels.get("plural") or labels.get("singular") or obj.get("name") or key,
                         "standard": False,
                     })
-        except Exception:
+        except Exception as e:
             # If fetching custom objects fails, just return standard ones
+            import logging
+            logging.warning(f"Failed to fetch custom objects: {e}")
             pass
 
     return objects

@@ -557,12 +557,14 @@ export default function MatchRuleForm() {
                                 {!obj.available && (
                                   <>
                                     <Lock className="h-3 w-3 text-muted-foreground" />
-                                    <UpgradeBadge
-                                      tier={obj.tier}
-                                      size="sm"
-                                      showTooltip={false}
-                                      feature={feature}
-                                    />
+                                    <span className="pointer-events-auto">
+                                      <UpgradeBadge
+                                        tier={obj.tier}
+                                        size="sm"
+                                        showTooltip={false}
+                                        feature={feature}
+                                      />
+                                    </span>
                                   </>
                                 )}
                               </span>
