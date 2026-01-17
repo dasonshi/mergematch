@@ -72,6 +72,32 @@ export default function MergeStrategyForm() {
     enabled: !!locationId,
   });
 
+  // Build object types list from API data + fallback
+  const objectTypes = availableObjects
+    ? [
+        // Standard objects (Contacts, Companies, Opportunities)
+        ...availableObjects
+          .filter((o) => o.standard)
+          .map((o) => ({
+            id: o.id,
+            name: o.name.charAt(0).toUpperCase() + o.name.slice(1),
+            isCustom: false,
+          })),
+        // Custom objects from GHL
+        ...availableObjects
+          .filter((o) => !o.standard)
+          .map((o) => ({
+            id: o.id,
+            name: o.name,
+            isCustom: true,
+          })),
+      ]
+    : [
+        { id: "contacts", name: "Contacts", isCustom: false },
+        { id: "companies", name: "Companies", isCustom: false },
+        { id: "opportunities", name: "Opportunities", isCustom: false },
+      ];
+
   // Fetch associations for selected object type
   // Find the selected object to get its ID for API calls
   const selectedObject = objectTypes.find((o) => o.name === objectType);
@@ -101,32 +127,6 @@ export default function MergeStrategyForm() {
       }
     }
   }, [associations]);
-
-  // Build object types list from API data + fallback
-  const objectTypes = availableObjects
-    ? [
-        // Standard objects (Contacts, Companies, Opportunities)
-        ...availableObjects
-          .filter((o) => o.standard)
-          .map((o) => ({
-            id: o.id,
-            name: o.name.charAt(0).toUpperCase() + o.name.slice(1),
-            isCustom: false,
-          })),
-        // Custom objects from GHL
-        ...availableObjects
-          .filter((o) => !o.standard)
-          .map((o) => ({
-            id: o.id,
-            name: o.name,
-            isCustom: true,
-          })),
-      ]
-    : [
-        { id: "contacts", name: "Contacts", isCustom: false },
-        { id: "companies", name: "Companies", isCustom: false },
-        { id: "opportunities", name: "Opportunities", isCustom: false },
-      ];
 
   const usedBy = isEditing ? mockStrategy.usedBy : [];
   const isUsedByRules = usedBy.length > 0;
