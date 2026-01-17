@@ -12,6 +12,8 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  SelectSeparator,
+  SelectLabel,
 } from "@/components/ui/select";
 import {
   Tooltip,
@@ -599,51 +601,57 @@ export default function MatchRuleForm() {
                         <div className="flex-1 min-w-0">
                           <Select
                             value={field.name}
-                            onValueChange={(val) => updateField(index, "name", val)}
+                            onValueChange={(val) => {
+                              const selectedField = fieldOptions.find(f => f.id === val);
+                              // Check if custom field and user doesn't have access
+                              if (selectedField?.isCustom && !hasAccess(plan, "starter")) {
+                                return; // Don't allow selection
+                              }
+                              updateField(index, "name", val);
+                            }}
                             disabled={fieldsLoading}
                           >
                             <SelectTrigger className="bg-background">
                               <SelectValue placeholder={fieldsLoading ? "Loading fields..." : "Select field..."} />
                             </SelectTrigger>
                             <SelectContent>
-                              {fieldOptions.map((opt) => (
+                              {/* Standard Fields */}
+                              {fieldOptions.filter(f => !f.isCustom).map((opt) => (
                                 <SelectItem key={opt.id} value={opt.id}>
-                                  <span className="flex items-center gap-2">
-                                    {opt.name}
-                                    {opt.isCustom && (
-                                      <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">Custom</span>
-                                    )}
-                                  </span>
+                                  {opt.name}
                                 </SelectItem>
                               ))}
-                              {/* Custom Field Option - locked for free tier */}
-                              <div className="px-2 py-1.5 mt-1 border-t border-border">
-                                <div
-                                  className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-sm text-sm ${
-                                    plan === "free"
-                                      ? "cursor-pointer hover:bg-accent/50 group"
-                                      : "cursor-pointer hover:bg-accent"
-                                  }`}
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    if (plan !== "free") {
-                                      toast({
-                                        title: "Custom Field",
-                                        description: "Enter a custom field name to match on.",
-                                      });
-                                    }
-                                  }}
-                                >
-                                  <span className={`flex items-center gap-2 ${plan === "free" ? "opacity-60 group-hover:opacity-80" : ""}`}>
-                                    <Plus className="h-4 w-4" />
-                                    Custom Field
-                                  </span>
-                                  {plan === "free" && (
-                                    <UpgradeBadge tier="pro" showTooltip={false} feature="custom_fields" />
-                                  )}
-                                </div>
-                              </div>
+
+                              {/* Custom Fields Section - only show if there are custom fields */}
+                              {fieldOptions.some(f => f.isCustom) && (
+                                <>
+                                  <SelectSeparator />
+                                  <SelectLabel className="flex items-center gap-2">
+                                    Custom Fields
+                                    {!hasAccess(plan, "starter") && (
+                                      <UpgradeBadge tier="starter" size="sm" showTooltip={false} feature="custom_fields" />
+                                    )}
+                                  </SelectLabel>
+                                  {fieldOptions.filter(f => f.isCustom).map((opt) => {
+                                    const hasCustomFieldAccess = hasAccess(plan, "starter");
+                                    return (
+                                      <SelectItem
+                                        key={opt.id}
+                                        value={opt.id}
+                                        disabled={!hasCustomFieldAccess}
+                                        className={!hasCustomFieldAccess ? "opacity-50" : ""}
+                                      >
+                                        <span className="flex items-center gap-2">
+                                          {opt.name}
+                                          {!hasCustomFieldAccess && (
+                                            <Lock className="h-3 w-3 text-muted-foreground" />
+                                          )}
+                                        </span>
+                                      </SelectItem>
+                                    );
+                                  })}
+                                </>
+                              )}
                             </SelectContent>
                           </Select>
                         </div>
