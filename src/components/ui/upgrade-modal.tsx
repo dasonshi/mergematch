@@ -12,10 +12,12 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useLocation } from "@/contexts/LocationContext";
 
-export type FeatureKey = 
+export type FeatureKey =
   | "merge_strategies"
   | "custom_fields"
   | "custom_strategy"
+  | "custom_logic"
+  | "custom_objects"
   | "company_matching"
   | "opportunities_matching"
   | "scheduled_scans"
@@ -45,12 +47,11 @@ const PLANS: PlanConfig[] = [
     tier: "free",
     features: [
       { key: "merge_strategies", label: "Basic merge strategies", icon: Merge, included: true },
-      { key: "custom_fields", label: "Custom fields", icon: Zap, included: false },
-      { key: "company_matching", label: "Company matching", icon: Building2, included: false },
-      { key: "opportunities_matching", label: "Opportunity matching", icon: Zap, included: false },
+      { key: "custom_fields", label: "Custom field matching", icon: Zap, included: false },
+      { key: "custom_strategy", label: "Custom merge strategies", icon: Merge, included: false },
+      { key: "custom_objects", label: "Custom objects", icon: Building2, included: false },
       { key: "scheduled_scans", label: "Scheduled scans", icon: Calendar, included: false },
       { key: "auto_merge", label: "Auto-merge", icon: Sparkles, included: false },
-      { key: "white_label", label: "White label", icon: Palette, included: false },
     ],
   },
   {
@@ -60,12 +61,11 @@ const PLANS: PlanConfig[] = [
     tier: "starter",
     features: [
       { key: "merge_strategies", label: "Advanced merge strategies", icon: Merge, included: true },
-      { key: "custom_fields", label: "Custom fields", icon: Zap, included: true },
-      { key: "company_matching", label: "Company matching", icon: Building2, included: true },
-      { key: "opportunities_matching", label: "Opportunity matching", icon: Zap, included: false },
-      { key: "scheduled_scans", label: "Scheduled scans", icon: Calendar, included: false },
+      { key: "custom_fields", label: "Custom field matching", icon: Zap, included: true },
+      { key: "custom_strategy", label: "Custom merge strategies", icon: Merge, included: false },
+      { key: "custom_objects", label: "Custom objects", icon: Building2, included: false },
+      { key: "scheduled_scans", label: "Scheduled scans", icon: Calendar, included: true },
       { key: "auto_merge", label: "Auto-merge", icon: Sparkles, included: false },
-      { key: "white_label", label: "White label", icon: Palette, included: false },
     ],
   },
   {
@@ -76,12 +76,11 @@ const PLANS: PlanConfig[] = [
     popular: true,
     features: [
       { key: "merge_strategies", label: "Advanced merge strategies", icon: Merge, included: true },
-      { key: "custom_fields", label: "Custom fields", icon: Zap, included: true },
-      { key: "company_matching", label: "Company matching", icon: Building2, included: true },
-      { key: "opportunities_matching", label: "Opportunity matching", icon: Zap, included: true },
+      { key: "custom_fields", label: "Custom field matching", icon: Zap, included: true },
+      { key: "custom_strategy", label: "Custom merge strategies", icon: Merge, included: true },
+      { key: "custom_objects", label: "Custom objects", icon: Building2, included: true },
       { key: "scheduled_scans", label: "Scheduled scans", icon: Calendar, included: true },
       { key: "auto_merge", label: "Auto-merge", icon: Sparkles, included: true },
-      { key: "white_label", label: "White label", icon: Palette, included: false },
     ],
   },
   {
@@ -91,12 +90,11 @@ const PLANS: PlanConfig[] = [
     tier: "agency",
     features: [
       { key: "merge_strategies", label: "Advanced merge strategies", icon: Merge, included: true },
-      { key: "custom_fields", label: "Custom fields", icon: Zap, included: true },
-      { key: "company_matching", label: "Company matching", icon: Building2, included: true },
-      { key: "opportunities_matching", label: "Opportunity matching", icon: Zap, included: true },
+      { key: "custom_fields", label: "Custom field matching", icon: Zap, included: true },
+      { key: "custom_strategy", label: "Custom merge strategies", icon: Merge, included: true },
+      { key: "custom_objects", label: "Custom objects", icon: Building2, included: true },
       { key: "scheduled_scans", label: "Scheduled scans", icon: Calendar, included: true },
-      { key: "auto_merge", label: "Auto-merge", icon: Sparkles, included: true },
-      { key: "white_label", label: "White label branding", icon: Palette, included: true },
+      { key: "auto_merge", label: "Auto-merge + White label", icon: Sparkles, included: true },
     ],
   },
 ];
@@ -106,6 +104,8 @@ const FEATURE_TIER_MAP: Record<FeatureKey, "free" | "starter" | "pro" | "agency"
   merge_strategies: "starter",
   custom_fields: "starter",
   custom_strategy: "pro",
+  custom_logic: "pro",
+  custom_objects: "pro",
   company_matching: "starter",
   opportunities_matching: "pro",
   scheduled_scans: "pro",
