@@ -1286,7 +1286,7 @@ export default function MatchRuleForm() {
         </AnimatePresence>
 
         {/* Footer Actions */}
-        <div className="flex justify-between items-center pt-6 mt-6 border-t-2 border-t-muted">
+        <div className={`pt-6 mt-6 border-t-2 border-t-muted ${currentStep === 4 && !isEditing ? "flex flex-col items-center gap-4" : "flex justify-between items-center"}`}>
           {isEditing ? (
             <>
               <Button type="button" variant="outline" onClick={handleCancel} disabled={isSaving}>
@@ -1297,7 +1297,40 @@ export default function MatchRuleForm() {
                 {isSaving ? "Saving..." : "Save Changes"}
               </Button>
             </>
+          ) : currentStep === 4 ? (
+            /* Final step - prominent centered CTA */
+            <>
+              <Button
+                type="submit"
+                size="lg"
+                className="w-full max-w-md text-lg py-6"
+                disabled={isSaving}
+              >
+                {isSaving ? (
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    Creating & Scanning...
+                  </>
+                ) : (
+                  <>
+                    <Check className="mr-2 h-5 w-5" />
+                    Create Rule & Scan for Duplicates
+                  </>
+                )}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={handlePrevious}
+                disabled={isSaving}
+                className="text-muted-foreground"
+              >
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Back to edit
+              </Button>
+            </>
           ) : (
+            /* Steps 1-3 - standard navigation */
             <>
               <Button
                 type="button"
@@ -1312,17 +1345,10 @@ export default function MatchRuleForm() {
                   </>
                 )}
               </Button>
-              {currentStep < 4 ? (
-                <Button type="button" onClick={handleNext}>
-                  Next
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-              ) : (
-                <Button type="submit" disabled={isSaving}>
-                  {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  {isSaving ? "Creating & Scanning..." : "Create Rule"}
-                </Button>
-              )}
+              <Button type="button" onClick={handleNext}>
+                Next
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
             </>
           )}
         </div>
