@@ -536,38 +536,66 @@ export default function MatchRuleForm() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {objectTypes.map((obj) => {
-                          // Map object types to feature keys for the upgrade modal
+                        {/* Standard Objects */}
+                        {objectTypes.filter(o => !o.isCustom).map((obj) => {
                           const featureMap: Record<string, "company_matching" | "opportunities_matching"> = {
                             companies: "company_matching",
                             opportunities: "opportunities_matching",
                           };
                           const feature = featureMap[obj.id];
-                          
+
                           return (
                             <SelectItem
                               key={obj.id}
                               value={obj.id}
                               disabled={!obj.available}
-                              className={!obj.available ? "opacity-60" : ""}
+                              className={!obj.available ? "opacity-50" : ""}
                             >
                               <span className="flex items-center gap-2">
                                 {obj.name}
-                                {obj.isCustom && (
-                                  <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">Custom</span>
-                                )}
                                 {!obj.available && (
-                                  <UpgradeBadge 
-                                    tier={obj.tier} 
-                                    size="sm" 
-                                    showTooltip={false} 
-                                    feature={feature}
-                                  />
+                                  <>
+                                    <Lock className="h-3 w-3 text-muted-foreground" />
+                                    <UpgradeBadge
+                                      tier={obj.tier}
+                                      size="sm"
+                                      showTooltip={false}
+                                      feature={feature}
+                                    />
+                                  </>
                                 )}
                               </span>
                             </SelectItem>
                           );
                         })}
+
+                        {/* Custom Objects Section */}
+                        {objectTypes.some(o => o.isCustom) && (
+                          <>
+                            <SelectSeparator />
+                            <SelectLabel className="flex items-center gap-2">
+                              Custom Objects
+                              {!hasAccess(plan, "pro") && (
+                                <UpgradeBadge tier="pro" size="sm" showTooltip={false} feature="custom_objects" />
+                              )}
+                            </SelectLabel>
+                            {objectTypes.filter(o => o.isCustom).map((obj) => (
+                              <SelectItem
+                                key={obj.id}
+                                value={obj.id}
+                                disabled={!obj.available}
+                                className={!obj.available ? "opacity-50" : ""}
+                              >
+                                <span className="flex items-center gap-2">
+                                  {obj.name}
+                                  {!obj.available && (
+                                    <Lock className="h-3 w-3 text-muted-foreground" />
+                                  )}
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </>
+                        )}
                       </SelectContent>
                     </Select>
                   )}
