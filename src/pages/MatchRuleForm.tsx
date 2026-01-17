@@ -453,13 +453,17 @@ export default function MatchRuleForm() {
                   <CardTitle className="text-lg font-bold flex items-center gap-2">
                     Object Type
                     {isEditing && (
-                      <Tooltip>
+                      <Tooltip delayDuration={0}>
                         <TooltipTrigger asChild>
-                          <span className="inline-flex items-center gap-1 text-sm text-muted-foreground font-normal">
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 text-sm text-muted-foreground font-normal hover:text-foreground transition-colors cursor-help"
+                            onClick={(e) => e.preventDefault()}
+                          >
                             <Lock className="h-4 w-4" />
                             Locked
                             <Info className="h-4 w-4" />
-                          </span>
+                          </button>
                         </TooltipTrigger>
                         <TooltipContent>
                           <p className="max-w-xs">Object type cannot be changed. Create a new rule for a different object.</p>
