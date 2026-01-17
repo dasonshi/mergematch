@@ -73,11 +73,13 @@ export default function MergeStrategyForm() {
   });
 
   // Fetch associations for selected object type
-  const apiObjectType = OBJECT_TYPE_MAP[objectType] || objectType.toLowerCase();
+  // Find the selected object to get its ID for API calls
+  const selectedObject = objectTypes.find((o) => o.name === objectType);
+  const apiObjectType = selectedObject?.id || OBJECT_TYPE_MAP[objectType] || objectType.toLowerCase();
   const { data: associations, isLoading: associationsLoading } = useQuery({
     queryKey: ["object-associations", apiObjectType, locationId],
     queryFn: () => api.getObjectAssociations(apiObjectType),
-    enabled: !!locationId && !!objectType && objectType !== "Custom Objects",
+    enabled: !!locationId && !!objectType,
   });
 
   // Initialize default handling for associations when they load
@@ -103,10 +105,28 @@ export default function MergeStrategyForm() {
   // Build object types list from API data + fallback
   const objectTypes = availableObjects
     ? [
-        ...availableObjects.filter((o) => o.standard).map((o) => o.name.charAt(0).toUpperCase() + o.name.slice(1)),
-        "Custom Objects",
+        // Standard objects (Contacts, Companies, Opportunities)
+        ...availableObjects
+          .filter((o) => o.standard)
+          .map((o) => ({
+            id: o.id,
+            name: o.name.charAt(0).toUpperCase() + o.name.slice(1),
+            isCustom: false,
+          })),
+        // Custom objects from GHL
+        ...availableObjects
+          .filter((o) => !o.standard)
+          .map((o) => ({
+            id: o.id,
+            name: o.name,
+            isCustom: true,
+          })),
       ]
-    : ["Contacts", "Companies", "Opportunities", "Custom Objects"];
+    : [
+        { id: "contacts", name: "Contacts", isCustom: false },
+        { id: "companies", name: "Companies", isCustom: false },
+        { id: "opportunities", name: "Opportunities", isCustom: false },
+      ];
 
   const usedBy = isEditing ? mockStrategy.usedBy : [];
   const isUsedByRules = usedBy.length > 0;
@@ -185,9 +205,14 @@ export default function MergeStrategyForm() {
                   <SelectValue placeholder="Select object type" />
                 </SelectTrigger>
                 <SelectContent>
-                  {objectTypes.map((type) => (
-                    <SelectItem key={type} value={type}>
-                      {type}
+                  {objectTypes.map((obj) => (
+                    <SelectItem key={obj.id} value={obj.name}>
+                      <span className="flex items-center gap-2">
+                        {obj.name}
+                        {obj.isCustom && (
+                          <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">Custom</span>
+                        )}
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -268,7 +293,7 @@ export default function MergeStrategyForm() {
       </Card>
 
       {/* Related Records - Only show when object type is selected */}
-      {objectType && objectType !== "Custom Objects" && (
+      {objectType && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Related Records</CardTitle>
