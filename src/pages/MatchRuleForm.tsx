@@ -659,30 +659,31 @@ export default function MatchRuleForm() {
                               {fieldOptions.some(f => f.isCustom) && (
                                 <>
                                   <SelectSeparator />
-                                  <SelectLabel className="flex items-center gap-2">
-                                    Custom Fields
-                                    {!hasAccess(plan, "starter") && (
-                                      <UpgradeBadge tier="starter" size="sm" showTooltip={false} feature="custom_fields" />
-                                    )}
-                                  </SelectLabel>
-                                  {fieldOptions.filter(f => f.isCustom).map((opt) => {
-                                    const hasCustomFieldAccess = hasAccess(plan, "starter");
-                                    return (
-                                      <SelectItem
-                                        key={opt.id}
-                                        value={opt.id}
-                                        disabled={!hasCustomFieldAccess}
-                                        className={!hasCustomFieldAccess ? "opacity-50" : ""}
-                                      >
-                                        <span className="flex items-center gap-2">
-                                          {opt.name}
-                                          {!hasCustomFieldAccess && (
-                                            <Lock className="h-3 w-3 text-muted-foreground" />
-                                          )}
-                                        </span>
-                                      </SelectItem>
-                                    );
-                                  })}
+                                  <SelectGroup>
+                                    <SelectLabel className="flex items-center gap-2">
+                                      Custom Fields
+                                      {!hasAccess(plan, "starter") && (
+                                        <UpgradeBadge tier="starter" size="sm" showTooltip={false} feature="custom_fields" />
+                                      )}
+                                    </SelectLabel>
+                                    {fieldOptions.filter(f => f.isCustom).map((opt) => {
+                                      const hasCustomFieldAccess = hasAccess(plan, "starter");
+                                      return (
+                                        <SelectItem
+                                          key={opt.id}
+                                          value={opt.id}
+                                          disabled={!hasCustomFieldAccess}
+                                        >
+                                          <span className="flex items-center gap-2">
+                                            <span className={!hasCustomFieldAccess ? "opacity-50" : ""}>{opt.name}</span>
+                                            {!hasCustomFieldAccess && (
+                                              <Lock className="h-3 w-3 text-muted-foreground" />
+                                            )}
+                                          </span>
+                                        </SelectItem>
+                                      );
+                                    })}
+                                  </SelectGroup>
                                 </>
                               )}
                             </SelectContent>
