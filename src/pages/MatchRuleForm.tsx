@@ -594,9 +594,9 @@ export default function MatchRuleForm() {
                             </SelectItem>
                           ))
                         ) : (
-                          <div className="px-2 py-1.5 text-xs text-muted-foreground italic">
+                          <SelectItem value="_none_" disabled className="text-xs text-muted-foreground italic">
                             No custom objects in this location
-                          </div>
+                          </SelectItem>
                         )}
                       </SelectContent>
                     </Select>
