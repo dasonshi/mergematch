@@ -829,7 +829,12 @@ export default function MatchRuleForm() {
                             <span className="flex items-center gap-2">
                               {f.name}
                               {!f.available && (
-                                <Lock className="h-3 w-3 text-muted-foreground" />
+                                <UpgradeBadge 
+                                  tier={f.tier} 
+                                  size="sm" 
+                                  feature="scheduled_scans"
+                                  showTooltip={false}
+                                />
                               )}
                             </span>
                           </SelectItem>
