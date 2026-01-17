@@ -1,11 +1,11 @@
 import { Crown, Lock, Sparkles } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useUpgradeModal, type FeatureKey } from "@/components/ui/upgrade-modal";
 
 interface UpgradeBadgeProps {
   tier?: "starter" | "pro" | "agency" | string;
@@ -13,6 +13,7 @@ interface UpgradeBadgeProps {
   size?: "sm" | "md";
   showTooltip?: boolean;
   tooltipText?: string;
+  feature?: FeatureKey;
 }
 
 export function UpgradeBadge({
@@ -21,8 +22,9 @@ export function UpgradeBadge({
   size = "sm",
   showTooltip = true,
   tooltipText,
+  feature,
 }: UpgradeBadgeProps) {
-  const navigate = useNavigate();
+  const { openUpgradeModal } = useUpgradeModal();
 
   const tierLabel = tier === "starter" ? "Starter" : tier === "agency" ? "Agency" : "Pro";
   const defaultTooltip = `Upgrade to ${tierLabel} to unlock this feature`;
@@ -30,7 +32,7 @@ export function UpgradeBadge({
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    navigate("/settings", { state: { scrollToUpgrade: true } });
+    openUpgradeModal(feature);
   };
 
   const badge = (
@@ -75,19 +77,21 @@ interface LockedFeatureOverlayProps {
   tier?: "starter" | "pro" | "agency" | string;
   children: React.ReactNode;
   className?: string;
+  feature?: FeatureKey;
 }
 
 export function LockedFeatureOverlay({
   tier = "pro",
   children,
   className,
+  feature,
 }: LockedFeatureOverlayProps) {
-  const navigate = useNavigate();
+  const { openUpgradeModal } = useUpgradeModal();
 
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    navigate("/settings", { state: { scrollToUpgrade: true } });
+    openUpgradeModal(feature);
   };
 
   return (
@@ -104,7 +108,7 @@ export function LockedFeatureOverlay({
       <div className="absolute inset-0 flex items-center justify-center bg-background/50 backdrop-blur-[1px] rounded-lg border-2 border-dashed border-amber-500/30 group-hover:border-amber-500/50 transition-colors">
         <div className="flex flex-col items-center gap-2">
           <Lock className="h-5 w-5 text-muted-foreground" />
-          <UpgradeBadge tier={tier} size="md" showTooltip={false} />
+          <UpgradeBadge tier={tier} size="md" showTooltip={false} feature={feature} />
         </div>
       </div>
     </div>

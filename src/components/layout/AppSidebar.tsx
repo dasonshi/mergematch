@@ -76,17 +76,14 @@ export function AppSidebar() {
 
           if (isLocked) {
             return (
-              <NavLink
+              <div
                 key={item.href}
-                to="/settings"
-                state={{ scrollToUpgrade: true }}
-                onClick={() => setMobileOpen(false)}
-                className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-muted hover:bg-sidebar-accent/30 transition-colors group"
+                className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-muted hover:bg-sidebar-accent/30 transition-colors group cursor-pointer"
               >
                 <item.icon className="h-4 w-4 shrink-0 opacity-60 group-hover:opacity-80" />
                 <span className="flex-1 opacity-60 group-hover:opacity-80">{item.title}</span>
-                <UpgradeBadge tier="pro" showTooltip={false} />
-              </NavLink>
+                <UpgradeBadge tier="pro" showTooltip={false} feature="merge_strategies" />
+              </div>
             );
           }
 

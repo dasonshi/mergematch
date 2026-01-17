@@ -53,13 +53,10 @@ export function TopNav() {
 
         if (isLocked) {
           return (
-            <NavLink
+            <div
               key={item.href}
-              to="/settings"
-              state={{ scrollToUpgrade: true }}
-              onClick={() => mobile && setMobileOpen(false)}
               className={cn(
-                "flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md transition-colors group",
+                "flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md transition-colors group cursor-pointer",
                 "text-muted-foreground hover:bg-muted/50",
                 mobile && "w-full"
               )}
@@ -67,9 +64,9 @@ export function TopNav() {
               <item.icon className="h-4 w-4 shrink-0 opacity-60 group-hover:opacity-80" />
               <span className="opacity-60 group-hover:opacity-80">{item.title}</span>
               <div className="ml-auto">
-                <UpgradeBadge tier="pro" showTooltip={false} />
+                <UpgradeBadge tier="pro" showTooltip={false} feature="merge_strategies" />
               </div>
-            </NavLink>
+            </div>
           );
         }
 
@@ -155,16 +152,14 @@ export function TopNav() {
                   return (
                     <DropdownMenuItem
                       key={item.href}
-                      asChild
                       className="cursor-pointer"
+                      onSelect={(e) => e.preventDefault()}
                     >
-                      <NavLink to="/settings" state={{ scrollToUpgrade: true }} onClick={() => setMobileOpen(false)}>
-                        <item.icon className="h-4 w-4 mr-2 opacity-60" />
-                        <span className="opacity-60">{item.title}</span>
-                        <div className="ml-auto">
-                          <UpgradeBadge tier="pro" showTooltip={false} />
-                        </div>
-                      </NavLink>
+                      <item.icon className="h-4 w-4 mr-2 opacity-60" />
+                      <span className="opacity-60">{item.title}</span>
+                      <div className="ml-auto">
+                        <UpgradeBadge tier="pro" showTooltip={false} feature="merge_strategies" />
+                      </div>
                     </DropdownMenuItem>
                   );
                 }

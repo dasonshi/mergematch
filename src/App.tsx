@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { LocationProvider } from "@/contexts/LocationContext";
+import { UpgradeModalProvider } from "@/components/ui/upgrade-modal";
 import { MainLayout } from "@/components/layout/MainLayout";
 import Index from "./pages/Index";
 import MatchRuleDetail from "./pages/MatchRuleDetail";
@@ -26,25 +27,27 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <LocationProvider>
-          <MainLayout>
-          <Routes>
-            <Route path="/" element={<Index />} />
-            {/* Redirect /match-rules to dashboard */}
-            <Route path="/match-rules" element={<Navigate to="/" replace />} />
-            <Route path="/match-rules/new" element={<MatchRuleForm />} />
-            <Route path="/match-rules/:id" element={<MatchRuleDetail />} />
-            <Route path="/match-rules/:id/edit" element={<MatchRuleForm />} />
-            <Route path="/match-rules/:id/review/:matchId" element={<MatchReview />} />
-            <Route path="/merge-strategies" element={<MergeStrategies />} />
-            <Route path="/merge-strategies/new" element={<MergeStrategyForm />} />
-            <Route path="/merge-strategies/:id/edit" element={<MergeStrategyForm />} />
-            <Route path="/history" element={<History />} />
-            <Route path="/history/:mergeId" element={<MergeDetail />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/help" element={<Help />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-          </MainLayout>
+          <UpgradeModalProvider>
+            <MainLayout>
+            <Routes>
+              <Route path="/" element={<Index />} />
+              {/* Redirect /match-rules to dashboard */}
+              <Route path="/match-rules" element={<Navigate to="/" replace />} />
+              <Route path="/match-rules/new" element={<MatchRuleForm />} />
+              <Route path="/match-rules/:id" element={<MatchRuleDetail />} />
+              <Route path="/match-rules/:id/edit" element={<MatchRuleForm />} />
+              <Route path="/match-rules/:id/review/:matchId" element={<MatchReview />} />
+              <Route path="/merge-strategies" element={<MergeStrategies />} />
+              <Route path="/merge-strategies/new" element={<MergeStrategyForm />} />
+              <Route path="/merge-strategies/:id/edit" element={<MergeStrategyForm />} />
+              <Route path="/history" element={<History />} />
+              <Route path="/history/:mergeId" element={<MergeDetail />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/help" element={<Help />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+            </MainLayout>
+          </UpgradeModalProvider>
         </LocationProvider>
       </BrowserRouter>
     </TooltipProvider>
