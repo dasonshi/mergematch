@@ -1,4 +1,4 @@
-import { NavLink, useLocation as useRouterLocation } from "react-router-dom";
+import { NavLink, useLocation as useRouterLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   GitMerge,
@@ -8,9 +8,9 @@ import {
   ArrowUpRight,
   Menu,
   X,
-  Lock,
   Bell
 } from "lucide-react";
+import { UpgradeBadge } from "@/components/ui/upgrade-badge";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -76,15 +76,17 @@ export function AppSidebar() {
 
           if (isLocked) {
             return (
-              <div
+              <NavLink
                 key={item.href}
-                className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-muted cursor-not-allowed opacity-60"
-                title="Upgrade to access this feature"
+                to="/settings"
+                state={{ scrollToUpgrade: true }}
+                onClick={() => setMobileOpen(false)}
+                className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-muted hover:bg-sidebar-accent/30 transition-colors group"
               >
-                <item.icon className="h-4 w-4 shrink-0" />
-                <span className="flex-1">{item.title}</span>
-                <Lock className="h-3 w-3" />
-              </div>
+                <item.icon className="h-4 w-4 shrink-0 opacity-60 group-hover:opacity-80" />
+                <span className="flex-1 opacity-60 group-hover:opacity-80">{item.title}</span>
+                <UpgradeBadge tier="pro" showTooltip={false} />
+              </NavLink>
             );
           }
 
