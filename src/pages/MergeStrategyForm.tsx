@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, AlertTriangle } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { ArrowLeft, AlertTriangle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -16,6 +17,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useLocation } from "@/contexts/LocationContext";
+import { api, ObjectAssociation } from "@/lib/api";
 
 // Mock data for editing
 const mockStrategy = {
@@ -30,12 +33,22 @@ const mockStrategy = {
   usedBy: ["Email + Phone Match", "Name + Address Match"],
 };
 
-const objectTypes = ["Contacts", "Companies", "Opportunities", "Custom Objects"];
+// Map internal object type names to API object types
+const OBJECT_TYPE_MAP: Record<string, string> = {
+  "Contacts": "contacts",
+  "Companies": "companies",
+  "Opportunities": "opportunities",
+  "Custom Objects": "custom_objects",
+};
+
+// Default handling options for related records
+type RelatedRecordHandling = "copy_to_master" | "dont_copy" | "keep_all" | "keep_master_only" | "keep_highest_value" | "custom_logic";
 
 export default function MergeStrategyForm() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { locationId } = useLocation();
   const isEditing = Boolean(id);
 
   // Form state
@@ -43,14 +56,57 @@ export default function MergeStrategyForm() {
   const [objectType, setObjectType] = useState(isEditing ? mockStrategy.objectType : "");
   const [masterSelection, setMasterSelection] = useState(isEditing ? mockStrategy.masterSelection : "most-complete");
   const [conflictResolution, setConflictResolution] = useState(isEditing ? mockStrategy.conflictResolution : "prefer-master");
-  const [notesHandling, setNotesHandling] = useState(isEditing ? mockStrategy.notesHandling : "copy-all");
-  const [tasksHandling, setTasksHandling] = useState(isEditing ? mockStrategy.tasksHandling : "copy-all");
-  const [opportunitiesHandling, setOpportunitiesHandling] = useState(isEditing ? mockStrategy.opportunitiesHandling : "keep-all");
+
+  // Dynamic related records handling state
+  const [relatedRecordsHandling, setRelatedRecordsHandling] = useState<Record<string, RelatedRecordHandling>>({});
 
   // Dialogs
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [showSaveAsNewDialog, setShowSaveAsNewDialog] = useState(false);
   const [newStrategyName, setNewStrategyName] = useState("");
+
+  // Fetch available object types
+  const { data: availableObjects } = useQuery({
+    queryKey: ["available-objects", locationId],
+    queryFn: () => api.getAvailableObjects(),
+    enabled: !!locationId,
+  });
+
+  // Fetch associations for selected object type
+  const apiObjectType = OBJECT_TYPE_MAP[objectType] || objectType.toLowerCase();
+  const { data: associations, isLoading: associationsLoading } = useQuery({
+    queryKey: ["object-associations", apiObjectType, locationId],
+    queryFn: () => api.getObjectAssociations(apiObjectType),
+    enabled: !!locationId && !!objectType && objectType !== "Custom Objects",
+  });
+
+  // Initialize default handling for associations when they load
+  useEffect(() => {
+    if (associations && associations.length > 0) {
+      const defaults: Record<string, RelatedRecordHandling> = {};
+      associations.forEach((assoc) => {
+        if (!relatedRecordsHandling[assoc.id]) {
+          // Default based on object type
+          if (assoc.objectKey === "opportunity") {
+            defaults[assoc.id] = "keep_all";
+          } else {
+            defaults[assoc.id] = "copy_to_master";
+          }
+        }
+      });
+      if (Object.keys(defaults).length > 0) {
+        setRelatedRecordsHandling((prev) => ({ ...prev, ...defaults }));
+      }
+    }
+  }, [associations]);
+
+  // Build object types list from API data + fallback
+  const objectTypes = availableObjects
+    ? [
+        ...availableObjects.filter((o) => o.standard).map((o) => o.name.charAt(0).toUpperCase() + o.name.slice(1)),
+        "Custom Objects",
+      ]
+    : ["Contacts", "Companies", "Opportunities", "Custom Objects"];
 
   const usedBy = isEditing ? mockStrategy.usedBy : [];
   const isUsedByRules = usedBy.length > 0;
@@ -211,79 +267,104 @@ export default function MergeStrategyForm() {
         </CardContent>
       </Card>
 
-      {/* Related Records */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Related Records</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            How should associated records be handled during merge?
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Notes */}
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">Notes:</Label>
-            <RadioGroup value={notesHandling} onValueChange={setNotesHandling} className="flex gap-6">
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="copy-all" id="notes-copy" />
-                <Label htmlFor="notes-copy" className="font-normal cursor-pointer">
-                  Copy all to master
-                </Label>
+      {/* Related Records - Only show when object type is selected */}
+      {objectType && objectType !== "Custom Objects" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Related Records</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              How should associated records be handled during merge?
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {associationsLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                <span className="ml-2 text-sm text-muted-foreground">Loading associations...</span>
               </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="dont-copy" id="notes-dont" />
-                <Label htmlFor="notes-dont" className="font-normal cursor-pointer">
-                  Don't copy
-                </Label>
-              </div>
-            </RadioGroup>
-          </div>
+            ) : associations && associations.length > 0 ? (
+              associations
+                .filter((assoc) => assoc.canReassign)
+                .map((assoc) => {
+                  const isOpportunity = assoc.objectKey === "opportunity";
+                  const currentValue = relatedRecordsHandling[assoc.id] || (isOpportunity ? "keep_all" : "copy_to_master");
 
-          {/* Tasks */}
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">Tasks:</Label>
-            <RadioGroup value={tasksHandling} onValueChange={setTasksHandling} className="flex gap-6">
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="copy-all" id="tasks-copy" />
-                <Label htmlFor="tasks-copy" className="font-normal cursor-pointer">
-                  Copy all to master
-                </Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="dont-copy" id="tasks-dont" />
-                <Label htmlFor="tasks-dont" className="font-normal cursor-pointer">
-                  Don't copy
-                </Label>
-              </div>
-            </RadioGroup>
-          </div>
-
-          {/* Opportunities */}
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">Opportunities:</Label>
-            <RadioGroup value={opportunitiesHandling} onValueChange={setOpportunitiesHandling}>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="keep-all" id="opps-all" />
-                <Label htmlFor="opps-all" className="font-normal cursor-pointer">
-                  Keep all from both records
-                </Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="keep-master" id="opps-master" />
-                <Label htmlFor="opps-master" className="font-normal cursor-pointer">
-                  Keep from master only
-                </Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem value="keep-highest" id="opps-highest" />
-                <Label htmlFor="opps-highest" className="font-normal cursor-pointer">
-                  Keep highest monetary value
-                </Label>
-              </div>
-            </RadioGroup>
-          </div>
-        </CardContent>
-      </Card>
+                  return (
+                    <div key={assoc.id} className="space-y-2">
+                      <Label className="text-sm font-medium">{assoc.name}:</Label>
+                      {isOpportunity ? (
+                        // Opportunities have more options
+                        <RadioGroup
+                          value={currentValue}
+                          onValueChange={(value) =>
+                            setRelatedRecordsHandling((prev) => ({
+                              ...prev,
+                              [assoc.id]: value as RelatedRecordHandling,
+                            }))
+                          }
+                        >
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="keep_all" id={`${assoc.id}-all`} />
+                            <Label htmlFor={`${assoc.id}-all`} className="font-normal cursor-pointer">
+                              Keep all from both records
+                            </Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="keep_master_only" id={`${assoc.id}-master`} />
+                            <Label htmlFor={`${assoc.id}-master`} className="font-normal cursor-pointer">
+                              Keep from master only
+                            </Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="keep_highest_value" id={`${assoc.id}-highest`} />
+                            <Label htmlFor={`${assoc.id}-highest`} className="font-normal cursor-pointer">
+                              Keep highest monetary value
+                            </Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="custom_logic" id={`${assoc.id}-custom`} />
+                            <Label htmlFor={`${assoc.id}-custom`} className="font-normal cursor-pointer">
+                              Custom logic (coming soon)
+                            </Label>
+                          </div>
+                        </RadioGroup>
+                      ) : (
+                        // Simple copy/don't copy for notes, tasks, etc.
+                        <RadioGroup
+                          value={currentValue}
+                          onValueChange={(value) =>
+                            setRelatedRecordsHandling((prev) => ({
+                              ...prev,
+                              [assoc.id]: value as RelatedRecordHandling,
+                            }))
+                          }
+                          className="flex gap-6"
+                        >
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="copy_to_master" id={`${assoc.id}-copy`} />
+                            <Label htmlFor={`${assoc.id}-copy`} className="font-normal cursor-pointer">
+                              Copy all to master
+                            </Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="dont_copy" id={`${assoc.id}-dont`} />
+                            <Label htmlFor={`${assoc.id}-dont`} className="font-normal cursor-pointer">
+                              Don't copy
+                            </Label>
+                          </div>
+                        </RadioGroup>
+                      )}
+                    </div>
+                  );
+                })
+            ) : (
+              <p className="text-sm text-muted-foreground py-4">
+                No related records found for {objectType}.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Warning Box */}
       {isEditing && isUsedByRules && (

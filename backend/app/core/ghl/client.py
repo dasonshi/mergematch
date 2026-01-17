@@ -301,3 +301,81 @@ class GHLClient:
         )
         response.raise_for_status()
         return response.json().get("objects", [])
+
+    # ==================== ASSOCIATIONS ====================
+
+    async def get_associations_for_object(self, object_key: str) -> List[Dict[str, Any]]:
+        """Get all associations defined for an object type.
+
+        Args:
+            object_key: 'contact', 'business', 'opportunity', or 'custom_objects.{key}'
+
+        Returns list of associations with related object info.
+        """
+        response = await self._client.get(
+            f"/associations/objectKey/{object_key}",
+            params={"locationId": self.location_id}
+        )
+        if response.status_code >= 400:
+            logger.warning(f"[GHL] Get associations failed: {response.status_code} - {response.text}")
+            return []
+        return response.json().get("associations", [])
+
+    async def get_relations_for_record(self, record_id: str) -> List[Dict[str, Any]]:
+        """Get all related records for a specific record.
+
+        Args:
+            record_id: The ID of the record (contact, opportunity, etc.)
+
+        Returns list of related records with their data.
+        """
+        response = await self._client.get(
+            f"/associations/relations/{record_id}",
+            params={"locationId": self.location_id}
+        )
+        if response.status_code >= 400:
+            logger.warning(f"[GHL] Get relations failed: {response.status_code} - {response.text}")
+            return []
+        return response.json().get("relations", [])
+
+    async def create_relation(
+        self,
+        source_object_key: str,
+        source_record_id: str,
+        target_object_key: str,
+        target_record_id: str,
+        association_id: str,
+    ) -> Dict[str, Any]:
+        """Create a relation between two records.
+
+        Args:
+            source_object_key: Object type of source record
+            source_record_id: ID of source record
+            target_object_key: Object type of target record
+            target_record_id: ID of target record
+            association_id: The association definition ID
+
+        Returns created relation.
+        """
+        payload = {
+            "locationId": self.location_id,
+            "sourceObjectKey": source_object_key,
+            "sourceRecordId": source_record_id,
+            "targetObjectKey": target_object_key,
+            "targetRecordId": target_record_id,
+            "associationId": association_id,
+        }
+        response = await self._client.post("/associations/relations", json=payload)
+        if response.status_code >= 400:
+            error_detail = response.text
+            logger.error(f"[GHL] Create relation failed: {response.status_code} - {error_detail}")
+            raise Exception(f"GHL API error ({response.status_code}): {error_detail}")
+        return response.json()
+
+    async def delete_relation(self, relation_id: str) -> None:
+        """Delete a relation between two records."""
+        response = await self._client.delete(f"/associations/relations/{relation_id}")
+        if response.status_code >= 400:
+            error_detail = response.text
+            logger.error(f"[GHL] Delete relation failed: {response.status_code} - {error_detail}")
+            raise Exception(f"GHL API error ({response.status_code}): {error_detail}")

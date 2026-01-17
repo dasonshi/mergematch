@@ -192,3 +192,85 @@ async def list_available_objects(
             pass
 
     return objects
+
+
+# Known associations for each object type (fallback if API returns empty)
+KNOWN_ASSOCIATIONS = {
+    "contacts": [
+        {"id": "notes", "name": "Notes", "objectKey": "notes", "canReassign": True},
+        {"id": "tasks", "name": "Tasks", "objectKey": "tasks", "canReassign": True},
+        {"id": "opportunities", "name": "Opportunities", "objectKey": "opportunity", "canReassign": True},
+        {"id": "conversations", "name": "Conversations", "objectKey": "conversations", "canReassign": False},
+        {"id": "appointments", "name": "Appointments", "objectKey": "appointments", "canReassign": False},
+    ],
+    "companies": [
+        {"id": "contacts", "name": "Contacts", "objectKey": "contact", "canReassign": True},
+    ],
+    "opportunities": [
+        {"id": "contacts", "name": "Contacts", "objectKey": "contact", "canReassign": True},
+    ],
+}
+
+
+@router.get("/{object_type}/associations")
+async def get_object_associations(
+    object_type: str,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+) -> List[Dict[str, Any]]:
+    """
+    Get associated/related objects for a given object type.
+
+    Returns list of objects that can be associated with the source object,
+    along with their handling options (copy, don't copy, custom logic).
+
+    object_type can be:
+    - 'contacts' - Returns notes, tasks, opportunities, etc.
+    - 'companies' - Returns contacts
+    - 'opportunities' - Returns contacts
+    - 'custom_objects.{key}' - Returns defined associations
+    """
+    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
+    tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
+    if not tokens:
+        raise HTTPException(status_code=401, detail="Location not authenticated or token refresh failed")
+
+    # Start with known associations as fallback
+    known = KNOWN_ASSOCIATIONS.get(object_type, [])
+
+    async with GHLClient(tokens["access_token"], user.ghl_location_id) as client:
+        try:
+            # Try to fetch associations from GHL API
+            ghl_associations = await client.get_associations_for_object(object_type)
+
+            if ghl_associations:
+                # Map GHL associations to our format
+                associations = []
+                for assoc in ghl_associations:
+                    target_key = assoc.get("targetObjectKey", "")
+                    labels = assoc.get("labels", {})
+                    associations.append({
+                        "id": assoc.get("id", target_key),
+                        "name": labels.get("plural") or labels.get("singular") or target_key,
+                        "objectKey": target_key,
+                        "associationId": assoc.get("id"),
+                        "relationshipType": assoc.get("relationshipType", "one_to_many"),
+                        "canReassign": True,  # Assume reassignable via API
+                    })
+
+                # Merge with known associations (add any missing standard ones)
+                known_keys = {k["objectKey"] for k in known}
+                for assoc in associations:
+                    if assoc["objectKey"] not in known_keys:
+                        known.append(assoc)
+
+            return known
+
+        except Exception as e:
+            # If GHL API fails, return known associations
+            if known:
+                return known
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to fetch associations: {str(e)}"
+            )

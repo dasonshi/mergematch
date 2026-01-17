@@ -192,6 +192,10 @@ class ApiClient {
     return this.fetch<ObjectType[]>('/v1/fields/');
   }
 
+  async getObjectAssociations(objectType: string) {
+    return this.fetch<ObjectAssociation[]>(`/v1/fields/${objectType}/associations`);
+  }
+
   // Match Rules
   async getMatchRules() {
     return this.fetch<{ data: MatchRule[]; total: number }>('/v1/rules/');
@@ -455,6 +459,15 @@ export interface ObjectType {
   id: string;
   name: string;
   standard: boolean;
+}
+
+export interface ObjectAssociation {
+  id: string;
+  name: string;
+  objectKey: string;
+  associationId?: string;
+  relationshipType?: string;
+  canReassign: boolean;
 }
 
 export interface Notification {
