@@ -493,27 +493,38 @@ export default function MatchRuleForm() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {objectTypes.map((obj) => (
-                          <SelectItem
-                            key={obj.id}
-                            value={obj.id}
-                            disabled={!obj.available}
-                            className={!obj.available ? "opacity-60" : ""}
-                          >
-                            <span className="flex items-center gap-2">
-                              {obj.name}
-                              {obj.isCustom && (
-                                <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">Custom</span>
-                              )}
-                              {!obj.available && (
-                                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                                  <Lock className="h-3 w-3" />
-                                  {obj.tier === "starter" ? "Starter" : obj.tier === "pro" ? "Pro" : "Agency"}
-                                </span>
-                              )}
-                            </span>
-                          </SelectItem>
-                        ))}
+                        {objectTypes.map((obj) => {
+                          // Map object types to feature keys for the upgrade modal
+                          const featureMap: Record<string, "company_matching" | "opportunities_matching"> = {
+                            companies: "company_matching",
+                            opportunities: "opportunities_matching",
+                          };
+                          const feature = featureMap[obj.id];
+                          
+                          return (
+                            <SelectItem
+                              key={obj.id}
+                              value={obj.id}
+                              disabled={!obj.available}
+                              className={!obj.available ? "opacity-60" : ""}
+                            >
+                              <span className="flex items-center gap-2">
+                                {obj.name}
+                                {obj.isCustom && (
+                                  <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">Custom</span>
+                                )}
+                                {!obj.available && (
+                                  <UpgradeBadge 
+                                    tier={obj.tier} 
+                                    size="sm" 
+                                    showTooltip={false} 
+                                    feature={feature}
+                                  />
+                                )}
+                              </span>
+                            </SelectItem>
+                          );
+                        })}
                       </SelectContent>
                     </Select>
                   )}
