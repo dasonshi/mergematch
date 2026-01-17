@@ -11,6 +11,7 @@ import {
   Bell
 } from "lucide-react";
 import { UpgradeBadge } from "@/components/ui/upgrade-badge";
+import { useUpgradeModal } from "@/components/ui/upgrade-modal";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,7 @@ export function AppSidebar() {
   const { canUseStrategies, plan } = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const unreadCount = useUnreadNotificationCount();
+  const { openUpgradeModal } = useUpgradeModal();
 
   const SidebarContent = () => (
     <div className="flex h-full flex-col">
@@ -78,6 +80,7 @@ export function AppSidebar() {
             return (
               <div
                 key={item.href}
+                onClick={() => openUpgradeModal("merge_strategies")}
                 className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-muted hover:bg-sidebar-accent/30 transition-colors group cursor-pointer"
               >
                 <item.icon className="h-4 w-4 shrink-0 opacity-60 group-hover:opacity-80" />
