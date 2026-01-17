@@ -575,9 +575,7 @@ export default function MatchRuleForm() {
                                   onClick={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
-                                    if (plan === "free") {
-                                      navigate("/settings", { state: { scrollToUpgrade: true } });
-                                    } else {
+                                    if (plan !== "free") {
                                       toast({
                                         title: "Custom Field",
                                         description: "Enter a custom field name to match on.",
@@ -590,7 +588,7 @@ export default function MatchRuleForm() {
                                     Custom Field
                                   </span>
                                   {plan === "free" && (
-                                    <UpgradeBadge tier="pro" showTooltip={false} />
+                                    <UpgradeBadge tier="pro" showTooltip={false} feature="custom_fields" />
                                   )}
                                 </div>
                               </div>
@@ -753,14 +751,14 @@ export default function MatchRuleForm() {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <Label>Custom Strategy</Label>
-                      <UpgradeBadge tier="pro" />
+                      <UpgradeBadge tier="pro" feature="custom_strategy" />
                     </div>
                     <div
                       onClick={() => {
                         // In real app, check if user has Pro+ tier
                         const hasProPlan = plan === "pro" || plan === "agency";
                         if (!hasProPlan) {
-                          navigate("/settings", { state: { scrollToUpgrade: true } });
+                          // The UpgradeBadge handles the modal, but we can also trigger from the card
                           return;
                         }
                         // Navigate to create custom strategy
