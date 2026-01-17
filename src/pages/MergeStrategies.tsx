@@ -1,9 +1,11 @@
 import { Link } from "react-router-dom";
-import { ArrowLeft, Plus, Pencil, Trash2, Lock, Layers } from "lucide-react";
+import { ArrowLeft, Plus, Pencil, Trash2, Layers, Crown, Sparkles, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "@/contexts/LocationContext";
+import { UpgradeBadge } from "@/components/ui/upgrade-badge";
+import { useUpgradeModal } from "@/components/ui/upgrade-modal";
 
 interface Strategy {
   id: string;
@@ -23,6 +25,7 @@ const customStrategies: Strategy[] = [];
 export default function MergeStrategies() {
   const { toast } = useToast();
   const { canUseStrategies } = useLocation();
+  const { openUpgradeModal } = useUpgradeModal();
 
   const contactStrategies = customStrategies.filter((s) => s.objectType === "Contacts");
   const companyStrategies = customStrategies.filter((s) => s.objectType === "Companies");
@@ -113,6 +116,93 @@ export default function MergeStrategies() {
     </div>
   );
 
+  // Locked state for free users - show upgrade CTA
+  if (!canUseStrategies) {
+    return (
+      <div className="space-y-8">
+        {/* Header */}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <Link
+              to="/"
+              className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Dashboard
+            </Link>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground lg:text-3xl">
+                Merge Strategies
+              </h1>
+              <UpgradeBadge tier="pro" size="md" feature="merge_strategies" />
+            </div>
+          </div>
+        </div>
+
+        {/* Locked Upgrade Card */}
+        <Card className="border-2 border-dashed border-amber-500/30 bg-gradient-to-br from-amber-500/5 to-orange-500/5">
+          <CardHeader className="text-center pb-4">
+            <div className="mx-auto mb-4 rounded-full bg-gradient-to-br from-amber-500/20 to-orange-500/20 p-4">
+              <Crown className="h-10 w-10 text-amber-500" />
+            </div>
+            <CardTitle className="text-2xl">Unlock Custom Merge Strategies</CardTitle>
+            <CardDescription className="text-base max-w-lg mx-auto">
+              Take full control of how your duplicate records are merged with custom strategies tailored to your business needs.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Benefits */}
+            <div className="grid gap-3 sm:grid-cols-2 max-w-2xl mx-auto">
+              {[
+                "Define master record selection rules",
+                "Control field-by-field conflict resolution",
+                "Customize handling of notes & tasks",
+                "Set opportunity merge behavior",
+                "Reuse strategies across Match Rules",
+                "Preserve critical data during merges",
+              ].map((benefit) => (
+                <div key={benefit} className="flex items-center gap-2 text-sm">
+                  <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
+                  <span>{benefit}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* CTA */}
+            <div className="flex flex-col items-center gap-3 pt-4">
+              <Button
+                size="lg"
+                onClick={() => openUpgradeModal("merge_strategies")}
+                className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white gap-2"
+              >
+                <Sparkles className="h-4 w-4" />
+                Upgrade to Pro
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Custom merge strategies are available on Pro and higher plans
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Preview of what they'll get */}
+        <div className="opacity-40 pointer-events-none">
+          <Card className="border-dashed">
+            <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="rounded-full bg-muted p-4 mb-4">
+                <Layers className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <h3 className="text-lg font-semibold mb-2">Your Custom Strategies Will Appear Here</h3>
+              <p className="text-muted-foreground max-w-md">
+                Create and manage custom merge strategies to precisely control how duplicates are combined.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -129,19 +219,12 @@ export default function MergeStrategies() {
             Merge Strategies
           </h1>
         </div>
-        {canUseStrategies ? (
-          <Button asChild>
-            <Link to="/merge-strategies/new">
-              <Plus className="h-4 w-4 mr-2" />
-              New Merge Strategy
-            </Link>
-          </Button>
-        ) : (
-          <Button disabled>
-            <Lock className="h-4 w-4 mr-2" />
+        <Button asChild>
+          <Link to="/merge-strategies/new">
+            <Plus className="h-4 w-4 mr-2" />
             New Merge Strategy
-          </Button>
-        )}
+          </Link>
+        </Button>
       </div>
 
       {/* Content */}
@@ -168,12 +251,6 @@ export default function MergeStrategies() {
               Custom merge strategies let you define exactly how records are combined during a merge.
               The built-in strategies (Standard, Most Recent, etc.) are available in the Match Rule dropdown.
             </p>
-            {!canUseStrategies && (
-              <div className="flex items-center gap-2 text-sm text-amber-600 bg-amber-50 px-4 py-2 rounded-lg">
-                <Lock className="h-4 w-4" />
-                <span>Upgrade to Starter or higher to create custom strategies</span>
-              </div>
-            )}
           </CardContent>
         </Card>
       )}

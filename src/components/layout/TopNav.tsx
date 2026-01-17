@@ -22,6 +22,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { UpgradeBadge } from "@/components/ui/upgrade-badge";
+import { useUpgradeModal } from "@/components/ui/upgrade-modal";
 
 interface NavItem {
   title: string;
@@ -43,6 +44,7 @@ export function TopNav() {
   const { canUseStrategies, plan } = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const unreadCount = useUnreadNotificationCount();
+  const { openUpgradeModal } = useUpgradeModal();
 
   const NavItems = ({ mobile = false }: { mobile?: boolean }) => (
     <>
@@ -55,6 +57,7 @@ export function TopNav() {
           return (
             <div
               key={item.href}
+              onClick={() => openUpgradeModal("merge_strategies")}
               className={cn(
                 "flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md transition-colors group cursor-pointer",
                 "text-muted-foreground hover:bg-muted/50",
@@ -153,7 +156,11 @@ export function TopNav() {
                     <DropdownMenuItem
                       key={item.href}
                       className="cursor-pointer"
-                      onSelect={(e) => e.preventDefault()}
+                      onSelect={(e) => {
+                        e.preventDefault();
+                        openUpgradeModal("merge_strategies");
+                        setMobileOpen(false);
+                      }}
                     >
                       <item.icon className="h-4 w-4 mr-2 opacity-60" />
                       <span className="opacity-60">{item.title}</span>
