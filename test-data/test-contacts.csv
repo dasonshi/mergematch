@@ -1,0 +1,13 @@
+firstName,lastName,email,phone,companyName,address1,city,state,postalCode,tags
+John,Smith,john@acme.com,555-0101,Acme Corp,123 Main St,Austin,TX,78701,test-pair-1
+John A,Smith,john@acme.com,555-0102,Acme Corporation,123 Main Street,Austin,TX,78701,test-pair-1
+Sarah,Johnson,sarah.j@company.com,555-0201,Company Inc,456 Oak Ave,Denver,CO,80202,test-pair-2
+Sara,Johnson,sarah.johnson@company.com,555-0202,Company Inc,456 Oak Avenue,Denver,CO,80202,test-pair-2
+Mike,Wilson,mike@startup.io,555-0301,Startup Labs,789 Tech Blvd,San Francisco,CA,94102,test-pair-3-notes
+Michael,Wilson,mike@startup.io,555-0302,Startup Labs Inc,789 Tech Boulevard,San Francisco,CA,94102,test-pair-3-tasks
+Emily,Davis,emily@bigcorp.com,555-0401,BigCorp,321 Enterprise Way,New York,NY,10001,test-pair-4-opps
+Emily R,Davis,emily@bigcorp.com,555-0402,BigCorp LLC,321 Enterprise Way,New York,NY,10001,test-pair-4-opps
+David,Brown,david.brown@agency.co,555-0501,Agency Partners,654 Business Park,Chicago,IL,60601,test-pair-5-stages
+Dave,Brown,david.brown@agency.co,555-0502,Agency Partners LLC,654 Business Park Dr,Chicago,IL,60601,test-pair-5-stages
+Lisa,Chen,lisa@techfirm.com,555-0601,TechFirm,987 Innovation Dr,Seattle,WA,98101,test-pair-6-multi
+Lisa M,Chen,lisa@techfirm.com,555-0602,TechFirm Inc,987 Innovation Drive,Seattle,WA,98101,test-pair-6-multi
