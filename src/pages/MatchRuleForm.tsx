@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Plus, Trash2, Lock, Info, Crown, Loader2, ArrowRight, Check } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Lock, Info, Loader2, ArrowRight, Check } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +19,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { StepIndicator } from "@/components/ui/step-indicator";
+import { UpgradeBadge } from "@/components/ui/upgrade-badge";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, MatchRule, MatchField, ObjectField } from "@/lib/api";
@@ -561,44 +562,33 @@ export default function MatchRuleForm() {
                               ))}
                               {/* Custom Field Option - locked for free tier */}
                               <div className="px-2 py-1.5 mt-1 border-t border-border">
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <div
-                                      className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-sm text-sm ${
-                                        plan === "free"
-                                          ? "opacity-60 cursor-not-allowed"
-                                          : "cursor-pointer hover:bg-accent"
-                                      }`}
-                                      onClick={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        if (plan !== "free") {
-                                          toast({
-                                            title: "Custom Field",
-                                            description: "Enter a custom field name to match on.",
-                                          });
-                                        }
-                                      }}
-                                    >
-                                      <span className="flex items-center gap-2">
-                                        <Plus className="h-4 w-4" />
-                                        Custom Field
-                                      </span>
-                                      {plan === "free" && (
-                                        <span className="flex items-center gap-1 text-xs text-amber-600">
-                                          <Lock className="h-3 w-3" />
-                                          <Crown className="h-3 w-3" />
-                                          Pro
-                                        </span>
-                                      )}
-                                    </div>
-                                  </TooltipTrigger>
+                                <div
+                                  className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-sm text-sm ${
+                                    plan === "free"
+                                      ? "cursor-pointer hover:bg-accent/50 group"
+                                      : "cursor-pointer hover:bg-accent"
+                                  }`}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    if (plan === "free") {
+                                      navigate("/settings", { state: { scrollToUpgrade: true } });
+                                    } else {
+                                      toast({
+                                        title: "Custom Field",
+                                        description: "Enter a custom field name to match on.",
+                                      });
+                                    }
+                                  }}
+                                >
+                                  <span className={`flex items-center gap-2 ${plan === "free" ? "opacity-60 group-hover:opacity-80" : ""}`}>
+                                    <Plus className="h-4 w-4" />
+                                    Custom Field
+                                  </span>
                                   {plan === "free" && (
-                                    <TooltipContent side="right">
-                                      <p>Upgrade to Pro to use custom fields</p>
-                                    </TooltipContent>
+                                    <UpgradeBadge tier="pro" showTooltip={false} />
                                   )}
-                                </Tooltip>
+                                </div>
                               </div>
                             </SelectContent>
                           </Select>
@@ -759,31 +749,24 @@ export default function MatchRuleForm() {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <Label>Custom Strategy</Label>
-                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                        <Crown className="h-3 w-3" />
-                        Pro+
-                      </span>
+                      <UpgradeBadge tier="pro" />
                     </div>
                     <div
                       onClick={() => {
                         // In real app, check if user has Pro+ tier
-                        const hasProPlan = false; // mock
+                        const hasProPlan = plan === "pro" || plan === "agency";
                         if (!hasProPlan) {
-                          toast({
-                            title: "Upgrade Required",
-                            description: "Custom merge strategies require Pro plan or higher.",
-                          });
+                          navigate("/settings", { state: { scrollToUpgrade: true } });
                           return;
                         }
                         // Navigate to create custom strategy
                         navigate("/merge-strategies/new");
                       }}
-                      className="p-4 rounded-lg border-2 border-dashed border-muted bg-muted/20 cursor-not-allowed transition-all"
+                      className="p-4 rounded-lg border-2 border-dashed border-muted bg-muted/20 cursor-pointer hover:border-primary/30 hover:bg-muted/30 transition-all group"
                     >
                       <div className="flex items-center gap-2">
-                        <Plus className="h-4 w-4 text-muted-foreground" />
-                        <span className="font-medium">Create Custom Strategy</span>
-                        <Lock className="h-3 w-3 text-muted-foreground ml-auto" />
+                        <Plus className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+                        <span className="font-medium opacity-60 group-hover:opacity-100 transition-opacity">Create Custom Strategy</span>
                       </div>
                       <p className="text-sm text-muted-foreground mt-1">
                         Define custom field-level merge rules for complete control

@@ -5,7 +5,6 @@ import {
   History,
   Settings,
   HelpCircle,
-  Lock,
   Bell,
   Menu,
   X,
@@ -22,6 +21,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { UpgradeBadge } from "@/components/ui/upgrade-badge";
 
 interface NavItem {
   title: string;
@@ -53,18 +53,23 @@ export function TopNav() {
 
         if (isLocked) {
           return (
-            <div
+            <NavLink
               key={item.href}
+              to="/settings"
+              state={{ scrollToUpgrade: true }}
+              onClick={() => mobile && setMobileOpen(false)}
               className={cn(
-                "flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground cursor-not-allowed opacity-60",
+                "flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md transition-colors group",
+                "text-muted-foreground hover:bg-muted/50",
                 mobile && "w-full"
               )}
-              title="Upgrade to access this feature"
             >
-              <item.icon className="h-4 w-4 shrink-0" />
-              <span>{item.title}</span>
-              <Lock className="h-3 w-3 ml-auto" />
-            </div>
+              <item.icon className="h-4 w-4 shrink-0 opacity-60 group-hover:opacity-80" />
+              <span className="opacity-60 group-hover:opacity-80">{item.title}</span>
+              <div className="ml-auto">
+                <UpgradeBadge tier="pro" showTooltip={false} />
+              </div>
+            </NavLink>
           );
         }
 
@@ -150,12 +155,16 @@ export function TopNav() {
                   return (
                     <DropdownMenuItem
                       key={item.href}
-                      disabled
-                      className="opacity-60"
+                      asChild
+                      className="cursor-pointer"
                     >
-                      <item.icon className="h-4 w-4 mr-2" />
-                      {item.title}
-                      <Lock className="h-3 w-3 ml-auto" />
+                      <NavLink to="/settings" state={{ scrollToUpgrade: true }} onClick={() => setMobileOpen(false)}>
+                        <item.icon className="h-4 w-4 mr-2 opacity-60" />
+                        <span className="opacity-60">{item.title}</span>
+                        <div className="ml-auto">
+                          <UpgradeBadge tier="pro" showTooltip={false} />
+                        </div>
+                      </NavLink>
                     </DropdownMenuItem>
                   );
                 }
