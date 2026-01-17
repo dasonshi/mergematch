@@ -550,10 +550,9 @@ export default function MatchRuleForm() {
                               key={obj.id}
                               value={obj.id}
                               disabled={!obj.available}
-                              className={!obj.available ? "opacity-50" : ""}
                             >
                               <span className="flex items-center gap-2">
-                                {obj.name}
+                                <span className={!obj.available ? "opacity-50" : ""}>{obj.name}</span>
                                 {!obj.available && (
                                   <>
                                     <Lock className="h-3 w-3 text-muted-foreground" />
@@ -587,10 +586,9 @@ export default function MatchRuleForm() {
                                 key={obj.id}
                                 value={obj.id}
                                 disabled={!obj.available}
-                                className={!obj.available ? "opacity-50" : ""}
                               >
                                 <span className="flex items-center gap-2">
-                                  {obj.name}
+                                  <span className={!obj.available ? "opacity-50" : ""}>{obj.name}</span>
                                   {!obj.available && (
                                     <Lock className="h-3 w-3 text-muted-foreground" />
                                   )}
