@@ -179,6 +179,17 @@ async def execute_merge(
         "source", "country", "assignedTo",
     }
 
+    # Get related records configuration from rule's merge_settings
+    related_records_config = {}
+    rule_id = match.data.get("rule_id")
+    if rule_id:
+        rule_result = supabase.table("match_rules").select(
+            "merge_settings"
+        ).eq("id", rule_id).single().execute()
+        if rule_result.data:
+            merge_settings = rule_result.data.get("merge_settings") or {}
+            related_records_config = merge_settings.get("related_records", {})
+
     try:
         async with GHLClient(access_token, ghl_location_id) as client:
             # Update master record with merged fields (only allowed, non-empty fields)
@@ -196,6 +207,39 @@ async def execute_merge(
             if update_payload:
                 logger.info(f"Updating master contact {master_record_id} with: {update_payload}")
                 await client.update_contact(master_record_id, update_payload)
+
+            # Handle related records BEFORE deleting duplicate
+            if related_records_config:
+                logger.info(f"Processing related records: {related_records_config}")
+
+                # Handle Notes
+                notes_handling = related_records_config.get("notes")
+                if notes_handling == "copy_to_master":
+                    try:
+                        notes_copied = await client.reassign_contact_notes(duplicate_id, master_record_id)
+                        logger.info(f"Copied {notes_copied} notes to master")
+                    except Exception as e:
+                        logger.warning(f"Failed to copy notes: {e}")
+
+                # Handle Tasks
+                tasks_handling = related_records_config.get("tasks")
+                if tasks_handling == "copy_to_master":
+                    try:
+                        tasks_copied = await client.reassign_contact_tasks(duplicate_id, master_record_id)
+                        logger.info(f"Copied {tasks_copied} tasks to master")
+                    except Exception as e:
+                        logger.warning(f"Failed to copy tasks: {e}")
+
+                # Handle Opportunities
+                opps_handling = related_records_config.get("opportunities")
+                if opps_handling and opps_handling != "dont_copy":
+                    try:
+                        opps_reassigned = await client.reassign_contact_opportunities(
+                            duplicate_id, master_record_id, handling=opps_handling
+                        )
+                        logger.info(f"Reassigned {opps_reassigned} opportunities to master")
+                    except Exception as e:
+                        logger.warning(f"Failed to reassign opportunities: {e}")
 
             # Delete the duplicate record
             logger.info(f"Deleting duplicate contact {duplicate_id}")

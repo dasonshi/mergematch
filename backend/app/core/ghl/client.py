@@ -182,6 +182,76 @@ class GHLClient:
         response.raise_for_status()
         return response.json()
 
+    async def update_opportunity(self, opportunity_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Update an opportunity."""
+        response = await self._client.put(f"/opportunities/{opportunity_id}", json=data)
+        response.raise_for_status()
+        return response.json()
+
+    async def get_contact_opportunities(self, contact_id: str) -> List[Dict[str, Any]]:
+        """Get all opportunities for a contact."""
+        # Search opportunities with contact filter
+        params = {
+            "location_id": self.location_id,
+            "contact_id": contact_id,
+            "limit": 100,
+        }
+        response = await self._client.get("/opportunities/search", params=params)
+        if response.status_code >= 400:
+            # May not have permissions, return empty
+            logger.warning(f"[GHL] Get contact opportunities failed: {response.status_code}")
+            return []
+        data = response.json()
+        return data.get("opportunities", [])
+
+    async def reassign_contact_opportunities(
+        self,
+        from_contact_id: str,
+        to_contact_id: str,
+        handling: str = "keep_all",
+    ) -> int:
+        """
+        Reassign opportunities from one contact to another.
+
+        Args:
+            from_contact_id: Source contact (duplicate)
+            to_contact_id: Target contact (master)
+            handling: How to handle - "keep_all", "keep_master_only", "keep_highest_value"
+
+        Returns count of opportunities reassigned.
+        """
+        if handling == "keep_master_only":
+            # Don't reassign - master's opportunities are kept, duplicate's are orphaned (deleted with contact)
+            logger.info(f"Opportunities handling: keep_master_only - not reassigning from {from_contact_id}")
+            return 0
+
+        opportunities = await self.get_contact_opportunities(from_contact_id)
+        if not opportunities:
+            return 0
+
+        if handling == "keep_highest_value":
+            # Sort by monetary value descending and only keep the highest
+            sorted_opps = sorted(
+                opportunities,
+                key=lambda o: o.get("monetaryValue", 0) or 0,
+                reverse=True
+            )
+            opportunities = sorted_opps[:1] if sorted_opps else []
+            logger.info(f"Opportunities handling: keep_highest_value - selected {len(opportunities)} highest value")
+
+        reassigned = 0
+        for opp in opportunities:
+            opp_id = opp.get("id")
+            if opp_id:
+                try:
+                    await self.update_opportunity(opp_id, {"contactId": to_contact_id})
+                    reassigned += 1
+                except Exception as e:
+                    logger.warning(f"Failed to reassign opportunity {opp_id}: {e}")
+
+        logger.info(f"Reassigned {reassigned}/{len(opportunities)} opportunities from {from_contact_id} to {to_contact_id}")
+        return reassigned
+
     # ==================== CUSTOM OBJECTS ====================
 
     async def get_custom_object_schemas(self) -> List[Dict[str, Any]]:
@@ -214,11 +284,92 @@ class GHLClient:
         response.raise_for_status()
         return response.json().get("notes", [])
 
+    async def create_contact_note(self, contact_id: str, body: str, user_id: Optional[str] = None) -> Dict[str, Any]:
+        """Create a note on a contact."""
+        payload = {"body": body}
+        if user_id:
+            payload["userId"] = user_id
+        response = await self._client.post(f"/contacts/{contact_id}/notes", json=payload)
+        response.raise_for_status()
+        return response.json()
+
     async def get_contact_tasks(self, contact_id: str) -> List[Dict[str, Any]]:
         """Get tasks for a contact."""
         response = await self._client.get(f"/contacts/{contact_id}/tasks")
         response.raise_for_status()
         return response.json().get("tasks", [])
+
+    async def create_contact_task(
+        self,
+        contact_id: str,
+        title: str,
+        body: Optional[str] = None,
+        due_date: Optional[str] = None,
+        completed: bool = False,
+        assigned_to: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Create a task on a contact."""
+        payload = {"title": title, "completed": completed}
+        if body:
+            payload["body"] = body
+        if due_date:
+            payload["dueDate"] = due_date
+        if assigned_to:
+            payload["assignedTo"] = assigned_to
+        response = await self._client.post(f"/contacts/{contact_id}/tasks", json=payload)
+        response.raise_for_status()
+        return response.json()
+
+    # ==================== RELATED RECORDS REASSIGNMENT ====================
+
+    async def reassign_contact_notes(self, from_contact_id: str, to_contact_id: str) -> int:
+        """
+        Move all notes from one contact to another.
+        GHL doesn't support moving, so we copy (create on target).
+        Original notes remain on source and are deleted when contact is deleted.
+
+        Returns count of notes copied.
+        """
+        notes = await self.get_contact_notes(from_contact_id)
+        copied = 0
+        for note in notes:
+            body = note.get("body", "")
+            if body:
+                try:
+                    await self.create_contact_note(to_contact_id, body)
+                    copied += 1
+                except Exception as e:
+                    logger.warning(f"Failed to copy note to {to_contact_id}: {e}")
+        logger.info(f"Copied {copied}/{len(notes)} notes from {from_contact_id} to {to_contact_id}")
+        return copied
+
+    async def reassign_contact_tasks(self, from_contact_id: str, to_contact_id: str) -> int:
+        """
+        Move all tasks from one contact to another.
+        GHL doesn't support moving, so we copy (create on target).
+        Original tasks remain on source and are deleted when contact is deleted.
+
+        Returns count of tasks copied.
+        """
+        tasks = await self.get_contact_tasks(from_contact_id)
+        copied = 0
+        for task in tasks:
+            title = task.get("title", "")
+            if title:
+                try:
+                    await self.create_contact_task(
+                        contact_id=to_contact_id,
+                        title=title,
+                        body=task.get("body"),
+                        due_date=task.get("dueDate"),
+                        completed=task.get("completed", False),
+                        assigned_to=task.get("assignedTo"),
+                    )
+                    copied += 1
+                except Exception as e:
+                    logger.warning(f"Failed to copy task to {to_contact_id}: {e}")
+        logger.info(f"Copied {copied}/{len(tasks)} tasks from {from_contact_id} to {to_contact_id}")
+        return copied
 
     # ==================== CUSTOM FIELDS & OBJECT SCHEMAS ====================
 

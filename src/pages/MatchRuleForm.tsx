@@ -142,6 +142,17 @@ export default function MatchRuleForm() {
   const [scheduleDayOfWeek, setScheduleDayOfWeek] = useState("1"); // Monday
   const [scheduleDayOfMonth, setScheduleDayOfMonth] = useState("1"); // 1st
 
+  // Related records handling (for contacts)
+  const [relatedRecordsConfig, setRelatedRecordsConfig] = useState<{
+    notes?: "copy_to_master" | "dont_copy";
+    tasks?: "copy_to_master" | "dont_copy";
+    opportunities?: "keep_all" | "keep_master_only" | "keep_highest_value";
+  }>({
+    notes: "copy_to_master",
+    tasks: "copy_to_master",
+    opportunities: "keep_all",
+  });
+
   // Fetch existing rule when editing
   const { data: existingRule, isLoading: ruleLoading } = useQuery({
     queryKey: ['rule', id],
@@ -249,6 +260,15 @@ export default function MatchRuleForm() {
       })));
       setStrategy(existingRule.merge_strategy || "standard");
       setFrequency(existingRule.schedule_frequency || "manual");
+
+      // Load related records config from merge_settings
+      const mergeSettings = existingRule.merge_settings || {};
+      const relatedRecords = mergeSettings.related_records || {};
+      setRelatedRecordsConfig({
+        notes: relatedRecords.notes || "copy_to_master",
+        tasks: relatedRecords.tasks || "copy_to_master",
+        opportunities: relatedRecords.opportunities || "keep_all",
+      });
     }
   }, [existingRule]);
 
@@ -341,6 +361,12 @@ export default function MatchRuleForm() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Build merge_settings with related records config (for contacts)
+    const mergeSettings: Record<string, unknown> = {};
+    if (objectType === "contacts") {
+      mergeSettings.related_records = relatedRecordsConfig;
+    }
+
     // Build the rule payload
     const rulePayload: Partial<MatchRule> = {
       name: ruleName,
@@ -356,6 +382,7 @@ export default function MatchRuleForm() {
       auto_merge_threshold: 95,
       review_threshold: 70,
       is_active: true,
+      merge_settings: mergeSettings,
     };
 
     if (isEditing) {
@@ -789,6 +816,110 @@ export default function MatchRuleForm() {
                 </CardContent>
               </Card>
 
+              {/* Related Records - Only show for contacts */}
+              {objectType === "contacts" && (
+                <Card className="shadow-md">
+                  <CardHeader className="bg-muted/30 border-b">
+                    <CardTitle className="text-lg font-bold">Related Records</CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      How should associated records be handled during merge?
+                    </p>
+                  </CardHeader>
+                  <CardContent className="space-y-4 pt-6">
+                    {/* Notes */}
+                    <div className="space-y-2">
+                      <Label>Notes</Label>
+                      <div className="flex gap-4">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="notes"
+                            checked={relatedRecordsConfig.notes === "copy_to_master"}
+                            onChange={() => setRelatedRecordsConfig(prev => ({ ...prev, notes: "copy_to_master" }))}
+                            className="h-4 w-4"
+                          />
+                          <span className="text-sm">Copy all to master</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="notes"
+                            checked={relatedRecordsConfig.notes === "dont_copy"}
+                            onChange={() => setRelatedRecordsConfig(prev => ({ ...prev, notes: "dont_copy" }))}
+                            className="h-4 w-4"
+                          />
+                          <span className="text-sm">Don't copy</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Tasks */}
+                    <div className="space-y-2">
+                      <Label>Tasks</Label>
+                      <div className="flex gap-4">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="tasks"
+                            checked={relatedRecordsConfig.tasks === "copy_to_master"}
+                            onChange={() => setRelatedRecordsConfig(prev => ({ ...prev, tasks: "copy_to_master" }))}
+                            className="h-4 w-4"
+                          />
+                          <span className="text-sm">Copy all to master</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="tasks"
+                            checked={relatedRecordsConfig.tasks === "dont_copy"}
+                            onChange={() => setRelatedRecordsConfig(prev => ({ ...prev, tasks: "dont_copy" }))}
+                            className="h-4 w-4"
+                          />
+                          <span className="text-sm">Don't copy</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Opportunities */}
+                    <div className="space-y-2">
+                      <Label>Opportunities</Label>
+                      <div className="flex flex-col gap-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="opportunities"
+                            checked={relatedRecordsConfig.opportunities === "keep_all"}
+                            onChange={() => setRelatedRecordsConfig(prev => ({ ...prev, opportunities: "keep_all" }))}
+                            className="h-4 w-4"
+                          />
+                          <span className="text-sm">Keep all from both records</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="opportunities"
+                            checked={relatedRecordsConfig.opportunities === "keep_master_only"}
+                            onChange={() => setRelatedRecordsConfig(prev => ({ ...prev, opportunities: "keep_master_only" }))}
+                            className="h-4 w-4"
+                          />
+                          <span className="text-sm">Keep from master only</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="opportunities"
+                            checked={relatedRecordsConfig.opportunities === "keep_highest_value"}
+                            onChange={() => setRelatedRecordsConfig(prev => ({ ...prev, opportunities: "keep_highest_value" }))}
+                            className="h-4 w-4"
+                          />
+                          <span className="text-sm">Keep highest monetary value</span>
+                        </label>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               {/* Schedule */}
               <Card className="shadow-md">
                 <CardHeader className="bg-muted/30 border-b">
@@ -984,6 +1115,31 @@ export default function MatchRuleForm() {
                       )}
                     </div>
                   </div>
+
+                  {/* Related Records Summary - Only for contacts */}
+                  {objectType === "contacts" && (
+                    <div className="p-4 bg-muted/40 rounded-lg">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Related Records</p>
+                      <div className="grid gap-1 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Notes:</span>
+                          <span className="font-medium">{relatedRecordsConfig.notes === "copy_to_master" ? "Copy to master" : "Don't copy"}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Tasks:</span>
+                          <span className="font-medium">{relatedRecordsConfig.tasks === "copy_to_master" ? "Copy to master" : "Don't copy"}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Opportunities:</span>
+                          <span className="font-medium">
+                            {relatedRecordsConfig.opportunities === "keep_all" && "Keep all"}
+                            {relatedRecordsConfig.opportunities === "keep_master_only" && "Keep master only"}
+                            {relatedRecordsConfig.opportunities === "keep_highest_value" && "Keep highest value"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Info Box */}
                   <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg flex items-start gap-3">
