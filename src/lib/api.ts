@@ -398,8 +398,25 @@ export interface Company {
   [key: string]: unknown;
 }
 
+export interface RelatedRecordsSettings {
+  notes?: "copy_to_master" | "dont_copy";
+  tasks?: "copy_to_master" | "dont_copy";
+  opportunities?: "keep_all" | "keep_master_only" | "keep_highest_value" | "custom_logic";
+  opportunities_custom_logic?: {
+    operator: "AND" | "OR";
+    conditions: {
+      id: string;
+      field: string;
+      operator: string;
+      value: string;
+      valueType: "field_reference" | "static";
+    }[];
+  };
+}
+
 export interface RuleMergeSettings {
-  field_preservation: FieldPreservationSettings;
+  field_preservation?: FieldPreservationSettings;
+  related_records?: RelatedRecordsSettings;
 }
 
 export interface MatchRule {

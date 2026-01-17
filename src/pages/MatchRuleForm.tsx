@@ -23,7 +23,7 @@ import { UpgradeBadge } from "@/components/ui/upgrade-badge";
 import { CustomLogicBuilder, CustomLogicConfig, createEmptyLogicConfig } from "@/components/ui/custom-logic-builder";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, MatchRule, MatchField, ObjectField } from "@/lib/api";
+import { api, MatchRule, MatchField, ObjectField, RuleMergeSettings } from "@/lib/api";
 import { useLocation } from "@/contexts/LocationContext";
 
 // Standard object types with tier requirements
@@ -273,14 +273,16 @@ export default function MatchRuleForm() {
       setFrequency(existingRule.schedule_frequency || "manual");
 
       // Load related records config from merge_settings
-      const mergeSettings = existingRule.merge_settings || {};
-      const relatedRecords = mergeSettings.related_records || {};
-      setRelatedRecordsConfig({
-        notes: relatedRecords.notes || "copy_to_master",
-        tasks: relatedRecords.tasks || "copy_to_master",
-        opportunities: relatedRecords.opportunities || "keep_all",
-        opportunities_custom_logic: relatedRecords.opportunities_custom_logic || undefined,
-      });
+      const mergeSettings = existingRule.merge_settings;
+      const relatedRecords = mergeSettings?.related_records;
+      if (relatedRecords) {
+        setRelatedRecordsConfig({
+          notes: relatedRecords.notes || "copy_to_master",
+          tasks: relatedRecords.tasks || "copy_to_master",
+          opportunities: relatedRecords.opportunities || "keep_all",
+          opportunities_custom_logic: relatedRecords.opportunities_custom_logic || undefined,
+        });
+      }
     }
   }, [existingRule]);
 
@@ -374,7 +376,7 @@ export default function MatchRuleForm() {
     e.preventDefault();
 
     // Build merge_settings with related records config (for contacts)
-    const mergeSettings: Record<string, unknown> = {};
+    const mergeSettings: RuleMergeSettings = {};
     if (objectType === "contacts") {
       mergeSettings.related_records = relatedRecordsConfig;
     }
