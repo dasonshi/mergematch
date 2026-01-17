@@ -24,11 +24,17 @@ export interface CustomLogicConfig {
   conditions: LogicCondition[];
 }
 
+interface FieldValueOption {
+  id: string;
+  name: string;
+}
+
 interface CustomLogicBuilderProps {
   value: CustomLogicConfig;
   onChange: (config: CustomLogicConfig) => void;
   availableFields: { id: string; name: string; dataType?: string }[];
   objectLabel?: string; // e.g., "opportunity" for display
+  fieldValueOptions?: Record<string, FieldValueOption[]>; // Field ID -> possible values
 }
 
 const OPERATORS = [
@@ -66,8 +72,13 @@ export function CustomLogicBuilder({
   onChange,
   availableFields,
   objectLabel = "record",
+  fieldValueOptions = {},
 }: CustomLogicBuilderProps) {
   const fields = availableFields.length > 0 ? availableFields : DEFAULT_OPPORTUNITY_FIELDS;
+
+  const getFieldOptions = (fieldId: string): FieldValueOption[] | undefined => {
+    return fieldValueOptions[fieldId];
+  };
 
   const addCondition = () => {
     const newCondition: LogicCondition = {
@@ -194,16 +205,34 @@ export function CustomLogicBuilder({
                 </SelectContent>
               </Select>
 
-              {/* Value input */}
+              {/* Value input - dropdown if options available, text input otherwise */}
               {needsValueInput(condition.operator) && (
-                <Input
-                  value={condition.value}
-                  onChange={(e) =>
-                    updateCondition(condition.id, { value: e.target.value })
-                  }
-                  placeholder="Value"
-                  className="flex-1 h-8 text-xs"
-                />
+                getFieldOptions(condition.field) ? (
+                  <Select
+                    value={condition.value}
+                    onValueChange={(v) => updateCondition(condition.id, { value: v })}
+                  >
+                    <SelectTrigger className="flex-1 h-8 text-xs bg-background">
+                      <SelectValue placeholder="Select value" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {getFieldOptions(condition.field)?.map((opt) => (
+                        <SelectItem key={opt.id} value={opt.id} className="text-xs">
+                          {opt.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    value={condition.value}
+                    onChange={(e) =>
+                      updateCondition(condition.id, { value: e.target.value })
+                    }
+                    placeholder="Value"
+                    className="flex-1 h-8 text-xs"
+                  />
+                )
               )}
             </div>
 
@@ -252,7 +281,10 @@ export function CustomLogicBuilder({
               .map((c, i) => {
                 const fieldName = fields.find((f) => f.id === c.field)?.name || c.field;
                 const opName = OPERATORS.find((o) => o.id === c.operator)?.name || c.operator;
-                const valueDisplay = needsValueInput(c.operator) ? ` "${c.value}"` : "";
+                // Show option name if available, otherwise show raw value
+                const fieldOpts = getFieldOptions(c.field);
+                const valueName = fieldOpts?.find((o) => o.id === c.value)?.name || c.value;
+                const valueDisplay = needsValueInput(c.operator) ? ` "${valueName}"` : "";
                 const prefix = i > 0 ? ` ${value.operator} ` : "";
                 return `${prefix}${fieldName} ${opName}${valueDisplay}`;
               })

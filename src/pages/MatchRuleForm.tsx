@@ -190,6 +190,22 @@ export default function MatchRuleForm() {
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
   });
 
+  // Fetch pipelines for pipeline stage dropdown in custom logic
+  const { data: pipelines } = useQuery({
+    queryKey: ['pipelines'],
+    queryFn: () => api.getPipelines(),
+    enabled: isAuthenticated && objectType === "contacts", // Only fetch when relevant
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Build pipeline stage options for custom logic builder
+  const pipelineStageOptions = pipelines?.flatMap(pipeline =>
+    pipeline.stages.map(stage => ({
+      id: stage.id,
+      name: `${pipeline.name} → ${stage.name}`,
+    }))
+  ) || [];
+
   // Use fetched fields or fallback to static fields
   const fieldOptions = fetchedFields?.length
     ? fetchedFields.map(f => ({ id: f.id, name: f.name, isCustom: f.isCustom }))
@@ -970,19 +986,26 @@ export default function MatchRuleForm() {
                           />
                           <span className="text-sm">Keep highest monetary value</span>
                         </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
+                        <label className={`flex items-center gap-2 ${hasAccess(plan, "pro") ? "cursor-pointer" : "cursor-not-allowed"}`}>
                           <input
                             type="radio"
                             name="opportunities"
                             checked={relatedRecordsConfig.opportunities === "custom_logic"}
-                            onChange={() => setRelatedRecordsConfig(prev => ({
-                              ...prev,
-                              opportunities: "custom_logic",
-                              opportunities_custom_logic: prev.opportunities_custom_logic || createEmptyLogicConfig(),
-                            }))}
+                            onChange={() => {
+                              if (!hasAccess(plan, "pro")) return;
+                              setRelatedRecordsConfig(prev => ({
+                                ...prev,
+                                opportunities: "custom_logic",
+                                opportunities_custom_logic: prev.opportunities_custom_logic || createEmptyLogicConfig(),
+                              }));
+                            }}
+                            disabled={!hasAccess(plan, "pro")}
                             className="h-4 w-4"
                           />
-                          <span className="text-sm">Custom logic (filter by conditions)</span>
+                          <span className={`text-sm ${!hasAccess(plan, "pro") ? "opacity-50" : ""}`}>Custom logic (filter by conditions)</span>
+                          {!hasAccess(plan, "pro") && (
+                            <UpgradeBadge tier="pro" size="sm" showTooltip={false} feature="custom_logic" />
+                          )}
                         </label>
                       </div>
 
@@ -999,9 +1022,12 @@ export default function MatchRuleForm() {
                               { id: "monetaryValue", name: "Monetary Value", dataType: "number" },
                               { id: "status", name: "Status", dataType: "text" },
                               { id: "name", name: "Name", dataType: "text" },
-                              { id: "pipelineStageId", name: "Pipeline Stage", dataType: "text" },
+                              { id: "pipelineStageId", name: "Pipeline Stage", dataType: "select" },
                             ]}
                             objectLabel="opportunity"
+                            fieldValueOptions={{
+                              pipelineStageId: pipelineStageOptions,
+                            }}
                           />
                         </div>
                       )}

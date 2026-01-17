@@ -160,6 +160,17 @@ class GHLClient:
         response = await self._client.delete(f"/businesses/{company_id}")
         response.raise_for_status()
 
+    # ==================== PIPELINES ====================
+
+    async def get_pipelines(self) -> List[Dict[str, Any]]:
+        """Fetch all pipelines for the location."""
+        response = await self._client.get(
+            "/opportunities/pipelines",
+            params={"locationId": self.location_id}
+        )
+        response.raise_for_status()
+        return response.json().get("pipelines", [])
+
     # ==================== OPPORTUNITIES ====================
 
     async def get_opportunities(

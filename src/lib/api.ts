@@ -196,6 +196,10 @@ class ApiClient {
     return this.fetch<ObjectAssociation[]>(`/v1/fields/${objectType}/associations`);
   }
 
+  async getPipelines() {
+    return this.fetch<Pipeline[]>('/v1/fields/pipelines');
+  }
+
   // Match Rules
   async getMatchRules() {
     return this.fetch<{ data: MatchRule[]; total: number }>('/v1/rules/');
@@ -485,6 +489,19 @@ export interface ObjectAssociation {
   associationId?: string;
   relationshipType?: string;
   canReassign: boolean;
+}
+
+export interface PipelineStage {
+  id: string;
+  name: string;
+  pipelineId: string;
+  pipelineName: string;
+}
+
+export interface Pipeline {
+  id: string;
+  name: string;
+  stages: PipelineStage[];
 }
 
 export interface Notification {

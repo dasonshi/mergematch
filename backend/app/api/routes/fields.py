@@ -289,3 +289,49 @@ async def get_object_associations(
                 status_code=500,
                 detail=f"Failed to fetch associations: {str(e)}"
             )
+
+
+@router.get("/pipelines")
+async def get_pipelines(
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+) -> List[Dict[str, Any]]:
+    """
+    Get all pipelines and their stages for the location.
+
+    Returns list of pipelines with their stages for use in dropdown selectors.
+    """
+    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
+    tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
+    if not tokens:
+        raise HTTPException(status_code=401, detail="Location not authenticated or token refresh failed")
+
+    async with GHLClient(tokens["access_token"], user.ghl_location_id) as client:
+        try:
+            pipelines = await client.get_pipelines()
+            # Flatten stages from all pipelines for easy selection
+            result = []
+            for pipeline in pipelines:
+                pipeline_name = pipeline.get("name", "Unknown Pipeline")
+                pipeline_id = pipeline.get("id", "")
+                stages = pipeline.get("stages", [])
+
+                result.append({
+                    "id": pipeline_id,
+                    "name": pipeline_name,
+                    "stages": [
+                        {
+                            "id": stage.get("id", ""),
+                            "name": stage.get("name", "Unknown Stage"),
+                            "pipelineId": pipeline_id,
+                            "pipelineName": pipeline_name,
+                        }
+                        for stage in stages
+                    ]
+                })
+            return result
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to fetch pipelines: {str(e)}"
+            )
