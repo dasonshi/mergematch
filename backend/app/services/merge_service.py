@@ -301,6 +301,60 @@ async def execute_merge(
 
     try:
         async with GHLClient(access_token, ghl_location_id) as client:
+            # Fetch and snapshot duplicate's related records BEFORE any modifications
+            duplicate_notes = []
+            duplicate_tasks = []
+            duplicate_opps = []
+
+            try:
+                duplicate_notes = await client.get_contact_notes(duplicate_id)
+                logger.info(f"Snapshotted {len(duplicate_notes)} notes from duplicate")
+            except Exception as e:
+                logger.warning(f"Failed to snapshot notes: {e}")
+
+            try:
+                duplicate_tasks = await client.get_contact_tasks(duplicate_id)
+                logger.info(f"Snapshotted {len(duplicate_tasks)} tasks from duplicate")
+            except Exception as e:
+                logger.warning(f"Failed to snapshot tasks: {e}")
+
+            try:
+                duplicate_opps = await client.get_contact_opportunities(duplicate_id)
+                logger.info(f"Snapshotted {len(duplicate_opps)} opportunities from duplicate")
+            except Exception as e:
+                logger.warning(f"Failed to snapshot opportunities: {e}")
+
+            # Store related record snapshots
+            related_snapshots = []
+            if duplicate_notes:
+                related_snapshots.append({
+                    "id": str(uuid.uuid4()),
+                    "merge_id": merge_id,
+                    "record_id": duplicate_id,
+                    "record_type": "duplicate_notes",
+                    "data": {"notes": duplicate_notes},
+                })
+            if duplicate_tasks:
+                related_snapshots.append({
+                    "id": str(uuid.uuid4()),
+                    "merge_id": merge_id,
+                    "record_id": duplicate_id,
+                    "record_type": "duplicate_tasks",
+                    "data": {"tasks": duplicate_tasks},
+                })
+            if duplicate_opps:
+                related_snapshots.append({
+                    "id": str(uuid.uuid4()),
+                    "merge_id": merge_id,
+                    "record_id": duplicate_id,
+                    "record_type": "duplicate_opportunities",
+                    "data": {"opportunities": duplicate_opps},
+                })
+
+            if related_snapshots:
+                supabase.table("snapshots").insert(related_snapshots).execute()
+                logger.info(f"Saved {len(related_snapshots)} related record snapshots")
+
             # Update master record with merged fields (only allowed, non-empty fields)
             update_payload = {}
             for field, value in merged_fields.items():
@@ -452,19 +506,30 @@ async def rollback_merge(
     if merge.data["status"] == "rolled_back":
         raise ValueError("Merge already rolled back")
 
-    # Get the duplicate snapshot from the snapshots table
+    # Get all snapshots for this merge
     snapshots = supabase.table("snapshots").select("*").eq("merge_id", merge_id).execute()
     duplicate_snapshot = None
+    notes_snapshot = None
+    tasks_snapshot = None
+    opps_snapshot = None
+
     for snapshot in snapshots.data or []:
-        if snapshot.get("record_type") == "duplicate":
+        record_type = snapshot.get("record_type")
+        if record_type == "duplicate":
             duplicate_snapshot = snapshot.get("data")
-            break
+        elif record_type == "duplicate_notes":
+            notes_snapshot = snapshot.get("data", {}).get("notes", [])
+        elif record_type == "duplicate_tasks":
+            tasks_snapshot = snapshot.get("data", {}).get("tasks", [])
+        elif record_type == "duplicate_opportunities":
+            opps_snapshot = snapshot.get("data", {}).get("opportunities", [])
 
     if not duplicate_snapshot:
         raise ValueError("No snapshot available for rollback")
 
     logger.info(f"Rolling back merge {merge_id}")
     logger.info(f"Restoring duplicate contact from snapshot")
+    logger.info(f"Related records to restore: {len(notes_snapshot or [])} notes, {len(tasks_snapshot or [])} tasks, {len(opps_snapshot or [])} opportunities")
 
     try:
         async with GHLClient(access_token, ghl_location_id) as client:
@@ -482,6 +547,54 @@ async def rollback_merge(
             restored_id = restored_contact.get("contact", {}).get("id")
 
             logger.info(f"Restored contact created with ID: {restored_id}")
+
+            # Restore related records on the recreated contact
+            notes_restored = 0
+            tasks_restored = 0
+            opps_restored = 0
+
+            # Restore notes
+            if notes_snapshot and restored_id:
+                for note in notes_snapshot:
+                    body = note.get("body", "")
+                    if body:
+                        try:
+                            await client.create_contact_note(restored_id, body)
+                            notes_restored += 1
+                        except Exception as e:
+                            logger.warning(f"Failed to restore note: {e}")
+                logger.info(f"Restored {notes_restored}/{len(notes_snapshot)} notes")
+
+            # Restore tasks
+            if tasks_snapshot and restored_id:
+                for task in tasks_snapshot:
+                    title = task.get("title", "")
+                    if title:
+                        try:
+                            await client.create_contact_task(
+                                restored_id,
+                                title=title,
+                                body=task.get("body"),
+                                due_date=task.get("dueDate"),
+                                completed=task.get("completed", False),
+                            )
+                            tasks_restored += 1
+                        except Exception as e:
+                            logger.warning(f"Failed to restore task: {e}")
+                logger.info(f"Restored {tasks_restored}/{len(tasks_snapshot)} tasks")
+
+            # Restore opportunities by reassigning them back from master
+            if opps_snapshot and restored_id:
+                master_record_id = merge.data.get("master_record_id")
+                for opp in opps_snapshot:
+                    opp_id = opp.get("id")
+                    if opp_id:
+                        try:
+                            await client.update_opportunity(opp_id, {"contactId": restored_id})
+                            opps_restored += 1
+                        except Exception as e:
+                            logger.warning(f"Failed to restore opportunity {opp_id}: {e}")
+                logger.info(f"Restored {opps_restored}/{len(opps_snapshot)} opportunities")
 
         # Update merge status and store the new restored record ID
         supabase.table("merges").update({
