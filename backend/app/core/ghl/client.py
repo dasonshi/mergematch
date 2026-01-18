@@ -392,16 +392,18 @@ class GHLClient:
 
         Returns list of custom field definitions.
         """
-        params = {"locationId": self.location_id}
-        if model:
-            params["model"] = model
+        # Use the v2 custom fields API endpoint
+        # GET /custom-fields/object-key/:objectKey?locationId={locationId}
+        object_key = model  # 'contact' or 'opportunity'
 
         response = await self._client.get(
-            f"/locations/{self.location_id}/customFields",
-            params=params
+            f"/custom-fields/object-key/{object_key}",
+            params={"locationId": self.location_id}
         )
         response.raise_for_status()
-        return response.json().get("customFields", [])
+        data = response.json()
+        # Response has "customFields" array
+        return data.get("customFields", [])
 
     async def create_custom_field(
         self,
