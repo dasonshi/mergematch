@@ -254,7 +254,7 @@ export default function MatchRuleForm() {
         title: "Rule created",
         description,
       });
-      navigate("/");
+      navigate(`/match-rules/${data.id}`);
     },
     onError: (error: Error) => {
       toast({
