@@ -265,9 +265,10 @@ class ApiClient {
     return this.fetch<{ completed: number; failed: number; rolled_back: number; total: number }>('/v1/merges/stats');
   }
 
-  async getMerges(limit = 50, status?: string) {
+  async getMerges(limit = 50, status?: string, ruleId?: string) {
     const params = new URLSearchParams({ limit: limit.toString() });
     if (status) params.append('status', status);
+    if (ruleId) params.append('rule_id', ruleId);
     return this.fetch<{ data: Merge[]; total: number }>(`/v1/merges/?${params}`);
   }
 

@@ -1,0 +1,380 @@
+{
+  "location_id": "wHb7koqaUqw8x8KoYjOj",
+  "test_email_domain": "mmtarget.io",
+  "ghl_api_base": "https://services.leadconnectorhq.com",
+
+  "description": "Targeted test scenarios: Custom field matching, custom merge strategy, combined rules, and restore testing",
+
+  "pre_setup": {
+    "required_custom_field": {
+      "name": "Account ID",
+      "key": "account_id",
+      "type": "TEXT",
+      "note": "Agent should check if this custom field exists, if not create it or use an existing text custom field"
+    }
+  },
+
+  "test_scenarios": [
+    {
+      "id": "scenario-1-custom-field-match",
+      "name": "Custom Field Matching",
+      "description": "Match contacts based on a custom field (Account ID) instead of standard fields",
+      "match_rule": {
+        "name": "Test - Custom Field Match",
+        "match_fields": [
+          {"field": "custom.account_id", "match_type": "exact", "weight": 100}
+        ]
+      },
+      "contacts": [
+        {
+          "id": "cf01",
+          "firstName": "Alice",
+          "lastName": "Thompson",
+          "email": "alice1@mmtarget.io",
+          "phone": "555-9001",
+          "companyName": "TechCorp",
+          "customFields": {"account_id": "ACCT-001"}
+        },
+        {
+          "id": "cf02",
+          "firstName": "Alice M",
+          "lastName": "Thompson",
+          "email": "alice2@mmtarget.io",
+          "phone": "555-9002",
+          "companyName": "Tech Corp",
+          "customFields": {"account_id": "ACCT-001"}
+        },
+        {
+          "id": "cf03",
+          "firstName": "Bob",
+          "lastName": "Martinez",
+          "email": "bob1@mmtarget.io",
+          "phone": "555-9003",
+          "companyName": "DataInc",
+          "customFields": {"account_id": "ACCT-002"}
+        },
+        {
+          "id": "cf04",
+          "firstName": "Robert",
+          "lastName": "Martinez",
+          "email": "bob2@mmtarget.io",
+          "phone": "555-9004",
+          "companyName": "Data Inc",
+          "customFields": {"account_id": "ACCT-002"}
+        },
+        {
+          "id": "cf05",
+          "firstName": "Carol",
+          "lastName": "Johnson",
+          "email": "carol1@mmtarget.io",
+          "phone": "555-9005",
+          "companyName": "CloudSys",
+          "customFields": {"account_id": "ACCT-003"}
+        },
+        {
+          "id": "cf06",
+          "firstName": "Carrie",
+          "lastName": "Johnson",
+          "email": "carol2@mmtarget.io",
+          "phone": "555-9006",
+          "companyName": "Cloud Sys",
+          "customFields": {"account_id": "ACCT-003"}
+        }
+      ],
+      "expected_matches": 3,
+      "notes": [],
+      "tasks": [],
+      "opportunities": []
+    },
+    {
+      "id": "scenario-2-custom-merge-strategy",
+      "name": "Custom Merge Strategy (Opportunities)",
+      "description": "Test custom logic for opportunity filtering during merge",
+      "match_rule": {
+        "name": "Test - Custom Opp Logic",
+        "match_fields": [
+          {"field": "email", "match_type": "exact", "weight": 100}
+        ],
+        "merge_settings": {
+          "related_records": {
+            "opportunities": "custom_logic",
+            "opportunities_custom_logic": {
+              "match_type": "all",
+              "conditions": [
+                {"field": "monetaryValue", "operator": ">=", "value": "5000"},
+                {"field": "status", "operator": "!=", "value": "lost"}
+              ]
+            }
+          }
+        }
+      },
+      "contacts": [
+        {
+          "id": "cm01",
+          "firstName": "Diana",
+          "lastName": "Ross",
+          "email": "diana@mmtarget.io",
+          "phone": "555-8001",
+          "companyName": "MegaCorp"
+        },
+        {
+          "id": "cm02",
+          "firstName": "Diana L",
+          "lastName": "Ross",
+          "email": "diana@mmtarget.io",
+          "phone": "555-8002",
+          "companyName": "Mega Corp"
+        },
+        {
+          "id": "cm03",
+          "firstName": "Edward",
+          "lastName": "King",
+          "email": "edward@mmtarget.io",
+          "phone": "555-8003",
+          "companyName": "GlobalTech"
+        },
+        {
+          "id": "cm04",
+          "firstName": "Ed",
+          "lastName": "King",
+          "email": "edward@mmtarget.io",
+          "phone": "555-8004",
+          "companyName": "Global Tech"
+        }
+      ],
+      "opportunities": [
+        {"contact_id": "cm01", "name": "Enterprise License", "monetaryValue": 50000, "stage": "Proposal", "status": "open", "_expect": "KEPT (>=5000, not lost)"},
+        {"contact_id": "cm01", "name": "Support Package", "monetaryValue": 3000, "stage": "Won", "status": "won", "_expect": "FILTERED (<5000)"},
+        {"contact_id": "cm02", "name": "Consulting Project", "monetaryValue": 25000, "stage": "Qualified", "status": "open", "_expect": "KEPT (>=5000, not lost)"},
+        {"contact_id": "cm02", "name": "Small Add-on", "monetaryValue": 1500, "stage": "Lost", "status": "lost", "_expect": "FILTERED (<5000, lost)"},
+
+        {"contact_id": "cm03", "name": "Platform Deal", "monetaryValue": 100000, "stage": "Proposal", "status": "open", "_expect": "KEPT"},
+        {"contact_id": "cm03", "name": "Training", "monetaryValue": 8000, "stage": "Won", "status": "won", "_expect": "KEPT (>=5000, not lost)"},
+        {"contact_id": "cm04", "name": "Hardware Bundle", "monetaryValue": 15000, "stage": "Lost", "status": "lost", "_expect": "FILTERED (lost)"},
+        {"contact_id": "cm04", "name": "Maintenance", "monetaryValue": 2000, "stage": "Qualified", "status": "open", "_expect": "FILTERED (<5000)"}
+      ],
+      "expected_matches": 2,
+      "expected_opps_kept_per_pair": {
+        "diana_pair": {"kept": 2, "filtered": 2, "kept_value": 75000},
+        "edward_pair": {"kept": 2, "filtered": 2, "kept_value": 108000}
+      },
+      "notes": [],
+      "tasks": []
+    },
+    {
+      "id": "scenario-3-combined-standard-custom",
+      "name": "Combined Standard + Custom Rules",
+      "description": "Standard rules for notes/tasks PLUS custom logic for opportunities",
+      "match_rule": {
+        "name": "Test - Combined Rules",
+        "match_fields": [
+          {"field": "email", "match_type": "exact", "weight": 100}
+        ],
+        "merge_settings": {
+          "related_records": {
+            "notes": "copy_to_master",
+            "tasks": "copy_to_master",
+            "opportunities": "custom_logic",
+            "opportunities_custom_logic": {
+              "match_type": "any",
+              "conditions": [
+                {"field": "monetaryValue", "operator": ">=", "value": "10000"},
+                {"field": "status", "operator": "=", "value": "won"}
+              ]
+            }
+          }
+        }
+      },
+      "contacts": [
+        {
+          "id": "cb01",
+          "firstName": "Frank",
+          "lastName": "Miller",
+          "email": "frank@mmtarget.io",
+          "phone": "555-7001",
+          "companyName": "SalesForce"
+        },
+        {
+          "id": "cb02",
+          "firstName": "Franklin",
+          "lastName": "Miller",
+          "email": "frank@mmtarget.io",
+          "phone": "555-7002",
+          "companyName": "Sales Force"
+        },
+        {
+          "id": "cb03",
+          "firstName": "Grace",
+          "lastName": "Lee",
+          "email": "grace@mmtarget.io",
+          "phone": "555-7003",
+          "companyName": "MarketPro"
+        },
+        {
+          "id": "cb04",
+          "firstName": "Gracie",
+          "lastName": "Lee",
+          "email": "grace@mmtarget.io",
+          "phone": "555-7004",
+          "companyName": "Market Pro"
+        }
+      ],
+      "notes": [
+        {"contact_id": "cb01", "body": "VIP client - requires white glove service"},
+        {"contact_id": "cb01", "body": "Budget approved for Q2 expansion"},
+        {"contact_id": "cb02", "body": "Referred by CEO of partner company"},
+        {"contact_id": "cb03", "body": "Initial discovery call completed - very interested"},
+        {"contact_id": "cb04", "body": "Sent proposal, awaiting legal review"},
+        {"contact_id": "cb04", "body": "Follow up scheduled for next week"}
+      ],
+      "tasks": [
+        {"contact_id": "cb01", "title": "Prepare QBR presentation", "body": "Quarterly review meeting", "dueDate": "2025-03-01"},
+        {"contact_id": "cb02", "title": "Send updated pricing", "body": "New tier pricing sheet", "dueDate": "2025-02-20"},
+        {"contact_id": "cb03", "title": "Schedule demo", "body": "Product demo for team", "dueDate": "2025-02-25"},
+        {"contact_id": "cb03", "title": "Share case studies", "body": "Similar industry examples", "dueDate": "2025-02-22"},
+        {"contact_id": "cb04", "title": "Contract review call", "body": "Go over terms", "dueDate": "2025-02-28"}
+      ],
+      "opportunities": [
+        {"contact_id": "cb01", "name": "Annual Contract", "monetaryValue": 50000, "stage": "Proposal", "status": "open", "_expect": "KEPT (>=10000)"},
+        {"contact_id": "cb01", "name": "Add-on Services", "monetaryValue": 5000, "stage": "Won", "status": "won", "_expect": "KEPT (won)"},
+        {"contact_id": "cb02", "name": "Pilot Program", "monetaryValue": 2000, "stage": "Qualified", "status": "open", "_expect": "FILTERED (<10000, not won)"},
+        {"contact_id": "cb02", "name": "Full Deployment", "monetaryValue": 75000, "stage": "Proposal", "status": "open", "_expect": "KEPT (>=10000)"},
+
+        {"contact_id": "cb03", "name": "Marketing Suite", "monetaryValue": 30000, "stage": "Qualified", "status": "open", "_expect": "KEPT (>=10000)"},
+        {"contact_id": "cb03", "name": "Quick Start", "monetaryValue": 1500, "stage": "Won", "status": "won", "_expect": "KEPT (won)"},
+        {"contact_id": "cb04", "name": "Analytics Add-on", "monetaryValue": 8000, "stage": "Lost", "status": "lost", "_expect": "FILTERED (<10000, not won)"},
+        {"contact_id": "cb04", "name": "Data Migration", "monetaryValue": 12000, "stage": "Won", "status": "won", "_expect": "KEPT (won AND >=10000)"}
+      ],
+      "expected_matches": 2,
+      "expected_after_merge": {
+        "frank_pair": {
+          "notes": 3,
+          "tasks": 2,
+          "opps_kept": 3,
+          "opps_filtered": 1,
+          "opp_value": 130000
+        },
+        "grace_pair": {
+          "notes": 3,
+          "tasks": 3,
+          "opps_kept": 3,
+          "opps_filtered": 1,
+          "opp_value": 43500
+        }
+      }
+    },
+    {
+      "id": "scenario-4-restore-with-related",
+      "name": "Restore/Undo with Related Records",
+      "description": "Merge contacts with all related record types, then test restore functionality",
+      "match_rule": {
+        "name": "Test - Restore Related Records",
+        "match_fields": [
+          {"field": "email", "match_type": "exact", "weight": 100}
+        ],
+        "merge_settings": {
+          "related_records": {
+            "notes": "copy_to_master",
+            "tasks": "copy_to_master",
+            "opportunities": "keep_all"
+          }
+        }
+      },
+      "contacts": [
+        {
+          "id": "rs01",
+          "firstName": "Henry",
+          "lastName": "Adams",
+          "email": "henry@mmtarget.io",
+          "phone": "555-6001",
+          "companyName": "RestoreCorp"
+        },
+        {
+          "id": "rs02",
+          "firstName": "Hank",
+          "lastName": "Adams",
+          "email": "henry@mmtarget.io",
+          "phone": "555-6002",
+          "companyName": "Restore Corp"
+        }
+      ],
+      "notes": [
+        {"contact_id": "rs01", "body": "MASTER NOTE 1: Original client from 2020"},
+        {"contact_id": "rs01", "body": "MASTER NOTE 2: Upgraded to enterprise tier"},
+        {"contact_id": "rs02", "body": "DUPLICATE NOTE 1: Added via import"},
+        {"contact_id": "rs02", "body": "DUPLICATE NOTE 2: Needs attention flag"}
+      ],
+      "tasks": [
+        {"contact_id": "rs01", "title": "MASTER TASK: Annual review", "body": "Yearly account review", "dueDate": "2025-04-01"},
+        {"contact_id": "rs02", "title": "DUPLICATE TASK 1: Send invoice", "body": "Q1 invoice", "dueDate": "2025-02-15"},
+        {"contact_id": "rs02", "title": "DUPLICATE TASK 2: Schedule call", "body": "Check-in call", "dueDate": "2025-02-20"}
+      ],
+      "opportunities": [
+        {"contact_id": "rs01", "name": "MASTER OPP: Renewal 2025", "monetaryValue": 25000, "stage": "Proposal", "status": "open"},
+        {"contact_id": "rs02", "name": "DUPLICATE OPP 1: Expansion", "monetaryValue": 15000, "stage": "Qualified", "status": "open"},
+        {"contact_id": "rs02", "name": "DUPLICATE OPP 2: Training", "monetaryValue": 5000, "stage": "Won", "status": "won"}
+      ],
+      "expected_matches": 1,
+      "before_merge": {
+        "master_contact": {"notes": 2, "tasks": 1, "opps": 1},
+        "duplicate_contact": {"notes": 2, "tasks": 2, "opps": 2}
+      },
+      "after_merge": {
+        "master_contact": {"notes": 4, "tasks": 3, "opps": 3, "opp_value": 45000}
+      },
+      "after_restore": {
+        "master_contact": {"notes": 2, "tasks": 1, "opps": 1, "opp_value": 25000},
+        "restored_duplicate": {"notes": 2, "tasks": 2, "opps": 2, "opp_value": 20000}
+      },
+      "restore_test_steps": [
+        "1. Merge Henry/Hank pair (select Henry as master)",
+        "2. Verify: Henry now has 4 notes, 3 tasks, 3 opps ($45k)",
+        "3. Verify: Hank contact deleted from GHL",
+        "4. Go to History page in MergeMatch",
+        "5. Find the Henry/Hank merge",
+        "6. Click Undo/Restore",
+        "7. Verify: Hank contact recreated in GHL",
+        "8. Verify: Henry back to 2 notes, 1 task, 1 opp ($25k)",
+        "9. Verify: Hank restored with 2 notes, 2 tasks, 2 opps ($20k)"
+      ]
+    }
+  ],
+
+  "summary": {
+    "total_contacts": 18,
+    "total_pairs": 9,
+    "total_notes": 14,
+    "total_tasks": 11,
+    "total_opportunities": 19,
+    "scenarios": {
+      "custom_field_match": {"contacts": 6, "pairs": 3},
+      "custom_merge_strategy": {"contacts": 4, "pairs": 2, "opps": 8},
+      "combined_rules": {"contacts": 4, "pairs": 2, "notes": 6, "tasks": 5, "opps": 8},
+      "restore_test": {"contacts": 2, "pairs": 1, "notes": 4, "tasks": 3, "opps": 3}
+    }
+  },
+
+  "custom_field_setup": {
+    "note": "Before creating contacts, the agent needs to:",
+    "steps": [
+      "1. GET /locations/{locationId}/customFields to list existing fields",
+      "2. Find a text field to use OR note that custom field creation may need UI",
+      "3. When creating contacts for scenario-1, include the custom field value"
+    ],
+    "api_for_custom_fields": {
+      "list": "GET /locations/{locationId}/customFields",
+      "create_contact_with_custom": {
+        "endpoint": "POST /contacts/",
+        "body_example": {
+          "firstName": "Alice",
+          "lastName": "Thompson",
+          "email": "alice1@mmtarget.io",
+          "locationId": "wHb7koqaUqw8x8KoYjOj",
+          "customFields": [
+            {"id": "CUSTOM_FIELD_ID_HERE", "value": "ACCT-001"}
+          ]
+        }
+      }
+    }
+  }
+}

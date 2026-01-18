@@ -55,11 +55,11 @@ export default function MatchRuleDetail() {
     gcTime: 0, // No cache - always fresh
   });
 
-  // Fetch merge history
+  // Fetch merge history for this rule only
   const { data: mergesData, isLoading: mergesLoading } = useQuery({
-    queryKey: ["merges", locationId],
-    queryFn: () => api.getMerges(10),
-    enabled: !!locationId,
+    queryKey: ["merges", id, locationId],
+    queryFn: () => api.getMerges(10, undefined, id),
+    enabled: !!locationId && !!id,
     gcTime: 0, // No cache - always fresh
   });
 

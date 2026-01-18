@@ -49,6 +49,7 @@ async def list_merges(
     limit: int = 50,
     offset: int = 0,
     status: Optional[str] = Query(None, description="Filter by status (completed, failed, rolled_back)"),
+    rule_id: Optional[str] = Query(None, description="Filter by rule ID"),
 ):
     """List merge history with rule info."""
     user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
@@ -64,6 +65,10 @@ async def list_merges(
     if status:
         query = query.eq("status", status)
 
+    # Apply rule_id filter through match_pairs join
+    if rule_id:
+        query = query.eq("match_pairs.rule_id", rule_id)
+
     result = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
 
     # Flatten the rule info for easier frontend consumption
@@ -74,6 +79,9 @@ async def list_merges(
         if match_pair and match_pair.get("match_rules"):
             merge_data["rule_id"] = match_pair["match_rules"]["id"]
             merge_data["rule_name"] = match_pair["match_rules"]["name"]
+        # Skip merges that don't match the rule_id filter (join may return nulls)
+        if rule_id and merge_data.get("rule_id") != rule_id:
+            continue
         data.append(merge_data)
 
     return {"data": data, "total": len(data)}
