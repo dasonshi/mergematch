@@ -239,7 +239,8 @@ export default function MatchRuleForm() {
   // Create mutation
   const createMutation = useMutation({
     mutationFn: (rule: Partial<MatchRule>) => api.createMatchRule(rule),
-    onSuccess: (data: MatchRule & { initial_scan?: { matches_found: number; records_scanned: number } }) => {
+    onSuccess: (data: MatchRule & { initial_scan?: { matches_found: number; records_scanned: number }; scan_error?: string }) => {
+      console.log('Rule created successfully:', data);
       queryClient.invalidateQueries({ queryKey: ['rules'] });
       queryClient.invalidateQueries({ queryKey: ['matches'] });
 
@@ -248,15 +249,23 @@ export default function MatchRuleForm() {
       if (data.initial_scan) {
         const { matches_found, records_scanned } = data.initial_scan;
         description = `"${ruleName}" created. Scanned ${records_scanned.toLocaleString()} records, found ${matches_found} potential duplicate${matches_found !== 1 ? 's' : ''}.`;
+      } else if (data.scan_error) {
+        console.warn('Initial scan error:', data.scan_error);
+        description = `"${ruleName}" created. Initial scan will run in background.`;
       }
 
       toast({
         title: "Rule created",
         description,
       });
-      navigate(`/match-rules/${data.id}`);
+
+      // Navigate to the new rule's detail page
+      const ruleId = data.id;
+      console.log('Navigating to rule:', ruleId);
+      navigate(`/match-rules/${ruleId}`);
     },
     onError: (error: Error) => {
+      console.error('Rule creation failed:', error);
       toast({
         title: "Error creating rule",
         description: error.message,

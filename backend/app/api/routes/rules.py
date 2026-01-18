@@ -32,8 +32,30 @@ class FieldPreservationSettings(BaseModel):
     mappings: List[FieldPreservationMapping] = []
 
 
+class CustomLogicCondition(BaseModel):
+    id: str
+    field: str
+    operator: str
+    value: str
+    valueType: str = "static"
+    parentValue: Optional[str] = None  # For cascading dropdowns
+
+
+class CustomLogicConfig(BaseModel):
+    operator: str = "AND"
+    conditions: List[CustomLogicCondition] = []
+
+
+class RelatedRecordsSettings(BaseModel):
+    notes: Optional[str] = "copy_to_master"  # copy_to_master, dont_copy
+    tasks: Optional[str] = "copy_to_master"
+    opportunities: Optional[str] = "keep_all"  # keep_all, keep_master_only, keep_highest_value, custom_logic
+    opportunities_custom_logic: Optional[CustomLogicConfig] = None
+
+
 class MergeSettings(BaseModel):
-    field_preservation: FieldPreservationSettings = FieldPreservationSettings()
+    field_preservation: Optional[FieldPreservationSettings] = None
+    related_records: Optional[RelatedRecordsSettings] = None
 
 
 class MatchRuleCreate(BaseModel):
@@ -45,7 +67,7 @@ class MatchRuleCreate(BaseModel):
     merge_strategy: str = "standard"
     schedule_frequency: str = "manual"
     is_active: bool = True
-    merge_settings: MergeSettings = MergeSettings()
+    merge_settings: Optional[MergeSettings] = None
 
 
 @router.get("/")
@@ -101,7 +123,7 @@ async def create_rule(
         "merge_strategy": rule.merge_strategy,
         "schedule_frequency": rule.schedule_frequency,
         "is_active": rule.is_active,
-        "merge_settings": rule.merge_settings.model_dump(),
+        "merge_settings": rule.merge_settings.model_dump() if rule.merge_settings else {},
     }
 
     result = supabase.table("match_rules").insert(rule_data).execute()
@@ -146,7 +168,10 @@ async def create_rule(
         scan_error = str(e)
         logger.error(f"Initial scan failed for rule {rule_id}: {e}\n{traceback.format_exc()}")
 
-    return {**created_rule, "initial_scan": initial_scan, "scan_error": scan_error}
+    # Log the response for debugging
+    response = {**created_rule, "initial_scan": initial_scan, "scan_error": scan_error}
+    logger.info(f"Rule created response: id={response.get('id')}, initial_scan={initial_scan}, scan_error={scan_error}")
+    return response
 
 
 @router.get("/{rule_id}")
@@ -199,7 +224,7 @@ async def update_rule(
         "merge_strategy": rule.merge_strategy,
         "schedule_frequency": rule.schedule_frequency,
         "is_active": rule.is_active,
-        "merge_settings": rule.merge_settings.model_dump(),
+        "merge_settings": rule.merge_settings.model_dump() if rule.merge_settings else {},
     }
 
     result = supabase.table("match_rules").update(update_data).eq("id", rule_id).eq("location_id", user.location_id).execute()
