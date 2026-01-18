@@ -194,7 +194,7 @@ export default function MatchRuleForm() {
   const { data: pipelines } = useQuery({
     queryKey: ['pipelines'],
     queryFn: () => api.getPipelines(),
-    enabled: isAuthenticated && objectType === "contacts", // Only fetch when relevant
+    enabled: isAuthenticated, // Fetch for opportunity filters
     staleTime: 5 * 60 * 1000,
   });
 
@@ -205,6 +205,14 @@ export default function MatchRuleForm() {
       name: `${pipeline.name} → ${stage.name}`,
     }))
   ) || [];
+
+  // GHL Opportunity status options
+  const opportunityStatusOptions = [
+    { id: "open", name: "Open" },
+    { id: "won", name: "Won" },
+    { id: "lost", name: "Lost" },
+    { id: "abandoned", name: "Abandoned" },
+  ];
 
   // Use fetched fields or fallback to static fields
   const fieldOptions = fetchedFields?.length
@@ -1020,12 +1028,13 @@ export default function MatchRuleForm() {
                             }))}
                             availableFields={[
                               { id: "monetaryValue", name: "Monetary Value", dataType: "number" },
-                              { id: "status", name: "Status", dataType: "text" },
+                              { id: "status", name: "Status", dataType: "select" },
                               { id: "name", name: "Name", dataType: "text" },
                               { id: "pipelineStageId", name: "Pipeline Stage", dataType: "select" },
                             ]}
                             objectLabel="opportunity"
                             fieldValueOptions={{
+                              status: opportunityStatusOptions,
                               pipelineStageId: pipelineStageOptions,
                             }}
                           />
