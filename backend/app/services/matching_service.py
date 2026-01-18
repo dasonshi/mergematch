@@ -334,12 +334,6 @@ async def run_scan(
     for match in matches_found:
         match_id = str(uuid.uuid4())
 
-        # Determine status based on confidence
-        # Only auto_approve for paid plans (free tier always requires review)
-        status = "pending"
-        if match["auto_merge"] and plan != "free":
-            status = "auto_approved"
-
         match_data = {
             "id": match_id,
             "tenant_id": tenant_id,
@@ -353,7 +347,7 @@ async def run_scan(
             "record_b_data": match["record_b"],
             "confidence_score": match["confidence"] / 100,  # Store as decimal
             "field_scores": match["field_scores"],
-            "status": status,
+            "status": "pending",
         }
 
         try:
@@ -369,8 +363,7 @@ async def run_scan(
         "matches_stored": len(stored_matches),
         "stale_cleaned": stale_count,
         "records_scanned": len(records),
-        "auto_approved": sum(1 for m in matches_found if m["auto_merge"]),
-        "pending_review": sum(1 for m in matches_found if not m["auto_merge"]),
+        "high_confidence": sum(1 for m in matches_found if m["auto_merge"]),  # Above auto-merge threshold
     }
 
 

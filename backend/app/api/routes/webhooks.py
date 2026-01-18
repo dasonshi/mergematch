@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Request, HTTPException, Header
 import hmac
 import hashlib
+import time
+import logging
 
 from app.config import settings
 from app.db.supabase import get_supabase
@@ -11,7 +13,11 @@ from app.services.billing_service import (
 )
 from app.core.rate_limit import limiter, RATE_LIMIT_WEBHOOK
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Maximum age for webhook timestamps (5 minutes)
+MAX_WEBHOOK_AGE_SECONDS = 300
 
 
 async def update_last_webhook_at(location_id: str):
@@ -24,13 +30,18 @@ async def update_last_webhook_at(location_id: str):
             "last_webhook_at": "now()"
         }).eq("ghl_location_id", location_id).execute()
     except Exception as e:
-        print(f"   ⚠️ Failed to update last_webhook_at: {e}")
+        logger.warning(f"Failed to update last_webhook_at: {e}")
 
 
 def verify_webhook_signature(payload: bytes, signature: str) -> bool:
-    """Verify GHL webhook signature."""
+    """Verify GHL webhook signature using HMAC-SHA256.
+
+    Security: Fail closed - returns False if secret is not configured.
+    """
     if not settings.GHL_WEBHOOK_SECRET:
-        return True  # Skip in development
+        # SECURITY: Fail closed - do not accept webhooks without secret
+        logger.error("GHL_WEBHOOK_SECRET not configured - rejecting webhook")
+        return False
 
     expected = hmac.new(
         settings.GHL_WEBHOOK_SECRET.encode(),
@@ -39,6 +50,33 @@ def verify_webhook_signature(payload: bytes, signature: str) -> bool:
     ).hexdigest()
 
     return hmac.compare_digest(signature, expected)
+
+
+def verify_webhook_timestamp(timestamp_ms: int) -> bool:
+    """Verify webhook timestamp is within acceptable range to prevent replay attacks.
+
+    Args:
+        timestamp_ms: Unix timestamp in milliseconds from webhook payload
+
+    Returns:
+        True if timestamp is within MAX_WEBHOOK_AGE_SECONDS, False otherwise
+    """
+    if not timestamp_ms:
+        # If no timestamp provided, allow (GHL may not always include it)
+        return True
+
+    current_time_ms = int(time.time() * 1000)
+    age_seconds = (current_time_ms - timestamp_ms) / 1000
+
+    if age_seconds > MAX_WEBHOOK_AGE_SECONDS:
+        logger.warning(f"Webhook timestamp too old: {age_seconds:.0f}s (max {MAX_WEBHOOK_AGE_SECONDS}s)")
+        return False
+
+    if age_seconds < -60:  # Allow 1 minute clock skew in the future
+        logger.warning(f"Webhook timestamp in future: {age_seconds:.0f}s")
+        return False
+
+    return True
 
 
 @router.post("/ghl")
