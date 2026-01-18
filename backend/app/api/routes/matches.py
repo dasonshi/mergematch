@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query, Header
+from fastapi import APIRouter, HTTPException, Query, Header, Request
 from pydantic import BaseModel
 from typing import Optional, List
 import httpx
@@ -8,6 +8,7 @@ from app.db.supabase import get_supabase
 from app.services.auth_service import get_location_tokens
 from app.core.security import get_current_user_flexible
 from app.core.ghl.client import GHLClient
+from app.core.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,9 @@ class CleanupRequest(BaseModel):
 # ==================== STATIC ROUTES (must come before dynamic routes) ====================
 
 @router.get("/")
+@limiter.limit("100/minute")
 async def list_matches(
+    request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
     location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
     status: Optional[str] = Query(None, description="Filter by status: pending, approved, rejected, merged"),

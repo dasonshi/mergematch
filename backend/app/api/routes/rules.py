@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query, Header
+from fastapi import APIRouter, HTTPException, Query, Header, Request
 from pydantic import BaseModel
 from typing import List, Optional
 import uuid
@@ -8,6 +8,7 @@ from app.db.supabase import get_supabase
 from app.services.auth_service import get_location_tokens_with_refresh
 from app.services.matching_service import run_scan
 from app.core.security import get_current_user_flexible
+from app.core.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,9 @@ class MatchRuleCreate(BaseModel):
 
 
 @router.get("/")
+@limiter.limit("100/minute")
 async def list_rules(
+    request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
     location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
 ):

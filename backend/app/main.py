@@ -95,8 +95,17 @@ app.add_middleware(
     allow_origins=cors_origins,
     allow_origin_regex=r"https://.*\.(gohighlevel|leadconnectorhq)\.com",
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    # SECURITY: Explicitly list allowed methods instead of wildcard
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    # SECURITY: Explicitly list allowed headers instead of wildcard
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "Accept",
+        "X-Requested-With",
+        "X-GHL-Signature",
+        "Version",
+    ],
     expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
 )
 

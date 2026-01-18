@@ -21,6 +21,22 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+async def get_current_plan_from_db(location_id: str) -> str:
+    """Get the current plan from database instead of relying on JWT.
+
+    SECURITY: JWT plan field could be stale if user downgraded.
+    Always verify plan from database for sensitive operations.
+    """
+    supabase = get_supabase()
+    result = supabase.table("locations").select(
+        "tenants(plan)"
+    ).eq("id", location_id).single().execute()
+
+    if result.data and result.data.get("tenants"):
+        return result.data["tenants"].get("plan", "free")
+    return "free"
+
+
 class RuleOption(BaseModel):
     """Single option for rule dropdown."""
     label: str
@@ -121,8 +137,9 @@ async def check_duplicate(
     # Authenticate user
     user = await get_current_user_flexible(authorization=authorization, location_id=effective_location_id)
 
-    # Plan gating: Only Pro/Agency can use dedupe endpoint
-    if user.plan not in ("pro", "agency"):
+    # SECURITY: Verify plan from database, not JWT (JWT could be stale after downgrade)
+    current_plan = await get_current_plan_from_db(user.location_id)
+    if current_plan not in ("pro", "agency"):
         raise HTTPException(
             status_code=403,
             detail="Dedupe check endpoint requires Pro or Agency plan. Upgrade to access this feature."

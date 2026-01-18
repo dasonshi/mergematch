@@ -66,8 +66,32 @@ const GHL_ORIGINS = [
   'https://leadconnectorhq.com',
 ];
 
+// Primary GHL origin (most common)
+const PRIMARY_GHL_ORIGIN = 'https://app.gohighlevel.com';
+
 function isGHLOrigin(origin: string): boolean {
   return GHL_ORIGINS.some(allowed => origin.startsWith(allowed));
+}
+
+// Determine the parent GHL origin from referrer
+function getParentGHLOrigin(): string {
+  try {
+    const referrer = document.referrer;
+    if (referrer) {
+      const referrerUrl = new URL(referrer);
+      const referrerOrigin = referrerUrl.origin;
+      // Check if referrer matches a known GHL origin
+      const matchedOrigin = GHL_ORIGINS.find(allowed => referrerOrigin.startsWith(allowed));
+      if (matchedOrigin) {
+        // Use the actual referrer origin (e.g., https://app.gohighlevel.com)
+        return referrerOrigin;
+      }
+    }
+  } catch {
+    // Ignore URL parsing errors
+  }
+  // Default to primary GHL origin
+  return PRIMARY_GHL_ORIGIN;
 }
 
 // Extract locationId from URL/referrer
@@ -153,8 +177,10 @@ async function requestGHLUserData(): Promise<string> {
     };
 
     window.addEventListener('message', messageHandler);
-    console.log('📤 Sending REQUEST_USER_DATA to GHL parent...');
-    window.parent.postMessage({ message: 'REQUEST_USER_DATA' }, '*');
+    // SECURITY: Use specific GHL origin instead of wildcard '*'
+    const targetOrigin = getParentGHLOrigin();
+    console.log('📤 Sending REQUEST_USER_DATA to GHL parent...', { targetOrigin });
+    window.parent.postMessage({ message: 'REQUEST_USER_DATA' }, targetOrigin);
   });
 }
 

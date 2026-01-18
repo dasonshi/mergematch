@@ -20,7 +20,9 @@ class MergeRequest(BaseModel):
 
 
 @router.get("/stats")
+@limiter.limit("100/minute")
 async def get_merge_stats(
+    request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
     location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
 ):
@@ -43,7 +45,9 @@ async def get_merge_stats(
 
 
 @router.get("/")
+@limiter.limit("100/minute")
 async def list_merges(
+    request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
     location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
     limit: int = 50,

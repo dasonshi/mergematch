@@ -94,16 +94,21 @@ async def ghl_webhook(
     """
     body = await request.body()
 
-    # Verify signature in production
-    if settings.ENVIRONMENT == "production":
-        if not x_ghl_signature or not verify_webhook_signature(body, x_ghl_signature):
-            raise HTTPException(status_code=401, detail="Invalid signature")
+    # SECURITY: Always verify signature (fail closed)
+    if not x_ghl_signature or not verify_webhook_signature(body, x_ghl_signature):
+        logger.warning("Webhook signature verification failed")
+        raise HTTPException(status_code=401, detail="Invalid signature")
 
     payload = await request.json()
     event_type = payload.get("type")
     data = payload.get("data", {})
 
-    print(f"📨 GHL webhook: {event_type}")
+    # SECURITY: Verify timestamp to prevent replay attacks
+    timestamp = payload.get("timestamp") or payload.get("createdAt")
+    if timestamp and not verify_webhook_timestamp(timestamp):
+        raise HTTPException(status_code=400, detail="Webhook timestamp expired")
+
+    logger.info(f"GHL webhook received: {event_type}")
 
     # Handle marketplace lifecycle events
     if event_type == "INSTALL":
@@ -115,7 +120,7 @@ async def ghl_webhook(
             whitelabel_details=payload.get("whitelabelDetails"),
             company_name=payload.get("companyName"),
         )
-        print(f"   ✅ Install processed: {result}")
+        logger.info(f"Install processed for location {payload.get('locationId')}")
         return {"received": True, "event": event_type, "result": result}
 
     elif event_type == "UNINSTALL":
@@ -123,7 +128,7 @@ async def ghl_webhook(
             location_id=payload.get("locationId"),
             company_id=payload.get("companyId"),
         )
-        print(f"   ✅ Uninstall processed: {result}")
+        logger.info(f"Uninstall processed for location {payload.get('locationId')}")
         return {"received": True, "event": event_type, "result": result}
 
     elif event_type == "PLAN_CHANGE":
@@ -133,20 +138,18 @@ async def ghl_webhook(
             current_plan_id=payload.get("currentPlanId"),
             new_plan_id=payload.get("newPlanId"),
         )
-        print(f"   ✅ Plan change processed: {result}")
+        logger.info(f"Plan change processed for location {payload.get('locationId')}")
         return {"received": True, "event": event_type, "result": result}
 
     # Handle data webhooks (contact/company updates)
     elif event_type in ["contact.created", "contact.updated", "ContactCreate", "ContactUpdate"]:
         location_id = payload.get("locationId") or data.get("locationId")
         await update_last_webhook_at(location_id)
-        # TODO: Queue real-time duplicate check
         return {"received": True, "event": event_type, "location_id": location_id}
 
     elif event_type in ["company.created", "company.updated", "RecordCreate", "RecordUpdate"]:
         location_id = payload.get("locationId") or data.get("locationId")
         await update_last_webhook_at(location_id)
-        # TODO: Queue company duplicate check
         return {"received": True, "event": event_type, "location_id": location_id}
 
     return {"received": True, "event": event_type}
@@ -167,16 +170,20 @@ async def marketplace_webhook(
     """
     body = await request.body()
 
-    # Verify signature in production
-    if settings.ENVIRONMENT == "production":
-        if not x_ghl_signature or not verify_webhook_signature(body, x_ghl_signature):
-            raise HTTPException(status_code=401, detail="Invalid signature")
+    # SECURITY: Always verify signature (fail closed)
+    if not x_ghl_signature or not verify_webhook_signature(body, x_ghl_signature):
+        logger.warning("Marketplace webhook signature verification failed")
+        raise HTTPException(status_code=401, detail="Invalid signature")
 
     payload = await request.json()
     event_type = payload.get("type")
 
-    print(f"📦 Marketplace webhook: {event_type}")
-    print(f"   Payload: {payload}")
+    # SECURITY: Verify timestamp to prevent replay attacks
+    timestamp = payload.get("timestamp") or payload.get("createdAt")
+    if timestamp and not verify_webhook_timestamp(timestamp):
+        raise HTTPException(status_code=400, detail="Webhook timestamp expired")
+
+    logger.info(f"Marketplace webhook received: {event_type}")
 
     try:
         if event_type == "INSTALL":
@@ -188,7 +195,7 @@ async def marketplace_webhook(
                 whitelabel_details=payload.get("whitelabelDetails"),
                 company_name=payload.get("companyName"),
             )
-            print(f"   ✅ Install processed: {result}")
+            logger.info(f"Marketplace install processed for location {payload.get('locationId')}")
             return {"received": True, "event": event_type, "result": result}
 
         elif event_type == "UNINSTALL":
@@ -196,7 +203,7 @@ async def marketplace_webhook(
                 location_id=payload.get("locationId"),
                 company_id=payload.get("companyId"),
             )
-            print(f"   ✅ Uninstall processed: {result}")
+            logger.info(f"Marketplace uninstall processed for location {payload.get('locationId')}")
             return {"received": True, "event": event_type, "result": result}
 
         elif event_type == "PLAN_CHANGE":
@@ -206,13 +213,13 @@ async def marketplace_webhook(
                 current_plan_id=payload.get("currentPlanId"),
                 new_plan_id=payload.get("newPlanId"),
             )
-            print(f"   ✅ Plan change processed: {result}")
+            logger.info(f"Marketplace plan change processed for location {payload.get('locationId')}")
             return {"received": True, "event": event_type, "result": result}
 
         else:
-            print(f"   ⚠️ Unknown marketplace event: {event_type}")
+            logger.warning(f"Unknown marketplace event: {event_type}")
             return {"received": True, "event": event_type, "handled": False}
 
     except Exception as e:
-        print(f"   ❌ Error processing {event_type}: {e}")
+        logger.error(f"Error processing marketplace {event_type}: {e}")
         raise HTTPException(status_code=500, detail=str(e))

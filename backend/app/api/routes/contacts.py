@@ -1,10 +1,11 @@
-from fastapi import APIRouter, HTTPException, Query, Depends, Header
+from fastapi import APIRouter, HTTPException, Query, Depends, Header, Request
 from typing import Optional
 import logging
 
 from app.services.auth_service import get_location_tokens_with_refresh
 from app.core.ghl.client import GHLClient
 from app.core.security import get_current_user_flexible, AuthenticatedUser
+from app.core.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +13,9 @@ router = APIRouter()
 
 
 @router.get("/stats")
+@limiter.limit("100/minute")
 async def get_contacts_stats(
+    request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
     location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
 ):
@@ -42,7 +45,9 @@ async def get_contacts_stats(
 
 
 @router.get("/")
+@limiter.limit("100/minute")
 async def list_contacts(
+    request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
     location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
     limit: int = Query(100, le=100),
