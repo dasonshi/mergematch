@@ -391,20 +391,19 @@ class GHLClient:
             model: 'contact', 'opportunity', or 'all'
 
         Returns list of custom field definitions.
-
-        Note: The v2 API (/custom-fields/object-key/) only supports custom objects
-        and business/company. For contacts and opportunities, we use the legacy
-        /locations/{id}/customFields endpoint.
         """
-        # Use the legacy endpoint for contacts/opportunities
-        # The v2 endpoint only supports custom objects and business
-        params = {"locationId": self.location_id}
-        if model and model != "all":
-            params["model"] = model
+        # Use the v2 endpoint with object key
+        # Map model names to object keys
+        object_key_map = {
+            "contact": "contact",
+            "opportunity": "opportunity",
+            "business": "business",
+        }
+        object_key = object_key_map.get(model, "contact")
 
         response = await self._client.get(
-            f"/locations/{self.location_id}/customFields",
-            params=params
+            f"/custom-fields/object-key/{object_key}",
+            params={"locationId": self.location_id}
         )
         response.raise_for_status()
         return response.json().get("customFields", [])
