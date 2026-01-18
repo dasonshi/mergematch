@@ -1,10 +1,12 @@
 from fastapi import APIRouter, HTTPException, Query, Header
 from typing import Optional, List, Dict, Any
+import logging
 
 from app.services.auth_service import get_location_tokens_with_refresh
 from app.core.ghl.client import GHLClient
 from app.core.security import get_current_user_flexible
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Standard fields for each object type (fallback if API fails)
@@ -96,12 +98,18 @@ async def get_object_fields(
         try:
             if object_type == "contacts":
                 # Fetch contact custom fields
-                custom_fields = await client.get_custom_fields(model="contact")
-                normalized_custom = [
-                    normalize_custom_field(f, "contact")
-                    for f in custom_fields
-                ]
-                return standard_fields + normalized_custom
+                try:
+                    custom_fields = await client.get_custom_fields(model="contact")
+                    logger.info(f"Fetched {len(custom_fields)} custom fields for contacts")
+                    normalized_custom = [
+                        normalize_custom_field(f, "contact")
+                        for f in custom_fields
+                    ]
+                    logger.info(f"Returning {len(standard_fields)} standard + {len(normalized_custom)} custom fields")
+                    return standard_fields + normalized_custom
+                except Exception as e:
+                    logger.warning(f"Failed to fetch contact custom fields: {e}")
+                    return standard_fields
 
             elif object_type == "companies":
                 # Try to fetch business object schema
