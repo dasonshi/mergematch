@@ -401,12 +401,22 @@ class GHLClient:
         }
         object_key = object_key_map.get(model, "contact")
 
-        response = await self._client.get(
-            f"/custom-fields/object-key/{object_key}",
-            params={"locationId": self.location_id}
-        )
+        url = f"/custom-fields/object-key/{object_key}"
+        params = {"locationId": self.location_id}
+        logger.info(f"[GHL] GET {url} with params: {params}")
+
+        response = await self._client.get(url, params=params)
+        logger.info(f"[GHL] Custom fields response status: {response.status_code}")
+
+        if response.status_code >= 400:
+            logger.error(f"[GHL] Custom fields error: {response.text}")
+
         response.raise_for_status()
-        return response.json().get("customFields", [])
+        data = response.json()
+        logger.info(f"[GHL] Custom fields response keys: {list(data.keys()) if isinstance(data, dict) else 'not dict'}")
+        custom_fields = data.get("customFields", [])
+        logger.info(f"[GHL] Found {len(custom_fields)} custom fields")
+        return custom_fields
 
     async def create_custom_field(
         self,
