@@ -392,17 +392,10 @@ class GHLClient:
 
         Returns list of custom field definitions.
         """
-        # Use the v2 endpoint with object key
-        # Map model names to object keys
-        object_key_map = {
-            "contact": "contact",
-            "opportunity": "opportunity",
-            "business": "business",
-        }
-        object_key = object_key_map.get(model, "contact")
-
-        url = f"/custom-fields/object-key/{object_key}"
-        params = {"locationId": self.location_id}
+        # Use the locations endpoint which supports contact/opportunity custom fields
+        # GET /locations/:locationId/customFields?model=contact
+        url = f"/locations/{self.location_id}/customFields"
+        params = {"model": model}
         logger.info(f"[GHL] GET {url} with params: {params}")
 
         response = await self._client.get(url, params=params)
