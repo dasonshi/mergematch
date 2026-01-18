@@ -1,0 +1,266 @@
+{
+  "location_id": "wHb7koqaUqw8x8KoYjOj",
+  "test_email_domain": "mergematch-test.com",
+  "ghl_api_base": "https://services.leadconnectorhq.com",
+
+  "scenarios": [
+    {
+      "id": "pair-01-exact-email",
+      "description": "Exact email match, no related records - basic merge test",
+      "contacts": [
+        {
+          "firstName": "John",
+          "lastName": "Smith",
+          "email": "john@mergematch-test.com",
+          "phone": "555-0101",
+          "companyName": "Acme Corp"
+        },
+        {
+          "firstName": "John A",
+          "lastName": "Smith",
+          "email": "john@mergematch-test.com",
+          "phone": "555-0102",
+          "companyName": "Acme Corporation"
+        }
+      ],
+      "notes": [],
+      "tasks": [],
+      "opportunities": []
+    },
+    {
+      "id": "pair-02-notes",
+      "description": "Test notes copy to master - Contact A has 2 notes, Contact B has 1",
+      "contacts": [
+        {
+          "firstName": "Mike",
+          "lastName": "Wilson",
+          "email": "mike@mergematch-test.com",
+          "phone": "555-0201"
+        },
+        {
+          "firstName": "Michael",
+          "lastName": "Wilson",
+          "email": "mike@mergematch-test.com",
+          "phone": "555-0202"
+        }
+      ],
+      "notes": [
+        {
+          "contact_index": 0,
+          "body": "Note 1 on Mike: Initial consultation completed. Client interested in premium tier."
+        },
+        {
+          "contact_index": 0,
+          "body": "Note 2 on Mike: Follow-up call scheduled for next week."
+        },
+        {
+          "contact_index": 1,
+          "body": "Note 1 on Michael: Referred by partner network."
+        }
+      ],
+      "tasks": [],
+      "opportunities": []
+    },
+    {
+      "id": "pair-03-tasks",
+      "description": "Test tasks copy to master - Contact A has 1 task, Contact B has 2",
+      "contacts": [
+        {
+          "firstName": "Sarah",
+          "lastName": "Johnson",
+          "email": "sarah@mergematch-test.com",
+          "phone": "555-0301"
+        },
+        {
+          "firstName": "Sara",
+          "lastName": "Johnson",
+          "email": "sarah@mergematch-test.com",
+          "phone": "555-0302"
+        }
+      ],
+      "notes": [],
+      "tasks": [
+        {
+          "contact_index": 0,
+          "title": "Send proposal to Sarah",
+          "body": "Prepare and send the Q1 proposal",
+          "dueDate": "2025-02-15"
+        },
+        {
+          "contact_index": 1,
+          "title": "Schedule demo call",
+          "body": "Demo the new features",
+          "dueDate": "2025-02-10"
+        },
+        {
+          "contact_index": 1,
+          "title": "Send case studies",
+          "body": "Share relevant case studies from similar clients",
+          "dueDate": "2025-02-12"
+        }
+      ],
+      "opportunities": []
+    },
+    {
+      "id": "pair-04-opps-basic",
+      "description": "Test opportunities - keep all vs keep highest value",
+      "contacts": [
+        {
+          "firstName": "Emily",
+          "lastName": "Davis",
+          "email": "emily@mergematch-test.com",
+          "phone": "555-0401",
+          "companyName": "BigCorp"
+        },
+        {
+          "firstName": "Emily R",
+          "lastName": "Davis",
+          "email": "emily@mergematch-test.com",
+          "phone": "555-0402",
+          "companyName": "BigCorp LLC"
+        }
+      ],
+      "notes": [],
+      "tasks": [],
+      "opportunities": [
+        {
+          "contact_index": 0,
+          "name": "Website Redesign Project",
+          "monetaryValue": 5000,
+          "stage": "Proposal",
+          "status": "open"
+        },
+        {
+          "contact_index": 1,
+          "name": "SEO Package Deal",
+          "monetaryValue": 2500,
+          "stage": "Qualified",
+          "status": "open"
+        }
+      ]
+    },
+    {
+      "id": "pair-05-opps-stages",
+      "description": "Test custom logic filtering by pipeline stage (Won vs Lost)",
+      "contacts": [
+        {
+          "firstName": "David",
+          "lastName": "Brown",
+          "email": "david@mergematch-test.com",
+          "phone": "555-0501",
+          "companyName": "Agency Partners"
+        },
+        {
+          "firstName": "Dave",
+          "lastName": "Brown",
+          "email": "david@mergematch-test.com",
+          "phone": "555-0502",
+          "companyName": "Agency Partners LLC"
+        }
+      ],
+      "notes": [],
+      "tasks": [],
+      "opportunities": [
+        {
+          "contact_index": 0,
+          "name": "Consulting Engagement",
+          "monetaryValue": 8000,
+          "stage": "Won",
+          "status": "won"
+        },
+        {
+          "contact_index": 1,
+          "name": "Training Program",
+          "monetaryValue": 4000,
+          "stage": "Lost",
+          "status": "lost"
+        }
+      ]
+    },
+    {
+      "id": "pair-06-opps-custom-logic",
+      "description": "Full test - notes, tasks, and multiple opportunities with mixed values/stages",
+      "contacts": [
+        {
+          "firstName": "Lisa",
+          "lastName": "Chen",
+          "email": "lisa@mergematch-test.com",
+          "phone": "555-0601",
+          "companyName": "TechFirm"
+        },
+        {
+          "firstName": "Lisa M",
+          "lastName": "Chen",
+          "email": "lisa@mergematch-test.com",
+          "phone": "555-0602",
+          "companyName": "TechFirm Inc"
+        }
+      ],
+      "notes": [
+        {
+          "contact_index": 0,
+          "body": "VIP client - handle with care. Prefers email communication."
+        },
+        {
+          "contact_index": 1,
+          "body": "Referred by partner network. Interested in enterprise tier."
+        }
+      ],
+      "tasks": [
+        {
+          "contact_index": 0,
+          "title": "Quarterly business review",
+          "body": "Prepare QBR presentation",
+          "dueDate": "2025-03-01"
+        },
+        {
+          "contact_index": 1,
+          "title": "Send enterprise pricing",
+          "body": "Custom pricing for enterprise deal",
+          "dueDate": "2025-02-20"
+        }
+      ],
+      "opportunities": [
+        {
+          "contact_index": 0,
+          "name": "Enterprise Deal",
+          "monetaryValue": 15000,
+          "stage": "Proposal",
+          "status": "open",
+          "_test_note": "Should be KEPT (value >= 1000, not Lost)"
+        },
+        {
+          "contact_index": 0,
+          "name": "Small Project",
+          "monetaryValue": 500,
+          "stage": "Qualified",
+          "status": "open",
+          "_test_note": "Should be FILTERED (value < 1000)"
+        },
+        {
+          "contact_index": 1,
+          "name": "Medium Contract",
+          "monetaryValue": 3000,
+          "stage": "Won",
+          "status": "won",
+          "_test_note": "Should be KEPT (value >= 1000, Won stage)"
+        },
+        {
+          "contact_index": 1,
+          "name": "Tiny Task",
+          "monetaryValue": 200,
+          "stage": "Lost",
+          "status": "lost",
+          "_test_note": "Should be FILTERED (value < 1000, Lost stage)"
+        }
+      ]
+    }
+  ],
+
+  "summary": {
+    "total_contacts": 12,
+    "total_notes": 5,
+    "total_tasks": 4,
+    "total_opportunities": 8
+  }
+}
