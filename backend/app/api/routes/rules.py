@@ -106,6 +106,7 @@ async def create_rule(
 
     # Auto-trigger initial scan after rule creation
     initial_scan = None
+    scan_error = None
     try:
         tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
         if tokens:
@@ -133,11 +134,16 @@ async def create_rule(
             supabase.table("match_rules").update({
                 "last_scan_at": "now()"
             }).eq("id", rule_id).execute()
+        else:
+            scan_error = "Token refresh failed"
+            logger.warning(f"Initial scan skipped for rule {rule_id}: no tokens available")
     except Exception as e:
-        # Don't fail rule creation if scan fails
-        logger.warning(f"Initial scan failed for rule {rule_id}: {e}")
+        # Don't fail rule creation if scan fails, but log full traceback
+        import traceback
+        scan_error = str(e)
+        logger.error(f"Initial scan failed for rule {rule_id}: {e}\n{traceback.format_exc()}")
 
-    return {**created_rule, "initial_scan": initial_scan}
+    return {**created_rule, "initial_scan": initial_scan, "scan_error": scan_error}
 
 
 @router.get("/{rule_id}")

@@ -86,7 +86,7 @@ def email_domain_match(e1: str, e2: str) -> tuple[bool, float]:
 
 
 def get_field_value(record: dict, field: str) -> str:
-    """Get field value from a record, handling nested fields."""
+    """Get field value from a record, handling nested fields and custom fields."""
     if not record:
         return ""
 
@@ -98,6 +98,7 @@ def get_field_value(record: dict, field: str) -> str:
         "firstName": ["firstName", "name"],
         "lastName": ["lastName"],
         "company": ["companyName", "company"],
+        "fullName": ["name", "contactName"],
     }
 
     # Try mapped fields first
@@ -116,6 +117,24 @@ def get_field_value(record: dict, field: str) -> str:
         if isinstance(value, list) and len(value) > 0:
             return str(value[0])
         return str(value)
+
+    # Handle custom fields - GHL stores them in customFields array
+    # Each custom field has: {id: "xxx", value: "yyy"} or {key: "xxx", value: "yyy"}
+    custom_fields = record.get("customFields", []) or record.get("customField", [])
+    if custom_fields:
+        # customFields can be a list of {id, value} objects
+        if isinstance(custom_fields, list):
+            for cf in custom_fields:
+                if isinstance(cf, dict):
+                    cf_id = cf.get("id") or cf.get("key") or cf.get("fieldKey")
+                    if cf_id == field:
+                        cf_value = cf.get("value") or cf.get("fieldValue")
+                        if cf_value is not None:
+                            return str(cf_value)
+        # Or it could be a dict with field IDs as keys
+        elif isinstance(custom_fields, dict):
+            if field in custom_fields:
+                return str(custom_fields[field])
 
     return ""
 
