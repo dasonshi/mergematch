@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, Trash2, GripVertical } from "lucide-react";
+import { Plus, Trash2, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +17,8 @@ export interface LogicCondition {
   operator: string;
   value: string;
   valueType: "static" | "field_reference";
+  // For cascading selects (e.g., pipeline -> stage)
+  parentValue?: string;
 }
 
 export interface CustomLogicConfig {
@@ -29,12 +31,20 @@ interface FieldValueOption {
   name: string;
 }
 
+// Pipeline structure for cascading dropdown
+export interface Pipeline {
+  id: string;
+  name: string;
+  stages: { id: string; name: string }[];
+}
+
 interface CustomLogicBuilderProps {
   value: CustomLogicConfig;
   onChange: (config: CustomLogicConfig) => void;
   availableFields: { id: string; name: string; dataType?: string }[];
   objectLabel?: string; // e.g., "opportunity" for display
   fieldValueOptions?: Record<string, FieldValueOption[]>; // Field ID -> possible values
+  pipelines?: Pipeline[]; // For cascading pipeline -> stage selection
 }
 
 const OPERATORS = [
@@ -73,11 +83,32 @@ export function CustomLogicBuilder({
   availableFields,
   objectLabel = "record",
   fieldValueOptions = {},
+  pipelines = [],
 }: CustomLogicBuilderProps) {
   const fields = availableFields.length > 0 ? availableFields : DEFAULT_OPPORTUNITY_FIELDS;
 
   const getFieldOptions = (fieldId: string): FieldValueOption[] | undefined => {
     return fieldValueOptions[fieldId];
+  };
+
+  // Check if field uses cascading pipeline selection
+  const isPipelineStageField = (fieldId: string): boolean => {
+    return fieldId === "pipelineStageId" && pipelines.length > 0;
+  };
+
+  // Get stages for a specific pipeline
+  const getStagesForPipeline = (pipelineId: string): FieldValueOption[] => {
+    const pipeline = pipelines.find(p => p.id === pipelineId);
+    return pipeline?.stages.map(s => ({ id: s.id, name: s.name })) || [];
+  };
+
+  // Get stage name for display
+  const getStageName = (stageId: string): string => {
+    for (const pipeline of pipelines) {
+      const stage = pipeline.stages.find(s => s.id === stageId);
+      if (stage) return `${pipeline.name} → ${stage.name}`;
+    }
+    return stageId;
   };
 
   const addCondition = () => {
@@ -205,9 +236,51 @@ export function CustomLogicBuilder({
                 </SelectContent>
               </Select>
 
-              {/* Value input - dropdown if options available, text input otherwise */}
+              {/* Value input - cascading for pipeline, dropdown if options, otherwise text */}
               {needsValueInput(condition.operator) && (
-                getFieldOptions(condition.field) ? (
+                isPipelineStageField(condition.field) ? (
+                  // Cascading Pipeline -> Stage selector
+                  <div className="flex-1 flex items-center gap-1">
+                    {/* Pipeline selector */}
+                    <Select
+                      value={condition.parentValue || ""}
+                      onValueChange={(v) => updateCondition(condition.id, { parentValue: v, value: "" })}
+                    >
+                      <SelectTrigger className="w-[140px] h-8 text-xs bg-background">
+                        <SelectValue placeholder="Pipeline..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {pipelines.map((pipeline) => (
+                          <SelectItem key={pipeline.id} value={pipeline.id} className="text-xs">
+                            {pipeline.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    {condition.parentValue && (
+                      <>
+                        <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                        {/* Stage selector */}
+                        <Select
+                          value={condition.value}
+                          onValueChange={(v) => updateCondition(condition.id, { value: v })}
+                        >
+                          <SelectTrigger className="flex-1 h-8 text-xs bg-background">
+                            <SelectValue placeholder="Stage..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {getStagesForPipeline(condition.parentValue).map((stage) => (
+                              <SelectItem key={stage.id} value={stage.id} className="text-xs">
+                                {stage.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </>
+                    )}
+                  </div>
+                ) : getFieldOptions(condition.field) ? (
                   <Select
                     value={condition.value}
                     onValueChange={(v) => updateCondition(condition.id, { value: v })}
@@ -281,9 +354,14 @@ export function CustomLogicBuilder({
               .map((c, i) => {
                 const fieldName = fields.find((f) => f.id === c.field)?.name || c.field;
                 const opName = OPERATORS.find((o) => o.id === c.operator)?.name || c.operator;
-                // Show option name if available, otherwise show raw value
-                const fieldOpts = getFieldOptions(c.field);
-                const valueName = fieldOpts?.find((o) => o.id === c.value)?.name || c.value;
+                // Show option name if available, pipeline stage name, or raw value
+                let valueName = c.value;
+                if (isPipelineStageField(c.field) && c.value) {
+                  valueName = getStageName(c.value);
+                } else {
+                  const fieldOpts = getFieldOptions(c.field);
+                  valueName = fieldOpts?.find((o) => o.id === c.value)?.name || c.value;
+                }
                 const valueDisplay = needsValueInput(c.operator) ? ` "${valueName}"` : "";
                 const prefix = i > 0 ? ` ${value.operator} ` : "";
                 return `${prefix}${fieldName} ${opName}${valueDisplay}`;

@@ -1035,8 +1035,8 @@ export default function MatchRuleForm() {
                             objectLabel="opportunity"
                             fieldValueOptions={{
                               status: opportunityStatusOptions,
-                              pipelineStageId: pipelineStageOptions,
                             }}
+                            pipelines={pipelines || []}
                           />
                         </div>
                       )}
