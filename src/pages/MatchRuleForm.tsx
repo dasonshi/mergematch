@@ -240,23 +240,30 @@ export default function MatchRuleForm() {
   const createMutation = useMutation({
     mutationFn: (rule: Partial<MatchRule>) => api.createMatchRule(rule),
     onSuccess: (data: MatchRule & { initial_scan?: { matches_found: number; records_scanned: number }; scan_error?: string }) => {
-      console.log('Rule created successfully:', data);
+      console.log('Rule created successfully:', JSON.stringify(data, null, 2));
       queryClient.invalidateQueries({ queryKey: ['rules'] });
       queryClient.invalidateQueries({ queryKey: ['matches'] });
 
       // Build description with scan results
       let description = `"${ruleName}" has been created successfully.`;
+      let toastVariant: "default" | "destructive" | undefined = undefined;
+
       if (data.initial_scan) {
         const { matches_found, records_scanned } = data.initial_scan;
         description = `"${ruleName}" created. Scanned ${records_scanned.toLocaleString()} records, found ${matches_found} potential duplicate${matches_found !== 1 ? 's' : ''}.`;
+        console.log('Initial scan results:', data.initial_scan);
       } else if (data.scan_error) {
-        console.warn('Initial scan error:', data.scan_error);
-        description = `"${ruleName}" created. Initial scan will run in background.`;
+        console.error('Initial scan error:', data.scan_error);
+        description = `"${ruleName}" created but initial scan failed: ${data.scan_error}`;
+        toastVariant = "destructive";
+      } else {
+        console.log('No initial_scan data in response');
       }
 
       toast({
         title: "Rule created",
         description,
+        variant: toastVariant,
       });
 
       // Navigate to the new rule's detail page

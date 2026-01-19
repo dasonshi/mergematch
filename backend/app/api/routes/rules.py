@@ -128,12 +128,16 @@ async def create_rule(
 
     result = supabase.table("match_rules").insert(rule_data).execute()
     created_rule = result.data[0] if result.data else rule_data
+    logger.info(f"Rule {rule_id} inserted into database")
 
     # Auto-trigger initial scan after rule creation
     initial_scan = None
     scan_error = None
     try:
+        logger.info(f"Starting initial scan for rule {rule_id}, ghl_location_id={user.ghl_location_id}")
         tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
+        logger.info(f"Token retrieval result: {'success' if tokens else 'failed'}")
+
         if tokens:
             # Plan-based scan limits
             plan_limits = {
@@ -143,6 +147,7 @@ async def create_rule(
                 "agency": 99999,
             }
             scan_limit = plan_limits.get(user.plan, 1000)
+            logger.info(f"Running scan with limit={scan_limit}, plan={user.plan}")
 
             initial_scan = await run_scan(
                 ghl_location_id=user.ghl_location_id,
@@ -153,14 +158,14 @@ async def create_rule(
                 limit=scan_limit,
                 plan=user.plan,
             )
-            logger.info(f"Initial scan for rule {rule_id}: {initial_scan}")
+            logger.info(f"Initial scan completed for rule {rule_id}: {initial_scan}")
 
             # Update last_scan_at
             supabase.table("match_rules").update({
                 "last_scan_at": "now()"
             }).eq("id", rule_id).execute()
         else:
-            scan_error = "Token refresh failed"
+            scan_error = "Token refresh failed - no GHL tokens available"
             logger.warning(f"Initial scan skipped for rule {rule_id}: no tokens available")
     except Exception as e:
         # Don't fail rule creation if scan fails, but log full traceback
