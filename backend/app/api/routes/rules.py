@@ -128,55 +128,11 @@ async def create_rule(
 
     result = supabase.table("match_rules").insert(rule_data).execute()
     created_rule = result.data[0] if result.data else rule_data
-    logger.info(f"Rule {rule_id} inserted into database")
+    logger.info(f"Rule {rule_id} created successfully")
 
-    # Auto-trigger initial scan after rule creation
-    initial_scan = None
-    scan_error = None
-    try:
-        logger.info(f"Starting initial scan for rule {rule_id}, ghl_location_id={user.ghl_location_id}")
-        tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
-        logger.info(f"Token retrieval result: {'success' if tokens else 'failed'}")
-
-        if tokens:
-            # Plan-based scan limits
-            plan_limits = {
-                "free": 1000,
-                "starter": 99999,
-                "pro": 99999,
-                "agency": 99999,
-            }
-            scan_limit = plan_limits.get(user.plan, 1000)
-            logger.info(f"Running scan with limit={scan_limit}, plan={user.plan}")
-
-            initial_scan = await run_scan(
-                ghl_location_id=user.ghl_location_id,
-                rule_id=rule_id,
-                access_token=tokens["access_token"],
-                tenant_id=user.tenant_id,
-                internal_location_id=user.location_id,
-                limit=scan_limit,
-                plan=user.plan,
-            )
-            logger.info(f"Initial scan completed for rule {rule_id}: {initial_scan}")
-
-            # Update last_scan_at
-            supabase.table("match_rules").update({
-                "last_scan_at": "now()"
-            }).eq("id", rule_id).execute()
-        else:
-            scan_error = "Token refresh failed - no GHL tokens available"
-            logger.warning(f"Initial scan skipped for rule {rule_id}: no tokens available")
-    except Exception as e:
-        # Don't fail rule creation if scan fails, but log full traceback
-        import traceback
-        scan_error = str(e)
-        logger.error(f"Initial scan failed for rule {rule_id}: {e}\n{traceback.format_exc()}")
-
-    # Log the response for debugging
-    response = {**created_rule, "initial_scan": initial_scan, "scan_error": scan_error}
-    logger.info(f"Rule created response: id={response.get('id')}, initial_scan={initial_scan}, scan_error={scan_error}")
-    return response
+    # Return immediately - frontend will trigger initial scan via separate endpoint
+    # This avoids timeout issues and matches the manual scan flow
+    return {**created_rule, "scan_pending": True}
 
 
 @router.get("/{rule_id}")
