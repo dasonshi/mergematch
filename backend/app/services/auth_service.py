@@ -222,6 +222,7 @@ async def get_location_tokens_with_refresh(ghl_location_id: str) -> Optional[dic
     ).eq("ghl_location_id", ghl_location_id).single().execute()
 
     if not result.data:
+        logger.error(f"Location not found in DB: {ghl_location_id}")
         return None
 
     location = result.data
@@ -229,19 +230,27 @@ async def get_location_tokens_with_refresh(ghl_location_id: str) -> Optional[dic
 
     # Check if token is expired (with 5 minute buffer)
     expires_at = location.get("token_expires_at")
+    logger.info(f"Token expires_at for {ghl_location_id}: {expires_at}")
+
     if expires_at:
         try:
             # Handle both ISO format with/without timezone
             expires_at_str = expires_at.replace("+00:00", "").replace("Z", "")
             expiry_time = datetime.fromisoformat(expires_at_str)
+            time_until_expiry = expiry_time - datetime.utcnow()
+            logger.info(f"Token time until expiry: {time_until_expiry}")
+
             if datetime.utcnow() >= (expiry_time - timedelta(minutes=5)):
-                logger.info(f"Token expired for {ghl_location_id}, refreshing...")
+                logger.info(f"Token expired or expiring soon for {ghl_location_id}, refreshing...")
                 refreshed = await refresh_ghl_token(ghl_location_id)
                 if refreshed:
+                    logger.info(f"Token refresh successful for {ghl_location_id}")
                     return refreshed
                 else:
                     logger.error(f"Token refresh failed for {ghl_location_id}")
                     return None
+            else:
+                logger.info(f"Token still valid for {ghl_location_id}, expires in {time_until_expiry}")
         except Exception as e:
             logger.warning(f"Could not parse token expiry: {e}")
 

@@ -250,13 +250,25 @@ async def run_scan(
 
     # Fetch records from GHL
     records = []
-    async with GHLClient(access_token, ghl_location_id) as client:
-        if source_object == "contacts":
-            result = await client.get_contacts(limit=limit)
-            records = result.get("contacts", [])
-        elif source_object == "companies":
-            result = await client.search_companies(limit=limit)
-            records = result.get("companies", [])
+    try:
+        async with GHLClient(access_token, ghl_location_id) as client:
+            if source_object == "contacts":
+                result = await client.get_contacts(limit=limit)
+                records = result.get("contacts", [])
+            elif source_object == "companies":
+                result = await client.search_companies(limit=limit)
+                records = result.get("companies", [])
+    except Exception as e:
+        # Extract actual error from RetryError if present
+        error_msg = str(e)
+        if hasattr(e, 'last_attempt') and e.last_attempt.exception():
+            inner_error = e.last_attempt.exception()
+            if hasattr(inner_error, 'response'):
+                error_msg = f"GHL API error {inner_error.response.status_code}: {inner_error.response.text[:200]}"
+            else:
+                error_msg = str(inner_error)
+        logger.error(f"Failed to fetch {source_object} from GHL: {error_msg}")
+        raise Exception(f"GHL API call failed: {error_msg}")
 
     logger.info(f"Scan: Fetched {len(records)} {source_object}")
     if records:

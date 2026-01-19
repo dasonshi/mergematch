@@ -54,7 +54,10 @@ class GHLClient:
         if query:
             params["query"] = query
 
+        logger.info(f"[GHL] GET /contacts/ with params: {params}")
         response = await self._client.get("/contacts/", params=params)
+        if response.status_code >= 400:
+            logger.error(f"[GHL] Get contacts failed: {response.status_code} - {response.text[:500]}")
         response.raise_for_status()
         return response.json()
 
