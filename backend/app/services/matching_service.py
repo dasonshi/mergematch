@@ -90,6 +90,15 @@ def get_field_value(record: dict, field: str) -> str:
     if not record:
         return ""
 
+    # Special handling for emailDomain - extract domain from email
+    if field == "emailDomain":
+        email = record.get("email") or ""
+        if isinstance(email, list) and len(email) > 0:
+            email = email[0]
+        if email and "@" in str(email):
+            return str(email).lower().split("@")[1]
+        return ""
+
     # Handle common GHL field mappings
     field_mappings = {
         "email": ["email", "emails"],

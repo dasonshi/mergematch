@@ -50,6 +50,7 @@ function hasAccess(userPlan: string, requiredTier: string): boolean {
 const fallbackFields: Record<string, { id: string; name: string }[]> = {
   contacts: [
     { id: "email", name: "Email" },
+    { id: "emailDomain", name: "Email Domain" },
     { id: "phone", name: "Phone" },
     { id: "firstName", name: "First Name" },
     { id: "lastName", name: "Last Name" },
@@ -57,6 +58,7 @@ const fallbackFields: Record<string, { id: string; name: string }[]> = {
   companies: [
     { id: "name", name: "Company Name" },
     { id: "email", name: "Email" },
+    { id: "emailDomain", name: "Email Domain" },
     { id: "phone", name: "Phone" },
   ],
 };
@@ -65,7 +67,13 @@ const matchTypes = [
   { id: "exact", name: "Exact Match" },
   { id: "fuzzy", name: "Fuzzy Match (85%)" },
   { id: "fuzzy90", name: "Fuzzy Match (90%)" },
+  { id: "phone", name: "Phone Match", fieldRestriction: "phone" },
 ];
+
+// Get available match types based on selected field
+const getMatchTypesForField = (fieldId: string) => {
+  return matchTypes.filter(mt => !mt.fieldRestriction || mt.fieldRestriction === fieldId);
+};
 
 const strategies = [
   { id: "standard", name: "Standard Contact Merge", description: "Keep most complete record, prefer master values", prebuilt: true },
@@ -744,7 +752,7 @@ export default function MatchRuleForm() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              {matchTypes.map((opt) => (
+                              {getMatchTypesForField(field.field).map((opt) => (
                                 <SelectItem key={opt.id} value={opt.id}>
                                   {opt.name}
                                 </SelectItem>

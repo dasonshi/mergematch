@@ -22,6 +22,42 @@ import { api } from "@/lib/api";
 import { ResponsiveTable, ResponsiveTableContent } from "@/components/ui/responsive-table";
 import { cn } from "@/lib/utils";
 
+// Helper to get field value from record (handles nested custom fields)
+const getFieldValue = (record: Record<string, any>, field: string): string => {
+  if (field.startsWith("customField.")) {
+    const customKey = field.replace("customField.", "");
+    const customFields = record.customFields || record.customField || {};
+    return customFields[customKey] || record[customKey] || "";
+  }
+  return record[field] || "";
+};
+
+// Get the record's display name
+const getRecordName = (record: Record<string, any>): string => {
+  if (record.firstName && record.lastName) {
+    return `${record.firstName} ${record.lastName}`;
+  }
+  return record.firstName || record.name || record.email || "—";
+};
+
+// Get match field values as subheading (up to 3 fields)
+const getMatchFieldSubheading = (
+  record: Record<string, any>,
+  matchFields: Array<{ field: string; algorithm: string }>
+): string => {
+  const fields = matchFields.slice(0, 3);
+  const values = fields
+    .map((f) => getFieldValue(record, f.field))
+    .filter((v) => v);
+
+  if (values.length === 0) {
+    // Fallback if no match field values
+    return record.email || record.phone || "";
+  }
+
+  return values.join(" • ");
+};
+
 export default function MatchRuleDetail() {
   const { id } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -363,13 +399,12 @@ export default function MatchRuleDetail() {
       {/* Page Header with Actions */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
-          <Link
-            to="/"
-            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Dashboard
-          </Link>
+          <Button variant="secondary" size="sm" asChild>
+            <Link to="/">
+              <ArrowLeft className="h-4 w-4 mr-1" />
+              Dashboard
+            </Link>
+          </Button>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">
             {rule.name}
           </h1>
@@ -535,7 +570,7 @@ export default function MatchRuleDetail() {
       </Card>
 
       {/* Pending Matches Section */}
-      <div className="space-y-3">
+      <div className="space-y-4">
         <button
           onClick={() => setMatchesExpanded(!matchesExpanded)}
           className="flex items-center gap-2 text-xl font-bold hover:text-primary transition-colors w-full text-left"
@@ -569,68 +604,83 @@ export default function MatchRuleDetail() {
                           <th className="text-right py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Actions</th>
                         </tr>
                       </thead>
-                    <tbody>
-                    {pendingMatches.map((match: any) => {
-                      const recordA = match.record_a_data || {};
-                      const recordB = match.record_b_data || {};
-                      const confidence = Math.round((match.confidence_score || 0) * 100);
-                      const isMerging = mergingIds.has(match.id);
+                      <tbody>
+                        {pendingMatches.map((match: any) => {
+                          const recordA = match.record_a_data || {};
+                          const recordB = match.record_b_data || {};
+                          const confidence = Math.round((match.confidence_score || 0) * 100);
+                          const isMerging = mergingIds.has(match.id);
+                          const matchFields = rule.match_fields || [];
+                          const subheadingA = getMatchFieldSubheading(recordA, matchFields);
+                          const subheadingB = getMatchFieldSubheading(recordB, matchFields);
 
-                      return (
-                        <tr key={match.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
-                          <td className="py-3 px-4">
-                            <div className="font-medium truncate max-w-[200px]">
-                              {recordA.firstName || recordA.name || recordA.email || "—"}
-                            </div>
-                            <div className="text-xs text-muted-foreground truncate max-w-[200px]">
-                              {recordA.email || recordA.phone || ""}
-                            </div>
-                          </td>
-                          <td className="py-3 px-4">
-                            <div className="font-medium truncate max-w-[200px]">
-                              {recordB.firstName || recordB.name || recordB.email || "—"}
-                            </div>
-                            <div className="text-xs text-muted-foreground truncate max-w-[200px]">
-                              {recordB.email || recordB.phone || ""}
-                            </div>
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            <Badge
-                              variant="outline"
-                              className={cn(
-                                "font-semibold",
-                                confidence >= 90 ? "bg-green-100 text-green-700 border-green-200" :
-                                confidence >= 80 ? "bg-amber-100 text-amber-700 border-amber-200" :
-                                "bg-red-100 text-red-700 border-red-200"
-                              )}
-                            >
-                              {confidence}%
-                            </Badge>
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <div className="flex justify-end gap-2">
-                              <Button variant="outline" size="sm" asChild>
-                                <Link to={`/match-rules/${id}/review/${match.id}`}>Review</Link>
-                              </Button>
-                              <Button
-                                size="sm"
-                                onClick={() => quickMergeMutation.mutate(match)}
-                                disabled={isMerging}
-                              >
-                                {isMerging ? <Loader2 className="h-3 w-3 animate-spin" /> : "Merge"}
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    </tbody>
-                  </ResponsiveTableContent>
-                </ResponsiveTable>
+                          return (
+                            <tr key={match.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
+                              <td className="py-3 px-4">
+                                <div className="font-medium truncate max-w-[200px]">
+                                  {getRecordName(recordA)}
+                                </div>
+                                {subheadingA && (
+                                  <div className="text-xs text-muted-foreground truncate max-w-[200px]">
+                                    {subheadingA}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-3 px-4">
+                                <div className="font-medium truncate max-w-[200px]">
+                                  {getRecordName(recordB)}
+                                </div>
+                                {subheadingB && (
+                                  <div className="text-xs text-muted-foreground truncate max-w-[200px]">
+                                    {subheadingB}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-3 px-4 text-center">
+                                <Badge
+                                  variant="outline"
+                                  className={cn(
+                                    "font-semibold",
+                                    confidence >= 90 ? "bg-green-100 text-green-700 border-green-200" :
+                                    confidence >= 80 ? "bg-amber-100 text-amber-700 border-amber-200" :
+                                    "bg-red-100 text-red-700 border-red-200"
+                                  )}
+                                >
+                                  {confidence}%
+                                </Badge>
+                              </td>
+                              <td className="py-3 px-4 text-right">
+                                <div className="flex justify-end gap-2">
+                                  <Button variant="outline" size="sm" asChild>
+                                    <Link to={`/match-rules/${id}/review/${match.id}`}>Review</Link>
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    onClick={() => quickMergeMutation.mutate(match)}
+                                    disabled={isMerging}
+                                  >
+                                    {isMerging ? <Loader2 className="h-3 w-3 animate-spin" /> : "Merge"}
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </ResponsiveTableContent>
+                  </ResponsiveTable>
                 </div>
               </Card>
             )}
           </>
+        )}
+
+        {pendingMatches.length > 0 && (
+          <Button variant="outline" size="sm" asChild>
+            <Link to={`/match-rules/${id}/matches`}>
+              View All Pending Matches →
+            </Link>
+          </Button>
         )}
       </div>
 
@@ -713,9 +763,11 @@ export default function MatchRuleDetail() {
           </Card>
         )}
 
-        <Link to="/history" className="text-sm text-primary hover:underline font-medium">
-          View Full History →
-        </Link>
+        <Button variant="outline" size="sm" asChild>
+          <Link to="/history">
+            View Full History →
+          </Link>
+        </Button>
       </div>
 
       {/* Merge All Confirmation Dialog */}
