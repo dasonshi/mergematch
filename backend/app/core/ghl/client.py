@@ -167,10 +167,13 @@ class GHLClient:
 
     async def get_pipelines(self) -> List[Dict[str, Any]]:
         """Fetch all pipelines for the location."""
+        logger.info(f"[GHL] GET /opportunities/pipelines for location {self.location_id}")
         response = await self._client.get(
             "/opportunities/pipelines",
             params={"locationId": self.location_id}
         )
+        if response.status_code >= 400:
+            logger.error(f"[GHL] Get pipelines failed: {response.status_code} - {response.text[:500]}")
         response.raise_for_status()
         return response.json().get("pipelines", [])
 
