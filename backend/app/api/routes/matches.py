@@ -33,7 +33,7 @@ async def list_matches(
     location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
     status: Optional[str] = Query(None, description="Filter by status: pending, approved, rejected, merged"),
     rule_id: Optional[str] = Query(None, description="Filter by match rule ID"),
-    limit: int = Query(50, le=100),
+    limit: int = Query(50, le=1000),
     offset: int = Query(0),
 ):
     """List match pairs for the current location."""
