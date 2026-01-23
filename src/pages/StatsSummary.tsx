@@ -15,10 +15,6 @@ const chartConfig = {
     label: "Merged",
     color: "hsl(142, 76%, 36%)",
   },
-  failed: {
-    label: "Failed",
-    color: "hsl(0, 84%, 60%)",
-  },
   rolled_back: {
     label: "Restored",
     color: "hsl(38, 92%, 50%)",
@@ -27,7 +23,6 @@ const chartConfig = {
 
 const COLORS = {
   completed: "#22c55e",
-  failed: "#ef4444",
   rolled_back: "#f59e0b",
 };
 
@@ -40,8 +35,6 @@ export default function StatsSummary() {
     enabled: isAuthenticated && !!locationId,
   });
 
-  // Debug logging
-  console.log("Stats page - isAuthenticated:", isAuthenticated, "locationId:", locationId, "stats:", stats, "error:", error);
 
   const { data: rulesData } = useQuery({
     queryKey: ["rules", locationId],
@@ -70,8 +63,8 @@ export default function StatsSummary() {
           title="Your Stats"
           description="Detailed analytics and insights"
         >
-          <Button variant="outline" asChild>
-            <Link to="/"><ArrowLeft className="mr-2 h-4 w-4" /> Back to Dashboard</Link>
+          <Button size="sm" asChild>
+            <Link to="/"><ArrowLeft className="mr-2 h-4 w-4" /> Dashboard</Link>
           </Button>
         </PageHeader>
 
@@ -100,8 +93,8 @@ export default function StatsSummary() {
           title="Your Stats"
           description="Detailed analytics and insights"
         >
-          <Button variant="outline" asChild>
-            <Link to="/"><ArrowLeft className="mr-2 h-4 w-4" /> Back to Dashboard</Link>
+          <Button size="sm" asChild>
+            <Link to="/"><ArrowLeft className="mr-2 h-4 w-4" /> Dashboard</Link>
           </Button>
         </PageHeader>
 
@@ -133,7 +126,6 @@ export default function StatsSummary() {
   // Pie chart data
   const pieData = [
     { name: "Merged", value: stats.summary.completed, color: COLORS.completed },
-    { name: "Failed", value: stats.summary.failed, color: COLORS.failed },
     { name: "Restored", value: stats.summary.rolled_back, color: COLORS.rolled_back },
   ].filter(d => d.value > 0);
 
@@ -149,7 +141,7 @@ export default function StatsSummary() {
   }));
 
   // Calculate average merges per day (for days with activity)
-  const activeDays = stats.time_series.filter(d => d.completed > 0 || d.failed > 0 || d.rolled_back > 0);
+  const activeDays = stats.time_series.filter(d => d.completed > 0 || d.rolled_back > 0);
   const avgPerDay = activeDays.length > 0
     ? (stats.summary.total / activeDays.length).toFixed(1)
     : "0";
@@ -163,8 +155,8 @@ export default function StatsSummary() {
         title="Your Stats"
         description="Detailed analytics and insights for the last 30 days"
       >
-        <Button variant="outline" asChild>
-          <Link to="/"><ArrowLeft className="mr-2 h-4 w-4" /> Back to Dashboard</Link>
+        <Button size="sm" asChild>
+          <Link to="/"><ArrowLeft className="mr-2 h-4 w-4" /> Dashboard</Link>
         </Button>
       </PageHeader>
 
@@ -362,7 +354,6 @@ export default function StatsSummary() {
                 <ChartTooltip content={<ChartTooltipContent />} />
                 <ChartLegend content={<ChartLegendContent />} />
                 <Bar dataKey="completed" stackId="a" fill={COLORS.completed} radius={[0, 0, 0, 0]} />
-                <Bar dataKey="failed" stackId="a" fill={COLORS.failed} radius={[0, 0, 0, 0]} />
                 <Bar dataKey="rolled_back" stackId="a" fill={COLORS.rolled_back} radius={[0, 4, 4, 0]} />
               </BarChart>
             </ChartContainer>
@@ -371,7 +362,7 @@ export default function StatsSummary() {
       )}
 
       {/* Quick Info Cards */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2">
         <Card className="border-0 shadow-md">
           <CardContent className="pt-6">
             <div className="text-center">
@@ -388,16 +379,6 @@ export default function StatsSummary() {
               <p className="text-sm text-muted-foreground mb-1">Active Rules</p>
               <p className="text-2xl font-bold">{activeRules}</p>
               <p className="text-xs text-muted-foreground mt-1">of {rules.length} total</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-0 shadow-md">
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <p className="text-sm text-muted-foreground mb-1">Failed Operations</p>
-              <p className="text-2xl font-bold text-red-500">{stats.summary.failed}</p>
-              <p className="text-xs text-muted-foreground mt-1">need attention</p>
             </div>
           </CardContent>
         </Card>
