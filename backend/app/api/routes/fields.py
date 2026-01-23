@@ -339,7 +339,7 @@ async def get_pipelines(
                 })
             return result
         except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to fetch pipelines: {str(e)}"
-            )
+            # Return empty array if pipelines can't be fetched (e.g., missing scope)
+            # This allows the form to work without pipeline filtering
+            logger.warning(f"Failed to fetch pipelines (may need opportunities.readonly scope): {str(e)}")
+            return []
