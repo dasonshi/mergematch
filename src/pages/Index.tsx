@@ -137,6 +137,8 @@ export default function Dashboard() {
     queryKey: ['rules', locationId],
     queryFn: () => api.getMatchRules(),
     enabled: isAuthenticated && !!locationId,
+    gcTime: 0,
+    staleTime: 0,
   });
 
   // Fetch pending matches
@@ -144,6 +146,8 @@ export default function Dashboard() {
     queryKey: ['matches', 'pending', locationId],
     queryFn: () => api.getMatches('pending'),
     enabled: isAuthenticated && !!locationId,
+    gcTime: 0, // No cache - always fresh
+    staleTime: 0, // Always refetch
   });
 
   // Fetch merge stats
@@ -470,28 +474,33 @@ export default function Dashboard() {
 
         {/* Stats Row */}
         {(mergeStatsData?.total ?? 0) > 0 && (
-          <Card className="border-0 shadow-md overflow-hidden">
-            <div className="h-1 bg-gradient-to-r from-emerald-500 via-blue-500 to-purple-500" />
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between flex-wrap gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="rounded-xl bg-gradient-to-br from-emerald-500/20 to-blue-500/20 p-2.5">
-                    <TrendingUp className="h-5 w-5 text-emerald-500" />
+          <Link to="/stats" className="block">
+            <Card className="border-0 shadow-md overflow-hidden hover:shadow-lg transition-shadow cursor-pointer group">
+              <div className="h-1 bg-gradient-to-r from-emerald-500 via-blue-500 to-purple-500" />
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between flex-wrap gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-xl bg-gradient-to-br from-emerald-500/20 to-blue-500/20 p-2.5 group-hover:scale-105 transition-transform">
+                      <TrendingUp className="h-5 w-5 text-emerald-500" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold">Your Stats</p>
+                        <ArrowRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </div>
+                      <p className="text-xs text-muted-foreground">Click to view detailed analytics</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm font-semibold">Your Stats</p>
-                    <p className="text-xs text-muted-foreground">Track your merge progress</p>
-                  </div>
+                  <StatsRow
+                    totalMerges={mergeStatsData?.total ?? 0}
+                    completedMerges={mergeStatsData?.completed ?? 0}
+                    activeRules={rules.filter((r: MatchRule) => r.is_active).length}
+                    rollbackCount={mergeStatsData?.rolled_back ?? 0}
+                  />
                 </div>
-                <StatsRow
-                  totalMerges={mergeStatsData?.total ?? 0}
-                  completedMerges={mergeStatsData?.completed ?? 0}
-                  activeRules={rules.filter((r: MatchRule) => r.is_active).length}
-                  rollbackCount={mergeStatsData?.rolled_back ?? 0}
-                />
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </Link>
         )}
 
         {/* Quick Stats - Enhanced */}

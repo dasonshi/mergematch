@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException, Query, Header, Request
 from pydantic import BaseModel
-from typing import Dict, Optional
+from typing import Dict, Optional, List
+from datetime import datetime, timedelta
+from collections import defaultdict
 import uuid
 
 from app.db.supabase import get_supabase
@@ -42,6 +44,90 @@ async def get_merge_stats(
         stats["total"] += 1
 
     return stats
+
+
+@router.get("/stats/detailed")
+@limiter.limit("100/minute")
+async def get_detailed_merge_stats(
+    request: Request,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    days: int = Query(30, description="Number of days to include in time series"),
+):
+    """Get detailed merge statistics including time series data."""
+    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
+
+    supabase = get_supabase()
+
+    # Get all merges with timestamps and rule info
+    all_merges = supabase.table("merges").select(
+        "id, status, created_at, match_pairs(rule_id, match_rules(id, name))"
+    ).eq("location_id", user.location_id).execute()
+
+    # Calculate date range
+    end_date = datetime.utcnow().date()
+    start_date = end_date - timedelta(days=days - 1)
+
+    # Initialize daily counts
+    daily_data: Dict[str, Dict[str, int]] = {}
+    current = start_date
+    while current <= end_date:
+        date_str = current.isoformat()
+        daily_data[date_str] = {"completed": 0, "failed": 0, "rolled_back": 0}
+        current += timedelta(days=1)
+
+    # Calculate stats
+    stats = {"completed": 0, "failed": 0, "rolled_back": 0, "total": 0}
+    merges_by_rule: Dict[str, Dict] = defaultdict(lambda: {"name": "", "completed": 0, "failed": 0, "rolled_back": 0})
+
+    for merge in all_merges.data:
+        status = merge.get("status", "unknown")
+        created_at = merge.get("created_at")
+
+        # Count total stats
+        if status in stats:
+            stats[status] += 1
+        stats["total"] += 1
+
+        # Parse date and add to daily data if within range
+        if created_at:
+            try:
+                merge_date = datetime.fromisoformat(created_at.replace("Z", "+00:00")).date()
+                date_str = merge_date.isoformat()
+                if date_str in daily_data and status in daily_data[date_str]:
+                    daily_data[date_str][status] += 1
+            except (ValueError, AttributeError):
+                pass
+
+        # Count by rule
+        match_pair = merge.get("match_pairs")
+        if match_pair and match_pair.get("match_rules"):
+            rule_id = match_pair["match_rules"]["id"]
+            rule_name = match_pair["match_rules"]["name"]
+            merges_by_rule[rule_id]["name"] = rule_name
+            if status in merges_by_rule[rule_id]:
+                merges_by_rule[rule_id][status] += 1
+
+    # Convert daily data to sorted list
+    time_series = [
+        {"date": date, **counts}
+        for date, counts in sorted(daily_data.items())
+    ]
+
+    # Convert rule stats to list
+    by_rule = [
+        {"rule_id": rule_id, **data}
+        for rule_id, data in merges_by_rule.items()
+    ]
+
+    return {
+        "summary": stats,
+        "time_series": time_series,
+        "by_rule": by_rule,
+        "success_rate": round(
+            (stats["completed"] / stats["total"] * 100) if stats["total"] > 0 else 100, 1
+        ),
+    }
 
 
 @router.get("/")

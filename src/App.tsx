@@ -17,6 +17,7 @@ import MergeDetail from "./pages/MergeDetail";
 import PendingMatches from "./pages/PendingMatches";
 import Settings from "./pages/Settings";
 import Help from "./pages/Help";
+import StatsSummary from "./pages/StatsSummary";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -45,6 +46,7 @@ const App = () => (
               <Route path="/history" element={<History />} />
               <Route path="/history/:mergeId" element={<MergeDetail />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/stats" element={<StatsSummary />} />
               <Route path="/help" element={<Help />} />
               <Route path="*" element={<NotFound />} />
             </Routes>

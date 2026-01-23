@@ -265,6 +265,10 @@ class ApiClient {
     return this.fetch<{ completed: number; failed: number; rolled_back: number; total: number }>('/v1/merges/stats');
   }
 
+  async getDetailedMergeStats(days = 30) {
+    return this.fetch<DetailedMergeStats>(`/v1/merges/stats/detailed?days=${days}`);
+  }
+
   async getMerges(limit = 50, status?: string, ruleId?: string) {
     const params = new URLSearchParams({ limit: limit.toString() });
     if (status) params.append('status', status);
@@ -553,6 +557,29 @@ export interface CustomField {
   name: string;
   fieldKey: string;
   dataType: string;
+}
+
+export interface DetailedMergeStats {
+  summary: {
+    completed: number;
+    failed: number;
+    rolled_back: number;
+    total: number;
+  };
+  time_series: Array<{
+    date: string;
+    completed: number;
+    failed: number;
+    rolled_back: number;
+  }>;
+  by_rule: Array<{
+    rule_id: string;
+    name: string;
+    completed: number;
+    failed: number;
+    rolled_back: number;
+  }>;
+  success_rate: number;
 }
 
 export const api = new ApiClient();
