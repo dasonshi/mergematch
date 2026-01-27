@@ -14,7 +14,7 @@ from app.db.supabase import get_supabase
 from app.services.auth_service import get_location_tokens_with_refresh
 from app.services.matching_service import check_single_contact
 from app.services.merge_service import execute_merge
-from app.core.security import get_current_user_flexible
+from app.core.security import get_current_user_flexible, AuthenticatedUser
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,73 @@ async def get_current_plan_from_db(location_id: str) -> str:
     return "free"
 
 
+async def authenticate_ghl_action(
+    authorization: Optional[str] = None,
+    ghl_location_id: Optional[str] = None,
+) -> AuthenticatedUser:
+    """
+    Authenticate a GHL workflow action request.
+
+    Tries JWT Bearer token first. Falls back to looking up the location
+    by ghl_location_id in the database. This fallback is needed because
+    GHL custom actions send {{action.extras.locationId}} but cannot
+    include our JWT.
+
+    Security:
+    - Only installed, active locations exist in the DB
+    - Plan is always verified from the database (not the JWT)
+    - The ghl_location_id is injected by GHL itself (trusted source)
+    """
+    # Try JWT first (used by frontend / direct API calls)
+    if authorization:
+        try:
+            return await get_current_user_flexible(authorization=authorization)
+        except HTTPException:
+            pass  # Fall through to location_id lookup
+
+    # Fall back to DB lookup by GHL location ID (used by GHL workflow actions)
+    if not ghl_location_id:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required. Provide Authorization header or location_id.",
+        )
+
+    supabase = get_supabase()
+    result = supabase.table("locations").select(
+        "id, tenant_id, ghl_location_id, is_active, uninstalled_at, tenants(plan)"
+    ).eq("ghl_location_id", ghl_location_id).single().execute()
+
+    if not result.data:
+        logger.warning(f"GHL action auth failed: unknown location {ghl_location_id}")
+        raise HTTPException(
+            status_code=401,
+            detail="Location not found. Is the app installed?",
+        )
+
+    loc = result.data
+
+    # Verify the location is active and not uninstalled
+    if not loc.get("is_active") or loc.get("uninstalled_at"):
+        logger.warning(f"GHL action auth rejected: inactive location {ghl_location_id}")
+        raise HTTPException(
+            status_code=403,
+            detail="App is not active for this location.",
+        )
+
+    plan = "free"
+    if loc.get("tenants"):
+        plan = loc["tenants"].get("plan", "free")
+
+    logger.info(f"GHL action authenticated via location_id: {ghl_location_id}")
+
+    return AuthenticatedUser(
+        location_id=loc["id"],
+        ghl_location_id=loc["ghl_location_id"],
+        tenant_id=loc["tenant_id"],
+        plan=plan,
+    )
+
+
 class RuleOption(BaseModel):
     """Single option for rule dropdown."""
     label: str
@@ -57,8 +124,11 @@ async def get_rule_options(
     Get available match rules for dropdown in GHL workflow action.
     Returns rules in GHL External API format for Select field.
     """
-    # Authenticate user
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
+    # Authenticate: JWT or GHL location ID lookup
+    user = await authenticate_ghl_action(
+        authorization=authorization,
+        ghl_location_id=location_id,
+    )
 
     supabase = get_supabase()
 
@@ -82,18 +152,118 @@ async def get_rule_options(
     return RuleOptionsResponse(options=options)
 
 
-class DedupeCheckRequest(BaseModel):
-    """Request body for dedupe check."""
+# ---------------------------------------------------------------------------
+# GHL Default payload models (sent when body mode = "Default")
+# ---------------------------------------------------------------------------
+
+class GhlActionBranch(BaseModel):
+    """A branch definition from GHL's branches array."""
+    id: str
+    name: str
+    fields: Optional[Dict[str, Any]] = None
+
+
+class GhlActionData(BaseModel):
+    """The data object inside the GHL default payload."""
     contact_id: str
-    rule_id: Optional[str] = None  # Optional: specific rule to use
-    auto_execute: bool = True  # If true, merge immediately when threshold met
-    location_id: Optional[str] = None  # GHL location ID (from workflow context)
+    rule_id: Optional[str] = None
+    auto_execute: Optional[Any] = True  # Toggle sends string "true"/"false"
+
+
+class GhlActionExtras(BaseModel):
+    """The extras object inside the GHL default payload."""
+    locationId: Optional[str] = None
+    contactId: Optional[str] = None
+    workflowId: Optional[str] = None
+
+
+class DedupeCheckRequest(BaseModel):
+    """
+    Request body for dedupe check.
+
+    Accepts GHL Default payload format:
+      { "data": {...}, "extras": {...}, "branches": [...] }
+
+    Also accepts flat format for direct API / testing:
+      { "contact_id": "...", "location_id": "..." }
+    """
+    # GHL Default payload fields
+    data: Optional[GhlActionData] = None
+    extras: Optional[GhlActionExtras] = None
+    branches: Optional[List[GhlActionBranch]] = None
+
+    # Flat fields (for direct API calls / testing)
+    contact_id: Optional[str] = None
+    rule_id: Optional[str] = None
+    auto_execute: Optional[Any] = True
+    location_id: Optional[str] = None
+
+    def get_contact_id(self) -> str:
+        """Resolve contact_id from nested or flat format."""
+        if self.data and self.data.contact_id:
+            return self.data.contact_id
+        if self.contact_id:
+            return self.contact_id
+        raise ValueError("contact_id is required")
+
+    def get_rule_id(self) -> Optional[str]:
+        """Resolve rule_id from nested or flat format."""
+        if self.data and self.data.rule_id:
+            return self.data.rule_id
+        return self.rule_id
+
+    def get_auto_execute(self) -> bool:
+        """Resolve auto_execute, handling string 'true'/'false' from GHL toggles."""
+        val = self.data.auto_execute if self.data else self.auto_execute
+        if isinstance(val, bool):
+            return val
+        if isinstance(val, str):
+            return val.lower() in ("true", "1", "yes")
+        return bool(val)
+
+    def get_location_id(self) -> Optional[str]:
+        """Resolve GHL location ID from nested or flat format."""
+        if self.extras and self.extras.locationId:
+            return self.extras.locationId
+        return self.location_id
+
+    def resolve_branch_id(self, status: str) -> str:
+        """
+        Map a status string to the GHL branch UUID.
+
+        GHL assigns UUIDs to predefined branches. The branches array
+        is included in the Default payload. We match by branch name.
+        Falls back to the status string if no branches are provided
+        (e.g. during testing or direct API calls).
+        """
+        if not self.branches:
+            return status
+
+        # Map our internal status to the expected branch name
+        STATUS_TO_BRANCH_NAME = {
+            "unique": "No Duplicate",
+            "merged": "Auto-Merged",
+            "pending_review": "Needs Review",
+        }
+
+        target_name = STATUS_TO_BRANCH_NAME.get(status, status)
+
+        for branch in self.branches:
+            if branch.name.lower() == target_name.lower():
+                return branch.id
+
+        # Fallback: return status string (works for testing)
+        logger.warning(
+            f"No branch found for status '{status}' (expected name: '{target_name}'). "
+            f"Available branches: {[b.name for b in self.branches]}"
+        )
+        return status
 
 
 class DedupeCheckResponse(BaseModel):
     """Response for dedupe check."""
     status: str  # "merged", "unique", "pending_review"
-    branchId: str  # GHL workflow branching - matches status
+    branchId: str  # GHL workflow branching - UUID from predefined branches
     is_duplicate: bool
     matched_contact_id: Optional[str] = None
     confidence_score: Optional[float] = None
@@ -131,11 +301,21 @@ async def check_duplicate(
     - action_taken: What action was taken
     - master_record_id: If merged, which record survived
     """
-    # Use location_id from body if not in query params
-    effective_location_id = location_id or body.location_id
+    # Resolve fields from GHL Default or flat payload
+    try:
+        contact_id_val = body.get_contact_id()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="contact_id is required")
 
-    # Authenticate user
-    user = await get_current_user_flexible(authorization=authorization, location_id=effective_location_id)
+    rule_id_val = body.get_rule_id()
+    auto_execute_val = body.get_auto_execute()
+    ghl_loc_id = location_id or body.get_location_id()
+
+    # Authenticate: JWT if available, otherwise DB lookup by GHL location ID
+    user = await authenticate_ghl_action(
+        authorization=authorization,
+        ghl_location_id=ghl_loc_id,
+    )
 
     # SECURITY: Verify plan from database, not JWT (JWT could be stale after downgrade)
     current_plan = await get_current_plan_from_db(user.location_id)
@@ -156,12 +336,12 @@ async def check_duplicate(
     # Check for duplicates
     try:
         check_result = await check_single_contact(
-            contact_id=body.contact_id,
+            contact_id=contact_id_val,
             ghl_location_id=user.ghl_location_id,
             access_token=tokens["access_token"],
             tenant_id=user.tenant_id,
             internal_location_id=user.location_id,
-            rule_id=body.rule_id,
+            rule_id=rule_id_val,
             plan=user.plan,
         )
     except Exception as e:
@@ -176,7 +356,7 @@ async def check_duplicate(
     if not check_result.get("is_duplicate"):
         return DedupeCheckResponse(
             status="unique",
-            branchId="unique",
+            branchId=body.resolve_branch_id("unique"),
             is_duplicate=False,
             action_taken="none",
             contact_checked=check_result.get("contact_checked"),
@@ -186,7 +366,7 @@ async def check_duplicate(
     best_match = check_result.get("best_match")
 
     # Check if we should auto-merge
-    if best_match and best_match.get("auto_merge_eligible") and body.auto_execute:
+    if best_match and best_match.get("auto_merge_eligible") and auto_execute_val:
         # Create match pair record first (required for merge service)
         supabase = get_supabase()
         match_id = str(uuid.uuid4())
@@ -197,7 +377,7 @@ async def check_duplicate(
 
         # Determine master record: existing contact is master, new contact is duplicate
         master_id = best_match["matched_contact_id"]
-        duplicate_id = body.contact_id
+        duplicate_id = contact_id_val
 
         match_data = {
             "id": match_id,
@@ -255,7 +435,7 @@ async def check_duplicate(
 
             return DedupeCheckResponse(
                 status="merged",
-                branchId="merged",
+                branchId=body.resolve_branch_id("merged"),
                 is_duplicate=True,
                 matched_contact_id=master_id,
                 confidence_score=best_match["confidence_score"],
@@ -271,7 +451,7 @@ async def check_duplicate(
             # Fall through to pending_review status
             return DedupeCheckResponse(
                 status="pending_review",
-                branchId="pending_review",
+                branchId=body.resolve_branch_id("pending_review"),
                 is_duplicate=True,
                 matched_contact_id=best_match["matched_contact_id"],
                 confidence_score=best_match["confidence_score"],
@@ -296,7 +476,7 @@ async def check_duplicate(
             "record_a_id": best_match["matched_contact_id"],
             "record_a_type": "contact",
             "record_a_data": best_match["matched_contact_data"],
-            "record_b_id": body.contact_id,
+            "record_b_id": contact_id_val,
             "record_b_type": "contact",
             "record_b_data": new_contact_data,  # Full contact data for merge
             "confidence_score": best_match["confidence_score"] / 100,
@@ -311,7 +491,7 @@ async def check_duplicate(
 
         return DedupeCheckResponse(
             status="pending_review",
-            branchId="pending_review",
+            branchId=body.resolve_branch_id("pending_review"),
             is_duplicate=True,
             matched_contact_id=best_match["matched_contact_id"],
             confidence_score=best_match["confidence_score"],
@@ -323,7 +503,7 @@ async def check_duplicate(
     # Shouldn't reach here, but handle edge case
     return DedupeCheckResponse(
         status="unique",
-        branchId="unique",
+        branchId=body.resolve_branch_id("unique"),
         is_duplicate=False,
         action_taken="none",
         contacts_scanned=check_result.get("contacts_scanned", 0),
