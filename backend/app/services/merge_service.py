@@ -2,6 +2,7 @@
 Merge service for executing contact merges via GHL API.
 """
 from typing import Dict, Any
+from datetime import datetime
 import uuid
 import logging
 import httpx
@@ -420,6 +421,12 @@ async def execute_merge(
 
         # Update match status to merged
         supabase.table("match_pairs").update({"status": "merged"}).eq("id", match_id).execute()
+
+        # Update rule's last_merge_at timestamp
+        if rule_id:
+            supabase.table("match_rules").update(
+                {"last_merge_at": datetime.utcnow().isoformat()}
+            ).eq("id", rule_id).execute()
 
         # Clean up OTHER match_pairs that reference the deleted duplicate contact
         # Mark them as stale since the contact no longer exists
