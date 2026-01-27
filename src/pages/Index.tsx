@@ -234,8 +234,8 @@ export default function Dashboard() {
 
   const rulesWithPending = rules.filter((r: MatchRule) => pendingByRule[r.id] > 0).length;
 
-  // Unique duplicate pairs (deduplicated across rules so same pair isn't counted twice)
-  const duplicatesToReview = matchesData?.unique_pairs ?? pendingTotalCount;
+  // Unique contacts involved in pending matches (each contact counted once regardless of how many rules matched it)
+  const duplicatesToReview = matchesData?.unique_contacts ?? pendingTotalCount;
 
   const formatLastScan = (lastScanAt?: string) => {
     if (!lastScanAt) return 'Never';
@@ -542,7 +542,7 @@ export default function Dashboard() {
                         <AnimatedCounter value={duplicatesToReview} />
                       </p>
                       <p className="text-sm text-muted-foreground mt-1">
-                        unique duplicate pairs across <span className="font-semibold text-foreground">{rulesWithPending}</span> {rulesWithPending === 1 ? "rule" : "rules"}
+                        unique contacts with duplicates across <span className="font-semibold text-foreground">{rulesWithPending}</span> {rulesWithPending === 1 ? "rule" : "rules"}
                       </p>
                     </>
                   )}

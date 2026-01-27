@@ -54,9 +54,10 @@ async def list_matches(
     count_result = count_query.limit(1).execute()
     true_total = count_result.count if count_result.count is not None else 0
 
-    # Count unique contact pairs (deduplicated across rules)
+    # Count unique contacts involved in matches (deduplicated across rules)
+    # A contact appearing in 10 pairs across 5 rules is still just 1 contact
     # Paginate to handle >1000 rows (Supabase default limit)
-    unique_pairs = set()
+    unique_contacts = set()
     page_offset = 0
     page_size = 1000
     while True:
@@ -67,9 +68,8 @@ async def list_matches(
             ids_query = ids_query.eq("rule_id", rule_id)
         ids_result = ids_query.range(page_offset, page_offset + page_size - 1).execute()
         for row in ids_result.data:
-            # Normalize pair order so (A,B) and (B,A) are the same
-            pair = (min(row["record_a_id"], row["record_b_id"]), max(row["record_a_id"], row["record_b_id"]))
-            unique_pairs.add(pair)
+            unique_contacts.add(row["record_a_id"])
+            unique_contacts.add(row["record_b_id"])
         if len(ids_result.data) < page_size:
             break
         page_offset += page_size
@@ -87,7 +87,7 @@ async def list_matches(
     return {
         "data": result.data,
         "total": true_total,
-        "unique_pairs": len(unique_pairs),
+        "unique_contacts": len(unique_contacts),
         "limit": limit,
         "offset": offset,
     }
