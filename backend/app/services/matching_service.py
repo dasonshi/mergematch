@@ -168,13 +168,19 @@ def compare_records(
         algorithm = field_config.get("algorithm", "exact")
         weight = float(field_config.get("weight", 1.0))
         operator = field_config.get("operator", "AND")
+        negate = bool(field_config.get("negate", False))
+        match_against = field_config.get("match_against", None)
 
         val_a = get_field_value(record_a, field)
-        val_b = get_field_value(record_b, field)
+        # Cross-field matching: compare field on record_a vs match_against on record_b
+        val_b = get_field_value(record_b, match_against if match_against else field)
 
-        # Skip if either value is empty
+        # Score key for cross-field matching
+        score_key = f"{field}_vs_{match_against}" if match_against else field
+
+        # Skip if either value is empty (can't confirm match or NOT match without data)
         if not val_a or not val_b:
-            field_scores[field] = {"match": False, "score": 0.0, "skipped": True}
+            field_scores[score_key] = {"match": False, "score": 0.0, "skipped": True}
             if operator == "AND":
                 all_and_fields_match = False
             continue
@@ -184,6 +190,8 @@ def compare_records(
             is_match, score = exact_match(val_a, val_b)
         elif algorithm == "fuzzy":
             is_match, score = fuzzy_match(val_a, val_b)
+        elif algorithm == "fuzzy90":
+            is_match, score = fuzzy_match(val_a, val_b, threshold=0.90)
         elif algorithm == "phone":
             is_match, score = phone_match(val_a, val_b)
         elif algorithm == "email_domain":
@@ -192,7 +200,12 @@ def compare_records(
             # Default to exact
             is_match, score = exact_match(val_a, val_b)
 
-        field_scores[field] = {"match": is_match, "score": score}
+        # Apply negation: flip match result and invert score (backward compat)
+        if negate:
+            is_match = not is_match
+            score = 1.0 - score
+
+        field_scores[score_key] = {"match": is_match, "score": score}
 
         # Track AND/OR logic
         if operator == "AND":

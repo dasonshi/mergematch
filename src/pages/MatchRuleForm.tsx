@@ -1,11 +1,20 @@
 import { useState, useEffect } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Plus, Trash2, Lock, Info, Loader2, ArrowRight, Check } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Lock, Info, Loader2, ArrowRight, Check, HelpCircle, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -63,17 +72,23 @@ const fallbackFields: Record<string, { id: string; name: string }[]> = {
   ],
 };
 
-const matchTypes = [
+// Fields with a fixed algorithm — the algorithm selector is hidden for these
+const FIXED_ALGORITHM_FIELDS: Record<string, { algorithm: string; label: string }> = {
+  email: { algorithm: "exact", label: "Exact Match" },
+  phone: { algorithm: "phone", label: "Phone Match" },
+  emailDomain: { algorithm: "email_domain", label: "Domain Match" },
+  website: { algorithm: "exact", label: "Exact Match" },
+  dateOfBirth: { algorithm: "exact", label: "Exact Match" },
+};
+
+// Text/name fields and custom fields allow algorithm selection
+const TEXT_MATCH_TYPES = [
   { id: "exact", name: "Exact Match" },
   { id: "fuzzy", name: "Fuzzy Match (85%)" },
   { id: "fuzzy90", name: "Fuzzy Match (90%)" },
-  { id: "phone", name: "Phone Match", fieldRestriction: "phone" },
 ];
 
-// Get available match types based on selected field
-const getMatchTypesForField = (fieldId: string) => {
-  return matchTypes.filter(mt => !mt.fieldRestriction || mt.fieldRestriction === fieldId);
-};
+const isFixedAlgorithmField = (fieldId: string) => fieldId in FIXED_ALGORITHM_FIELDS;
 
 const strategies = [
   { id: "standard", name: "Standard Contact Merge", description: "Keep most complete record, prefer master values", prebuilt: true },
@@ -145,7 +160,7 @@ export default function MatchRuleForm() {
 
   const [ruleName, setRuleName] = useState("");
   const [objectType, setObjectType] = useState("contacts");
-  const [fields, setFields] = useState<{ name: string; matchType: string; operator: "AND" | "OR" }[]>([
+  const [fields, setFields] = useState<{ name: string; matchType: string; operator: "AND" | "OR"; matchAgainst?: string }[]>([
     { name: "", matchType: "exact", operator: "AND" },
   ]);
   const [strategy, setStrategy] = useState("standard");
@@ -153,6 +168,11 @@ export default function MatchRuleForm() {
   const [scheduleTime, setScheduleTime] = useState("06:00");
   const [scheduleDayOfWeek, setScheduleDayOfWeek] = useState("1"); // Monday
   const [scheduleDayOfMonth, setScheduleDayOfMonth] = useState("1"); // 1st
+
+  // Feedback dialog state
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [feedbackSending, setFeedbackSending] = useState(false);
 
   // Related records handling (for contacts)
   const [relatedRecordsConfig, setRelatedRecordsConfig] = useState<{
@@ -180,6 +200,14 @@ export default function MatchRuleForm() {
     queryKey: ['rule', id],
     queryFn: () => api.getMatchRule(id!),
     enabled: isEditing && isAuthenticated && !!locationId,
+  });
+
+  // Fetch all rules to check for duplicate names
+  const { data: allRules } = useQuery({
+    queryKey: ['rules'],
+    queryFn: () => api.getMatchRules(),
+    enabled: isAuthenticated && !!locationId,
+    staleTime: 30 * 1000, // Cache for 30 seconds
   });
 
   // Fetch available objects (standard + custom from GHL)
@@ -223,9 +251,30 @@ export default function MatchRuleForm() {
   ];
 
   // Use fetched fields or fallback to static fields
-  const fieldOptions = fetchedFields?.length
+  const baseFieldOptions = fetchedFields?.length
     ? fetchedFields.map(f => ({ id: f.id, name: f.name, isCustom: f.isCustom }))
     : (fallbackFields[objectType] || []).map(f => ({ ...f, isCustom: false }));
+
+  // Add synthetic fields (derived from other fields)
+  const syntheticFields = [];
+  if (objectType === "contacts" || objectType === "companies") {
+    // Add Email Domain field after Email if email exists
+    const emailIndex = baseFieldOptions.findIndex(f => f.id === "email");
+    if (emailIndex >= 0) {
+      syntheticFields.push({ id: "emailDomain", name: "Email Domain", isCustom: false, insertAfter: "email" });
+    }
+  }
+
+  // Insert synthetic fields at appropriate positions
+  const fieldOptions = [...baseFieldOptions];
+  for (const sf of syntheticFields) {
+    const insertIndex = fieldOptions.findIndex(f => f.id === sf.insertAfter);
+    if (insertIndex >= 0) {
+      fieldOptions.splice(insertIndex + 1, 0, { id: sf.id, name: sf.name, isCustom: sf.isCustom });
+    } else {
+      fieldOptions.push({ id: sf.id, name: sf.name, isCustom: sf.isCustom });
+    }
+  }
 
   // Build object types with tier requirements and availability
   const objectTypes = (fetchedObjects || [
@@ -247,43 +296,18 @@ export default function MatchRuleForm() {
   // Create mutation
   const createMutation = useMutation({
     mutationFn: (rule: Partial<MatchRule>) => api.createMatchRule(rule),
-    onSuccess: async (data: MatchRule & { scan_pending?: boolean }) => {
+    onSuccess: (data: MatchRule) => {
       console.log('Rule created successfully:', data.id);
       queryClient.invalidateQueries({ queryKey: ['rules'] });
 
       toast({
         title: "Rule created",
-        description: `"${ruleName}" created. Running initial scan...`,
+        description: `"${ruleName}" created. Starting scan...`,
       });
 
-      // Navigate to the new rule's detail page immediately
-      const ruleId = data.id;
-      navigate(`/match-rules/${ruleId}`);
-
-      // Trigger initial scan in background (same as manual "Scan Now")
-      if (data.scan_pending) {
-        try {
-          console.log('Triggering initial scan for rule:', ruleId);
-          const scanResult = await api.scanRule(ruleId);
-          console.log('Initial scan completed:', scanResult);
-
-          // Refresh matches after scan completes
-          queryClient.invalidateQueries({ queryKey: ['matches'] });
-          queryClient.invalidateQueries({ queryKey: ['rule', ruleId] });
-
-          toast({
-            title: "Scan complete",
-            description: `Found ${scanResult.matches_found || 0} potential duplicate${scanResult.matches_found !== 1 ? 's' : ''} from ${scanResult.records_scanned?.toLocaleString() || 0} records.`,
-          });
-        } catch (scanError) {
-          console.error('Initial scan failed:', scanError);
-          toast({
-            title: "Scan failed",
-            description: "Initial scan failed. You can try again from the rule page.",
-            variant: "destructive",
-          });
-        }
-      }
+      // Navigate to the new rule's detail page with scan=pending param
+      // The detail page will auto-trigger the scan
+      navigate(`/match-rules/${data.id}?scan=pending`);
     },
     onError: (error: Error) => {
       console.error('Rule creation failed:', error);
@@ -321,11 +345,15 @@ export default function MatchRuleForm() {
     if (existingRule) {
       setRuleName(existingRule.name);
       setObjectType(existingRule.source_object);
-      setFields(existingRule.match_fields.map((f: MatchField) => ({
-        name: f.field,
-        matchType: f.algorithm,
-        operator: f.operator || "AND"
-      })));
+      setFields(existingRule.match_fields.map((f: MatchField) => {
+        const fixed = FIXED_ALGORITHM_FIELDS[f.field];
+        return {
+          name: f.field,
+          matchType: fixed ? fixed.algorithm : f.algorithm,
+          operator: f.operator || "AND",
+          matchAgainst: f.match_against || undefined,
+        };
+      }));
       setStrategy(existingRule.merge_strategy || "standard");
       setFrequency(existingRule.schedule_frequency || "manual");
 
@@ -353,7 +381,7 @@ export default function MatchRuleForm() {
     }
   };
 
-  const updateField = (index: number, key: "name" | "matchType" | "operator", value: string) => {
+  const updateField = (index: number, key: "name" | "matchType" | "operator" | "matchAgainst", value: string) => {
     const updated = [...fields];
     (updated[index] as any)[key] = value;
     setFields(updated);
@@ -368,8 +396,16 @@ export default function MatchRuleForm() {
     fields.forEach((field, i) => {
       if (!field.name) return;
       const fieldLabel = fieldOptions.find(f => f.id === field.name)?.name || field.name;
-      const matchLabel = matchTypes.find(m => m.id === field.matchType)?.name || field.matchType;
-      const condition = `${fieldLabel} (${matchLabel})`;
+      const fixed = FIXED_ALGORITHM_FIELDS[field.name];
+      const matchLabel = fixed
+        ? fixed.label
+        : TEXT_MATCH_TYPES.find(m => m.id === field.matchType)?.name || field.matchType;
+      const matchAgainstLabel = field.matchAgainst
+        ? fieldOptions.find(f => f.id === field.matchAgainst)?.name || field.matchAgainst
+        : null;
+      const condition = matchAgainstLabel
+        ? `${fieldLabel} vs ${matchAgainstLabel} (${matchLabel})`
+        : `${fieldLabel} (${matchLabel})`;
 
       if (i === 0) {
         currentGroup.push(condition);
@@ -380,6 +416,22 @@ export default function MatchRuleForm() {
     });
 
     return currentGroup.join("");
+  };
+
+  // Check if email domain is the only match condition (not allowed - too broad)
+  const isEmailDomainOnly = () => {
+    const filledFields = fields.filter(f => f.name);
+    return filledFields.length === 1 && filledFields[0].name === "emailDomain";
+  };
+
+  // Check if rule name is a duplicate (case-insensitive)
+  const isDuplicateName = () => {
+    if (!ruleName.trim() || !allRules?.data) return false;
+    const normalizedName = ruleName.trim().toLowerCase();
+    return allRules.data.some(rule =>
+      rule.name.toLowerCase() === normalizedName &&
+      rule.id !== id // Exclude current rule when editing
+    );
   };
 
   // Step validation
@@ -394,12 +446,28 @@ export default function MatchRuleForm() {
           });
           return false;
         }
+        if (isDuplicateName()) {
+          toast({
+            title: "Rule name already exists",
+            description: "Please choose a different name for your rule.",
+            variant: "destructive",
+          });
+          return false;
+        }
         return true;
       case 2:
         if (fields.some(f => !f.name)) {
           toast({
             title: "Match conditions incomplete",
             description: "Please select a field for all match conditions.",
+            variant: "destructive",
+          });
+          return false;
+        }
+        if (isEmailDomainOnly()) {
+          toast({
+            title: "Email Domain cannot be the only condition",
+            description: "Add another field (e.g., Name) to avoid matching all contacts at the same company.",
             variant: "destructive",
           });
           return false;
@@ -447,6 +515,7 @@ export default function MatchRuleForm() {
         algorithm: f.matchType,
         weight: 1.0,
         operator: f.operator,
+        ...(f.matchAgainst ? { match_against: f.matchAgainst } : {}),
       })),
       merge_strategy: strategy,
       schedule_frequency: frequency,
@@ -475,6 +544,33 @@ export default function MatchRuleForm() {
 
   const handleCancel = () => {
     navigate(isEditing ? `/match-rules/${id}` : "/");
+  };
+
+  const handleFeedbackSubmit = async () => {
+    if (!feedbackMessage.trim()) return;
+    setFeedbackSending(true);
+    try {
+      await fetch(
+        "https://services.leadconnectorhq.com/hooks/gdzneuvA9mUJoRroCv4O/webhook-trigger/f15fbb6a-b632-4a3a-bfb9-3428a8b42622",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: feedbackMessage,
+            locationId: locationId || "",
+            ruleName: ruleName || "",
+            timestamp: new Date().toISOString(),
+          }),
+        }
+      );
+      toast({ title: "Feedback sent", description: "Thanks! We'll review your request." });
+      setFeedbackMessage("");
+      setFeedbackOpen(false);
+    } catch {
+      toast({ title: "Failed to send", description: "Please try again later.", variant: "destructive" });
+    } finally {
+      setFeedbackSending(false);
+    }
   };
 
   // Animation variants for step transitions
@@ -534,13 +630,22 @@ export default function MatchRuleForm() {
                       placeholder="e.g., Email + Phone Match"
                       value={ruleName}
                       onChange={(e) => setRuleName(e.target.value.slice(0, 100))}
-                      className="text-lg"
+                      className={`text-lg ${isDuplicateName() ? "border-destructive focus-visible:ring-destructive" : ""}`}
                       maxLength={100}
                       autoFocus
                     />
-                    <p className="text-sm text-muted-foreground text-right">
-                      {ruleName.length}/100
-                    </p>
+                    <div className="flex justify-between items-center">
+                      {isDuplicateName() ? (
+                        <p className="text-sm text-destructive">
+                          A rule with this name already exists
+                        </p>
+                      ) : (
+                        <span />
+                      )}
+                      <p className="text-sm text-muted-foreground">
+                        {ruleName.length}/100
+                      </p>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -675,101 +780,177 @@ export default function MatchRuleForm() {
             >
               <Card className="shadow-md">
                 <CardHeader className="bg-muted/30 border-b">
-                  <CardTitle className="text-lg font-bold">Match Conditions</CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    Define which fields to compare and how they should be combined
-                  </p>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <CardTitle className="text-lg font-bold">Match Conditions</CardTitle>
+                      <p className="text-sm text-muted-foreground">
+                        Define which fields to compare and how they should be combined
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs text-muted-foreground hover:text-foreground gap-1.5 shrink-0"
+                      onClick={() => setFeedbackOpen(true)}
+                    >
+                      <HelpCircle className="h-3.5 w-3.5" />
+                      Need help?
+                    </Button>
+                  </div>
                 </CardHeader>
                 <CardContent className="space-y-3 pt-6">
                   {fields.map((field, index) => (
                     <div key={index} className="space-y-3">
                       {/* Condition Row */}
-                      <div className="flex gap-2 items-center p-4 bg-muted/40 rounded-lg border hover:bg-muted/50 transition-colors">
-                        <div className="flex-1 min-w-0">
-                          <Select
-                            value={field.name}
-                            onValueChange={(val) => {
-                              const selectedField = fieldOptions.find(f => f.id === val);
-                              // Check if custom field and user doesn't have access
-                              if (selectedField?.isCustom && !hasAccess(plan, "starter")) {
-                                return; // Don't allow selection
-                              }
-                              updateField(index, "name", val);
-                            }}
-                            disabled={fieldsLoading}
-                          >
-                            <SelectTrigger className="bg-background">
-                              <SelectValue placeholder={fieldsLoading ? "Loading fields..." : "Select field..."} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {/* Standard Fields */}
-                              {fieldOptions.filter(f => !f.isCustom).map((opt) => (
-                                <SelectItem key={opt.id} value={opt.id}>
-                                  {opt.name}
-                                </SelectItem>
-                              ))}
+                      <div className="p-4 rounded-lg border bg-muted/40 hover:bg-muted/50 transition-colors space-y-2">
+                        <div className="flex gap-2 items-center">
+                          <div className="flex-1 min-w-0">
+                            <Select
+                              value={field.name}
+                              onValueChange={(val) => {
+                                const selectedField = fieldOptions.find(f => f.id === val);
+                                // Check if custom field and user doesn't have access
+                                if (selectedField?.isCustom && !hasAccess(plan, "starter")) {
+                                  return;
+                                }
+                                updateField(index, "name", val);
+                                // Auto-assign algorithm for fixed fields, reset for text fields
+                                const fixed = FIXED_ALGORITHM_FIELDS[val];
+                                if (fixed) {
+                                  updateField(index, "matchType", fixed.algorithm);
+                                } else if (!TEXT_MATCH_TYPES.some(mt => mt.id === field.matchType)) {
+                                  updateField(index, "matchType", "exact");
+                                }
+                              }}
+                              disabled={fieldsLoading}
+                            >
+                              <SelectTrigger className="bg-background">
+                                <SelectValue placeholder={fieldsLoading ? "Loading fields..." : "Select field..."} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {/* Standard Fields */}
+                                {fieldOptions.filter(f => !f.isCustom).map((opt) => (
+                                  <SelectItem key={opt.id} value={opt.id}>
+                                    {opt.name}
+                                  </SelectItem>
+                                ))}
 
-                              {/* Custom Fields Section - only show if there are custom fields */}
-                              {fieldOptions.some(f => f.isCustom) && (
-                                <>
-                                  <SelectSeparator />
-                                  <SelectGroup>
-                                    <SelectLabel className="flex items-center gap-2">
-                                      Custom Fields
-                                      {!hasAccess(plan, "starter") && (
-                                        <UpgradeBadge tier="starter" size="sm" showTooltip={false} feature="custom_fields" />
-                                      )}
-                                    </SelectLabel>
-                                    {fieldOptions.filter(f => f.isCustom).map((opt) => {
-                                      const hasCustomFieldAccess = hasAccess(plan, "starter");
-                                      return (
-                                        <SelectItem
-                                          key={opt.id}
-                                          value={opt.id}
-                                          disabled={!hasCustomFieldAccess}
-                                        >
-                                          <span className="flex items-center gap-2">
-                                            <span className={!hasCustomFieldAccess ? "opacity-50" : ""}>{opt.name}</span>
-                                            {!hasCustomFieldAccess && (
-                                              <Lock className="h-3 w-3 text-muted-foreground" />
-                                            )}
-                                          </span>
-                                        </SelectItem>
-                                      );
-                                    })}
-                                  </SelectGroup>
-                                </>
-                              )}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <Select
-                            value={field.matchType}
-                            onValueChange={(val) => updateField(index, "matchType", val)}
+                                {/* Custom Fields Section */}
+                                {fieldOptions.some(f => f.isCustom) && (
+                                  <>
+                                    <SelectSeparator />
+                                    <SelectGroup>
+                                      <SelectLabel className="flex items-center gap-2">
+                                        Custom Fields
+                                        {!hasAccess(plan, "starter") && (
+                                          <UpgradeBadge tier="starter" size="sm" showTooltip={false} feature="custom_fields" />
+                                        )}
+                                      </SelectLabel>
+                                      {fieldOptions.filter(f => f.isCustom).map((opt) => {
+                                        const hasCustomFieldAccess = hasAccess(plan, "starter");
+                                        return (
+                                          <SelectItem
+                                            key={opt.id}
+                                            value={opt.id}
+                                            disabled={!hasCustomFieldAccess}
+                                          >
+                                            <span className="flex items-center gap-2">
+                                              <span className={!hasCustomFieldAccess ? "opacity-50" : ""}>{opt.name}</span>
+                                              {!hasCustomFieldAccess && (
+                                                <Lock className="h-3 w-3 text-muted-foreground" />
+                                              )}
+                                            </span>
+                                          </SelectItem>
+                                        );
+                                      })}
+                                    </SelectGroup>
+                                  </>
+                                )}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          {/* Algorithm selector — hidden for fixed-algorithm fields */}
+                          <div className="flex-1 min-w-0">
+                            {field.name && isFixedAlgorithmField(field.name) ? (
+                              <div className="flex items-center gap-2 h-10 px-3 rounded-md border bg-muted/50 text-sm">
+                                <Lock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                <span className="text-muted-foreground">{FIXED_ALGORITHM_FIELDS[field.name].label}</span>
+                              </div>
+                            ) : (
+                              <Select
+                                value={field.matchType}
+                                onValueChange={(val) => updateField(index, "matchType", val)}
+                              >
+                                <SelectTrigger className="bg-background">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {TEXT_MATCH_TYPES.map((opt) => (
+                                    <SelectItem key={opt.id} value={opt.id}>
+                                      {opt.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            )}
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeField(index)}
+                            disabled={fields.length === 1}
+                            className="shrink-0"
                           >
-                            <SelectTrigger className="bg-background">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {getMatchTypesForField(field.field).map((opt) => (
-                                <SelectItem key={opt.id} value={opt.id}>
-                                  {opt.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                            <Trash2 className="h-4 w-4 text-muted-foreground" />
+                          </Button>
                         </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => removeField(index)}
-                          disabled={fields.length === 1}
-                          className="shrink-0"
-                        >
-                          <Trash2 className="h-4 w-4 text-muted-foreground" />
-                        </Button>
+                        {/* Cross-field matching */}
+                        {field.name && (
+                          <div className="pl-1">
+                            {field.matchAgainst ? (
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs text-muted-foreground whitespace-nowrap">vs.</span>
+                                <Select
+                                  value={field.matchAgainst}
+                                  onValueChange={(val) => updateField(index, "matchAgainst", val)}
+                                >
+                                  <SelectTrigger className="h-8 text-xs bg-background">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {fieldOptions.filter(f => f.id !== field.name).map(opt => (
+                                      <SelectItem key={opt.id} value={opt.id}>
+                                        {opt.name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 shrink-0"
+                                  onClick={() => updateField(index, "matchAgainst", "")}
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                className="text-xs text-muted-foreground hover:text-foreground transition-colors underline"
+                                onClick={() => {
+                                  const firstOther = fieldOptions.find(f => f.id !== field.name);
+                                  if (firstOther) updateField(index, "matchAgainst", firstOther.id);
+                                }}
+                              >
+                                Match against a different field
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       {/* Operator Row - shown after each condition except the last */}
@@ -832,6 +1013,19 @@ export default function MatchRuleForm() {
                       <p className="text-sm font-mono">
                         {getLogicExpression()}
                       </p>
+                    </div>
+                  )}
+
+                  {/* Email Domain Only Warning */}
+                  {isEmailDomainOnly() && (
+                    <div className="mt-4 p-4 bg-destructive/10 border border-destructive/30 rounded-lg flex items-start gap-3">
+                      <Info className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-medium text-destructive">Email Domain alone is too broad</p>
+                        <p className="text-sm text-destructive/80 mt-1">
+                          Add another condition (e.g., Name) to avoid matching all contacts at the same company.
+                        </p>
+                      </div>
                     </div>
                   )}
                 </CardContent>
@@ -1384,7 +1578,14 @@ export default function MatchRuleForm() {
                   </>
                 )}
               </Button>
-              <Button type="button" onClick={handleNext}>
+              <Button
+                type="button"
+                onClick={handleNext}
+                disabled={
+                  (currentStep === 1 && (isDuplicateName() || !ruleName.trim())) ||
+                  (currentStep === 2 && isEmailDomainOnly())
+                }
+              >
                 Next
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
@@ -1392,6 +1593,33 @@ export default function MatchRuleForm() {
           )}
         </div>
       </form>
+
+      {/* Feedback Dialog */}
+      <Dialog open={feedbackOpen} onOpenChange={setFeedbackOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Request Custom Match Logic</DialogTitle>
+            <DialogDescription>
+              Tell us what matching logic you need and we'll review your request.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            placeholder="Describe the matching logic you need..."
+            value={feedbackMessage}
+            onChange={(e) => setFeedbackMessage(e.target.value)}
+            rows={4}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFeedbackOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleFeedbackSubmit} disabled={feedbackSending || !feedbackMessage.trim()}>
+              {feedbackSending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Send Feedback
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

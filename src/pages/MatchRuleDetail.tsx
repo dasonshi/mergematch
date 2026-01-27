@@ -107,6 +107,29 @@ export default function MatchRuleDetail() {
     gcTime: 0, // No cache - always fresh
   });
 
+  // Scan mutation (defined before useEffect that uses it)
+  const scanMutation = useMutation({
+    mutationFn: () => api.scanRule(id!),
+    onSuccess: (data: { matches_found: number; records_scanned: number; stale_cleaned?: number }) => {
+      const staleMsg = data.stale_cleaned ? ` Cleaned ${data.stale_cleaned} stale.` : '';
+      toast({
+        title: "Scan Complete",
+        description: `Found ${data.matches_found} matches from ${data.records_scanned} records.${staleMsg}`,
+      });
+      // Invalidate all match-related queries to ensure dashboard updates
+      queryClient.invalidateQueries({ queryKey: ["matches"] });
+      queryClient.invalidateQueries({ queryKey: ["matches", "pending"] });
+      queryClient.invalidateQueries({ queryKey: ["matches", id] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Scan Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // Auto-trigger merge all dialog from URL param
   useEffect(() => {
     const matches = matchesData?.data || [];
@@ -118,25 +141,16 @@ export default function MatchRuleDetail() {
     }
   }, [searchParams, matchesData, matchesLoading, setSearchParams]);
 
-  // Scan mutation
-  const scanMutation = useMutation({
-    mutationFn: () => api.scanRule(id!),
-    onSuccess: (data: { matches_found: number; records_scanned: number; stale_cleaned?: number }) => {
-      const staleMsg = data.stale_cleaned ? ` Cleaned ${data.stale_cleaned} stale.` : '';
-      toast({
-        title: "Scan Complete",
-        description: `Found ${data.matches_found} matches from ${data.records_scanned} records.${staleMsg}`,
-      });
-      queryClient.invalidateQueries({ queryKey: ["matches"] });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Scan Failed",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
+  // Auto-trigger initial scan when coming from rule creation
+  useEffect(() => {
+    if (searchParams.get('scan') === 'pending' && rule && !scanMutation.isPending) {
+      // Clear the scan param from URL
+      searchParams.delete('scan');
+      setSearchParams(searchParams, { replace: true });
+      // Trigger the scan
+      scanMutation.mutate();
+    }
+  }, [searchParams, rule, scanMutation.isPending, setSearchParams]);
 
   // Quick merge mutation (uses record A as master with all its values)
   const quickMergeMutation = useMutation({
@@ -399,7 +413,7 @@ export default function MatchRuleDetail() {
       {/* Page Header with Actions */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
-          <Button variant="secondary" size="sm" asChild>
+          <Button size="sm" asChild>
             <Link to="/">
               <ArrowLeft className="h-4 w-4 mr-1" />
               Dashboard
@@ -472,6 +486,28 @@ export default function MatchRuleDetail() {
           )}
         </div>
       </div>
+
+      {/* Scan Progress Banner */}
+      {scanMutation.isPending && (
+        <Card className="border-primary/30 bg-primary/5 shadow-sm">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-4">
+              <div className="rounded-lg bg-primary/10 p-2.5">
+                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm">Scanning for duplicates...</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Analyzing your {rule.source_object} records. This may take a moment.
+                </p>
+              </div>
+            </div>
+            <div className="mt-3 h-1.5 w-full rounded-full bg-primary/10 overflow-hidden">
+              <div className="h-full w-1/3 rounded-full bg-primary/40 animate-pulse" />
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Top-Level Stats */}
       <div className="grid gap-4 sm:grid-cols-3">
@@ -550,7 +586,10 @@ export default function MatchRuleDetail() {
               <p className="font-medium mt-1">
                 {(rule.match_fields || []).map((f: any, i: number) => (
                   <span key={f.field}>
-                    {f.field} ({f.algorithm}){i < rule.match_fields.length - 1 ? ", " : ""}
+                    {f.match_against
+                      ? `${f.field} vs ${f.match_against} (${f.algorithm})`
+                      : `${f.field} (${f.algorithm})`}
+                    {i < rule.match_fields.length - 1 ? ", " : ""}
                   </span>
                 ))}
               </p>

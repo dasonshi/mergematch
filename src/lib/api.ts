@@ -230,10 +230,11 @@ class ApiClient {
   }
 
   // Matches
-  async getMatches(status?: string, ruleId?: string) {
+  async getMatches(status?: string, ruleId?: string, limit?: number) {
     const params = new URLSearchParams();
     if (status) params.set('status', status);
     if (ruleId) params.set('rule_id', ruleId);
+    if (limit) params.set('limit', limit.toString());
     return this.fetch<{ data: MatchPair[]; total: number }>(`/v1/matches/?${params}`);
   }
 
@@ -439,6 +440,7 @@ export interface MatchRule {
   schedule_frequency: string;
   is_active: boolean;
   last_scan_at?: string;
+  last_merge_at?: string;
   created_at?: string;
   merge_settings?: RuleMergeSettings;
 }
@@ -448,6 +450,7 @@ export interface MatchField {
   algorithm: string;
   weight: number;
   operator: 'AND' | 'OR';
+  match_against?: string;
 }
 
 export interface MatchPair {

@@ -17,9 +17,10 @@ router = APIRouter()
 
 class MatchField(BaseModel):
     field: str
-    algorithm: str  # exact, fuzzy, phone, email_domain, phonetic
+    algorithm: str  # exact, fuzzy, fuzzy90, phone, email_domain, phonetic
     weight: float = 1.0
     operator: str = "AND"
+    match_against: Optional[str] = None  # Cross-field matching: compare field vs match_against
 
 
 class FieldPreservationMapping(BaseModel):
