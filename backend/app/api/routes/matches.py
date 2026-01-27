@@ -40,8 +40,22 @@ async def list_matches(
     user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
 
     supabase = get_supabase()
-    query = supabase.table("match_pairs").select("*").eq("location_id", user.location_id)
 
+    # Get the true total count (not limited by pagination)
+    count_query = (
+        supabase.table("match_pairs")
+        .select("*", count="exact")
+        .eq("location_id", user.location_id)
+    )
+    if status:
+        count_query = count_query.eq("status", status)
+    if rule_id:
+        count_query = count_query.eq("rule_id", rule_id)
+    count_result = count_query.limit(1).execute()
+    true_total = count_result.count if count_result.count is not None else 0
+
+    # Fetch paginated data
+    query = supabase.table("match_pairs").select("*").eq("location_id", user.location_id)
     if status:
         query = query.eq("status", status)
     if rule_id:
@@ -52,7 +66,7 @@ async def list_matches(
 
     return {
         "data": result.data,
-        "total": len(result.data),
+        "total": true_total,
         "limit": limit,
         "offset": offset,
     }
