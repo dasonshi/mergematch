@@ -54,6 +54,26 @@ async def list_matches(
     count_result = count_query.limit(1).execute()
     true_total = count_result.count if count_result.count is not None else 0
 
+    # Count unique contact pairs (deduplicated across rules)
+    # Paginate to handle >1000 rows (Supabase default limit)
+    unique_pairs = set()
+    page_offset = 0
+    page_size = 1000
+    while True:
+        ids_query = supabase.table("match_pairs").select("record_a_id, record_b_id").eq("location_id", user.location_id)
+        if status:
+            ids_query = ids_query.eq("status", status)
+        if rule_id:
+            ids_query = ids_query.eq("rule_id", rule_id)
+        ids_result = ids_query.range(page_offset, page_offset + page_size - 1).execute()
+        for row in ids_result.data:
+            # Normalize pair order so (A,B) and (B,A) are the same
+            pair = (min(row["record_a_id"], row["record_b_id"]), max(row["record_a_id"], row["record_b_id"]))
+            unique_pairs.add(pair)
+        if len(ids_result.data) < page_size:
+            break
+        page_offset += page_size
+
     # Fetch paginated data
     query = supabase.table("match_pairs").select("*").eq("location_id", user.location_id)
     if status:
@@ -67,6 +87,7 @@ async def list_matches(
     return {
         "data": result.data,
         "total": true_total,
+        "unique_pairs": len(unique_pairs),
         "limit": limit,
         "offset": offset,
     }

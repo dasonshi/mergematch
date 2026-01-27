@@ -235,7 +235,7 @@ class ApiClient {
     if (status) params.set('status', status);
     if (ruleId) params.set('rule_id', ruleId);
     if (limit) params.set('limit', limit.toString());
-    return this.fetch<{ data: MatchPair[]; total: number }>(`/v1/matches/?${params}`);
+    return this.fetch<{ data: MatchPair[]; total: number; unique_pairs?: number }>(`/v1/matches/?${params}`);
   }
 
   async getMatch(id: string) {

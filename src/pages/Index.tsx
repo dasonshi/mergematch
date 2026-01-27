@@ -14,6 +14,7 @@ import { DataTable, DataTableColumn } from "@/components/ui/data-table";
 import { NoRulesEmpty, NoMergesEmpty } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { AnimatedCounter } from "@/components/ui/animated-counter";
+import { Skeleton } from "@/components/ui/skeleton";
 import { StatsRow } from "@/components/ui/achievement-badge";
 import {
   DropdownMenu,
@@ -119,14 +120,14 @@ export default function Dashboard() {
   };
 
   // Fetch contacts count
-  const { data: contactsData } = useQuery({
+  const { data: contactsData, isLoading: contactsLoading } = useQuery({
     queryKey: ['contacts-stats', locationId],
     queryFn: () => api.getContactsStats(),
     enabled: isAuthenticated && !!locationId,
   });
 
   // Fetch companies count
-  const { data: companiesData } = useQuery({
+  const { data: companiesData, isLoading: companiesLoading } = useQuery({
     queryKey: ['companies', locationId],
     queryFn: () => api.getCompanies(),
     enabled: isAuthenticated && !!locationId,
@@ -141,24 +142,25 @@ export default function Dashboard() {
     staleTime: 0,
   });
 
-  // Fetch pending matches
-  const { data: matchesData } = useQuery({
+  // Fetch pending matches (higher limit to get accurate per-rule counts)
+  const { data: matchesData, isLoading: matchesLoading } = useQuery({
     queryKey: ['matches', 'pending', locationId],
-    queryFn: () => api.getMatches('pending'),
+    queryFn: () => api.getMatches('pending', undefined, 1000),
     enabled: isAuthenticated && !!locationId,
     gcTime: 0, // No cache - always fresh
     staleTime: 0, // Always refetch
+    refetchOnMount: 'always', // Always refetch when component mounts
   });
 
   // Fetch merge stats
-  const { data: mergeStatsData } = useQuery({
+  const { data: mergeStatsData, isLoading: mergeStatsLoading } = useQuery({
     queryKey: ['merge-stats', locationId],
     queryFn: () => api.getMergeStats(),
     enabled: isAuthenticated && !!locationId,
   });
 
   // Fetch recent merges (completed only for activity table)
-  const { data: mergesData } = useQuery({
+  const { data: mergesData, isLoading: mergesLoading } = useQuery({
     queryKey: ['merges', locationId],
     queryFn: () => api.getMerges(10),
     enabled: isAuthenticated && !!locationId,
@@ -204,11 +206,15 @@ export default function Dashboard() {
     },
   });
 
+  // Combined loading flag so all stat cards transition together
+  const statsLoading = contactsLoading || companiesLoading || matchesLoading || mergeStatsLoading;
+
   // Calculate stats from real data
   const contactsCount = contactsData?.total ?? 0;
   const companiesCount = companiesData?.total ?? companiesData?.companies?.length ?? 0;
   const rules = rulesData?.data ?? [];
   const pendingMatches = matchesData?.data ?? [];
+  const pendingTotalCount = matchesData?.total ?? pendingMatches.length;
   const recentMerges = mergesData?.data ?? [];
 
   // Build object counts dynamically for future custom objects
@@ -227,6 +233,9 @@ export default function Dashboard() {
   }, {});
 
   const rulesWithPending = rules.filter((r: MatchRule) => pendingByRule[r.id] > 0).length;
+
+  // Unique duplicate pairs (deduplicated across rules so same pair isn't counted twice)
+  const duplicatesToReview = matchesData?.unique_pairs ?? pendingTotalCount;
 
   const formatLastScan = (lastScanAt?: string) => {
     if (!lastScanAt) return 'Never';
@@ -285,8 +294,17 @@ export default function Dashboard() {
       hideOnMobile: true,
     },
     {
-      header: "Last Scan",
-      accessor: (rule) => <span className="text-muted-foreground">{formatLastScan(rule.last_scan_at)}</span>,
+      header: "Last Merge",
+      accessor: (rule) => <span className="text-muted-foreground">{formatLastScan(rule.last_merge_at)}</span>,
+      hideOnMobile: true,
+    },
+    {
+      header: "Last Scheduled Run",
+      accessor: (rule) => (
+        <span className="text-muted-foreground">
+          {rule.schedule_frequency !== 'manual' ? formatLastScan(rule.last_scan_at) : '—'}
+        </span>
+      ),
       hideOnMobile: true,
     },
     {
@@ -406,7 +424,7 @@ export default function Dashboard() {
 
   return (
     <TooltipProvider>
-      <div className="space-y-8">
+      <div className="space-y-6">
         {/* Header */}
         <PageHeader
           title="Welcome back!"
@@ -475,12 +493,11 @@ export default function Dashboard() {
         {/* Stats Row */}
         {(mergeStatsData?.total ?? 0) > 0 && (
           <Link to="/stats" className="block">
-            <Card className="border-0 shadow-md overflow-hidden hover:shadow-lg transition-shadow cursor-pointer group">
-              <div className="h-1 bg-gradient-to-r from-emerald-500 via-blue-500 to-purple-500" />
+            <Card className="shadow-sm overflow-hidden hover:shadow-lg transition-shadow cursor-pointer group">
               <CardContent className="p-4">
                 <div className="flex items-center justify-between flex-wrap gap-4">
                   <div className="flex items-center gap-3">
-                    <div className="rounded-xl bg-gradient-to-br from-emerald-500/20 to-blue-500/20 p-2.5 group-hover:scale-105 transition-transform">
+                    <div className="rounded-lg bg-emerald-500/10 p-2.5">
                       <TrendingUp className="h-5 w-5 text-emerald-500" />
                     </div>
                     <div>
@@ -505,26 +522,34 @@ export default function Dashboard() {
 
         {/* Quick Stats - Enhanced */}
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {/* Pending Review */}
-          <Card className="overflow-hidden border-0 shadow-md card-hover group">
-            <div className="h-1 bg-gradient-primary" />
+          {/* Duplicates Matched */}
+          <Card className="shadow-sm">
             <CardContent className="p-6">
               <div className="flex items-start gap-4">
-                <div className="rounded-xl bg-gradient-primary p-3.5 shadow-glow">
-                  <ClipboardList className="h-6 w-6 text-white" />
+                <div className="rounded-lg bg-primary/10 p-2.5">
+                  <ClipboardList className="h-6 w-6 text-primary" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-muted-foreground">Pending Review</p>
-                  <p className="text-4xl font-extrabold tracking-tight mt-1 text-gradient">
-                    <AnimatedCounter value={pendingMatches.length} />
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    across <span className="font-semibold text-foreground">{rulesWithPending}</span> rules
-                  </p>
+                  <p className="text-sm font-medium text-muted-foreground">Duplicates Matched</p>
+                  {statsLoading ? (
+                    <>
+                      <Skeleton className="h-10 w-16 mt-1" />
+                      <Skeleton className="h-4 w-32 mt-2" />
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-4xl font-bold tracking-tight mt-1 text-primary">
+                        <AnimatedCounter value={duplicatesToReview} />
+                      </p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        unique duplicate pairs across <span className="font-semibold text-foreground">{rulesWithPending}</span> {rulesWithPending === 1 ? "rule" : "rules"}
+                      </p>
+                    </>
+                  )}
                 </div>
               </div>
-              {rulesWithPending > 0 && (
-                <Button className="mt-4 w-full bg-gradient-primary hover:opacity-90 transition-opacity" asChild>
+              {!statsLoading && rulesWithPending > 0 && (
+                <Button className="mt-4 w-full" asChild>
                   <Link to={`/match-rules/${rules.find((r: MatchRule) => pendingByRule[r.id] > 0)?.id}`}>
                     Review Now <ArrowRight className="ml-2 h-4 w-4" />
                   </Link>
@@ -534,21 +559,29 @@ export default function Dashboard() {
           </Card>
 
           {/* Merged Total */}
-          <Card className="overflow-hidden border-0 shadow-md card-hover group">
-            <div className="h-1 bg-gradient-success" />
+          <Card className="shadow-sm">
             <CardContent className="p-6">
               <div className="flex items-start gap-4">
-                <div className="rounded-xl bg-gradient-success p-3.5">
-                  <Check className="h-6 w-6 text-white" />
+                <div className="rounded-lg bg-success/10 p-2.5">
+                  <Check className="h-6 w-6 text-success" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-muted-foreground">Duplicates Merged</p>
-                  <p className="text-4xl font-extrabold tracking-tight mt-1 text-success">
-                    {mergeStatsData?.completed ?? 0}
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    total successful
-                  </p>
+                  {statsLoading ? (
+                    <>
+                      <Skeleton className="h-10 w-16 mt-1" />
+                      <Skeleton className="h-4 w-24 mt-2" />
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-4xl font-bold tracking-tight mt-1 text-success">
+                        {mergeStatsData?.completed ?? 0}
+                      </p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        total successful
+                      </p>
+                    </>
+                  )}
                 </div>
               </div>
               <Button variant="outline" className="mt-4 w-full border-success/30 text-success hover:bg-success/10" asChild>
@@ -558,45 +591,58 @@ export default function Dashboard() {
           </Card>
 
           {/* Total Records */}
-          <Card className="overflow-hidden border-0 shadow-md sm:col-span-2 lg:col-span-1 card-hover">
-            <div className="h-1 bg-gradient-to-r from-muted-foreground/30 to-muted-foreground/10" />
+          <Card className="shadow-sm sm:col-span-2 lg:col-span-1">
             <CardContent className="p-6">
               <div className="flex items-start gap-4">
-                <div className="rounded-xl bg-muted p-3.5">
+                <div className="rounded-lg bg-muted p-2.5">
                   <FolderOpen className="h-6 w-6 text-muted-foreground" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-muted-foreground">Total Records</p>
-                  <p className="text-4xl font-extrabold tracking-tight mt-1">
-                    {(contactsCount + companiesCount).toLocaleString()}
-                  </p>
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
-                    {objectCounts.map(obj => (
-                      <span key={obj.name} className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                        <span className="flex items-center justify-center h-5 w-5 rounded bg-muted">
-                          {obj.icon}
-                        </span>
-                        <span className="font-semibold text-foreground">{obj.count.toLocaleString()}</span>
-                        <span className="text-xs">{obj.name}</span>
-                      </span>
-                    ))}
-                  </div>
+                  {statsLoading ? (
+                    <>
+                      <Skeleton className="h-10 w-20 mt-1" />
+                      <Skeleton className="h-4 w-40 mt-2" />
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-4xl font-bold tracking-tight mt-1">
+                        {(contactsCount + companiesCount).toLocaleString()}
+                      </p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+                        {objectCounts.map(obj => (
+                          <span key={obj.name} className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                            <span className="flex items-center justify-center h-5 w-5 rounded bg-muted">
+                              {obj.icon}
+                            </span>
+                            <span className="font-semibold text-foreground">{obj.count.toLocaleString()}</span>
+                            <span className="text-xs">{obj.name}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Match Rules Table */}
-        <Card className="overflow-hidden">
+        {/* Match Rules Summary */}
+        <Card className="overflow-hidden hover:shadow-md transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between pb-4">
             <CardTitle className="text-lg font-semibold">Match Rules</CardTitle>
-            <Button size="sm" asChild>
-              <Link to="/match-rules/new">
-                <Plus className="mr-1.5 h-4 w-4" />
-                New Rule
-              </Link>
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button size="sm" asChild>
+                <Link to="/match-rules/new">
+                  <Plus className="mr-1.5 h-4 w-4" />
+                  New Rule
+                </Link>
+              </Button>
+              <Button variant="link" size="sm" asChild>
+                <Link to="/match-rules">View All <ArrowRight className="ml-1 h-3.5 w-3.5" /></Link>
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             <DataTable
@@ -623,6 +669,7 @@ export default function Dashboard() {
               data={recentMerges}
               columns={activityColumns}
               keyField="id"
+              loading={mergesLoading}
               emptyState={<NoMergesEmpty />}
               minWidth="500px"
             />
