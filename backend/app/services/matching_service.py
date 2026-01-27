@@ -158,11 +158,11 @@ def compare_records(
     Returns (is_match, confidence_score, field_scores).
     """
     field_scores = {}
-    total_weight = 0.0
-    weighted_score = 0.0
     all_and_fields_match = True
     any_or_field_matches = False
 
+    # First pass: evaluate all fields
+    evaluated_fields = []
     for field_config in match_fields:
         field = field_config.get("field", "")
         algorithm = field_config.get("algorithm", "exact")
@@ -215,11 +215,26 @@ def compare_records(
             if is_match:
                 any_or_field_matches = True
 
-        # Accumulate weighted score
-        total_weight += weight
-        weighted_score += score * weight
+        evaluated_fields.append({
+            "operator": operator,
+            "weight": weight,
+            "score": score,
+            "match": is_match,
+        })
 
-    # Calculate overall confidence
+    # Calculate confidence: OR fields only count when they match
+    # (a non-matching OR field shouldn't penalize confidence)
+    total_weight = 0.0
+    weighted_score = 0.0
+    for ef in evaluated_fields:
+        if ef["operator"] == "AND":
+            total_weight += ef["weight"]
+            weighted_score += ef["score"] * ef["weight"]
+        else:  # OR
+            if ef["match"]:
+                total_weight += ef["weight"]
+                weighted_score += ef["score"] * ef["weight"]
+
     confidence = (weighted_score / total_weight * 100) if total_weight > 0 else 0.0
 
     # Determine if it's a match based on logic
