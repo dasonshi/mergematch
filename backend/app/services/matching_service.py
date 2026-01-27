@@ -222,21 +222,6 @@ def compare_records(
             "match": is_match,
         })
 
-    # Calculate confidence: OR fields only count when they match
-    # (a non-matching OR field shouldn't penalize confidence)
-    total_weight = 0.0
-    weighted_score = 0.0
-    for ef in evaluated_fields:
-        if ef["operator"] == "AND":
-            total_weight += ef["weight"]
-            weighted_score += ef["score"] * ef["weight"]
-        else:  # OR
-            if ef["match"]:
-                total_weight += ef["weight"]
-                weighted_score += ef["score"] * ef["weight"]
-
-    confidence = (weighted_score / total_weight * 100) if total_weight > 0 else 0.0
-
     # Determine if it's a match based on logic
     # For now: all AND fields must match, OR any OR field matches
     has_and_fields = any(f.get("operator", "AND") == "AND" for f in match_fields)
@@ -248,6 +233,27 @@ def compare_records(
         is_overall_match = any_or_field_matches
     else:
         is_overall_match = all_and_fields_match
+
+    # Calculate confidence based on which path determined the match.
+    # When a mixed AND+OR match is found via the OR path (AND fields failed),
+    # failed AND fields should NOT penalize confidence — they aren't why
+    # we consider this a match.
+    matched_via_and = has_and_fields and all_and_fields_match
+    total_weight = 0.0
+    weighted_score = 0.0
+    for ef in evaluated_fields:
+        if ef["operator"] == "AND":
+            if matched_via_and:
+                # AND fields contributed to the match — include them
+                total_weight += ef["weight"]
+                weighted_score += ef["score"] * ef["weight"]
+            # If match was via OR path, skip failed AND fields
+        else:  # OR
+            if ef["match"]:
+                total_weight += ef["weight"]
+                weighted_score += ef["score"] * ef["weight"]
+
+    confidence = (weighted_score / total_weight * 100) if total_weight > 0 else 0.0
 
     return is_overall_match, confidence, field_scores
 
