@@ -26,17 +26,17 @@ export function PageHeader({ title, description, children, className, backLink }
             {backLink.label}
           </Link>
         )}
-        <h1 className="text-3xl font-bold tracking-tight text-foreground lg:text-4xl animate-fade-in">
+        <h1 className="text-3xl font-bold tracking-tight text-foreground lg:text-4xl">
           {title}
         </h1>
         {description && (
-          <p className="text-muted-foreground animate-fade-in" style={{ animationDelay: "50ms" }}>
+          <p className="text-muted-foreground">
             {description}
           </p>
         )}
       </div>
       {children && (
-        <div className="flex flex-wrap items-center gap-2 animate-fade-in" style={{ animationDelay: "100ms" }}>
+        <div className="flex flex-wrap items-center gap-2">
           {children}
         </div>
       )}

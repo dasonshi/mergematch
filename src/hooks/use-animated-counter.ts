@@ -6,7 +6,7 @@ export function useAnimatedCounter(
   startOnMount: boolean = true
 ) {
   const [displayValue, setDisplayValue] = useState(startOnMount ? 0 : targetValue);
-  const previousValue = useRef(targetValue);
+  const previousValue = useRef(startOnMount ? 0 : targetValue);
   const animationRef = useRef<number>();
 
   useEffect(() => {

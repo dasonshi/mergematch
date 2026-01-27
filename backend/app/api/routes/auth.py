@@ -433,7 +433,7 @@ async def app_context(request: Request, body: AppContextRequest):
     if not location_id:
         raise HTTPException(
             status_code=401,
-            detail="No location ID found. Please install the app from GHL Marketplace."
+            detail="No location ID found. Please install the app from the Marketplace."
         )
 
     # Check if location has tokens stored

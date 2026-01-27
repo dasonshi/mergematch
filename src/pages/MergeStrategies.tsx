@@ -123,13 +123,12 @@ export default function MergeStrategies() {
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
-            <Link
-              to="/"
-              className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Dashboard
-            </Link>
+            <Button size="sm" asChild>
+              <Link to="/">
+                <ArrowLeft className="h-4 w-4 mr-1" />
+                Dashboard
+              </Link>
+            </Button>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-semibold tracking-tight text-foreground lg:text-3xl">
                 Merge Strategies
@@ -208,13 +207,12 @@ export default function MergeStrategies() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between ">
         <div className="space-y-1">
-          <Link
-            to="/"
-            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Dashboard
-          </Link>
+          <Button size="sm" asChild>
+            <Link to="/">
+              <ArrowLeft className="h-4 w-4 mr-1" />
+              Dashboard
+            </Link>
+          </Button>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground lg:text-3xl">
             Merge Strategies
           </h1>

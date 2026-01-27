@@ -1,4 +1,3 @@
-import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { TrendingUp, Target, CheckCircle, RotateCcw, Percent } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -9,17 +8,13 @@ interface StatItemProps {
   value: number | string;
   suffix?: string;
   color: string;
-  delay?: number;
 }
 
-function StatItem({ icon: Icon, label, value, suffix, color, delay = 0 }: StatItemProps) {
+function StatItem({ icon: Icon, label, value, suffix, color }: StatItemProps) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <motion.div
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay, type: 'spring', stiffness: 300, damping: 20 }}
+        <div
           className={cn(
             'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium',
             'bg-muted/50 hover:bg-muted transition-colors cursor-default'
@@ -29,7 +24,7 @@ function StatItem({ icon: Icon, label, value, suffix, color, delay = 0 }: StatIt
           <span className="text-foreground tabular-nums">
             {value}{suffix}
           </span>
-        </motion.div>
+        </div>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="text-xs">
         {label}
@@ -62,14 +57,12 @@ export function StatsRow({
         label="Total merges completed"
         value={completedMerges}
         color="text-emerald-500"
-        delay={0}
       />
       <StatItem
         icon={Target}
         label="Total duplicates processed"
         value={totalMerges}
         color="text-blue-500"
-        delay={0.05}
       />
       <StatItem
         icon={Percent}
@@ -77,7 +70,6 @@ export function StatsRow({
         value={successRate}
         suffix="%"
         color="text-amber-500"
-        delay={0.1}
       />
       {rollbackCount > 0 && (
         <StatItem
@@ -85,7 +77,6 @@ export function StatsRow({
           label="Rollbacks"
           value={rollbackCount}
           color="text-red-500"
-          delay={0.15}
         />
       )}
       {activeRules > 0 && (
@@ -94,7 +85,6 @@ export function StatsRow({
           label="Active merge rules"
           value={activeRules}
           color="text-purple-500"
-          delay={0.2}
         />
       )}
     </div>

@@ -1,7 +1,7 @@
 """
 Merge service for executing contact merges via GHL API.
 """
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 import uuid
 import logging
@@ -11,6 +11,89 @@ from app.core.ghl.client import GHLClient
 from app.db.supabase import get_supabase
 
 logger = logging.getLogger(__name__)
+
+# Standard fields used in merge operations
+MERGE_FIELDS = [
+    "firstName", "lastName", "email", "phone", "tags",
+    "address1", "city", "state", "postalCode",
+]
+
+
+def _is_blank(value: Any) -> bool:
+    """Check if a value is considered blank."""
+    if value is None:
+        return True
+    if isinstance(value, str) and value == "":
+        return True
+    if isinstance(value, list) and len(value) == 0:
+        return True
+    return False
+
+
+def _count_non_blank(record: dict, fields: List[str]) -> int:
+    """Count non-blank fields on a record."""
+    return sum(1 for f in fields if not _is_blank(record.get(f)))
+
+
+def _parse_date(value: Any) -> float:
+    """Parse an ISO date string to a timestamp. Returns 0 on failure."""
+    if not value:
+        return 0
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
+    except (ValueError, TypeError):
+        return 0
+
+
+def compute_strategy_selections(
+    strategy: str,
+    record_a: dict,
+    record_b: dict,
+    overwrite_blanks: bool = False,
+    fields: Optional[List[str]] = None,
+) -> Dict[str, str]:
+    """
+    Server-side equivalent of the frontend computeStrategySelections.
+    Returns a dict mapping field -> "a" or "b".
+    """
+    resolved_fields = fields or MERGE_FIELDS
+
+    if strategy == "manual":
+        return {}
+
+    # Determine the winner
+    winner_is_a = True  # default tie-break
+
+    if strategy == "standard":
+        count_a = _count_non_blank(record_a, resolved_fields)
+        count_b = _count_non_blank(record_b, resolved_fields)
+        winner_is_a = count_a >= count_b
+    elif strategy == "recent":
+        date_a = _parse_date(record_a.get("dateUpdated"))
+        date_b = _parse_date(record_b.get("dateUpdated"))
+        winner_is_a = date_a >= date_b
+    elif strategy == "oldest":
+        date_a = _parse_date(record_a.get("dateAdded"))
+        date_b = _parse_date(record_b.get("dateAdded"))
+        winner_is_a = date_a <= date_b
+
+    winner = "a" if winner_is_a else "b"
+    loser = "b" if winner_is_a else "a"
+    winner_record = record_a if winner_is_a else record_b
+    loser_record = record_b if winner_is_a else record_a
+
+    selections: Dict[str, str] = {}
+    for field in resolved_fields:
+        winner_val = winner_record.get(field)
+        loser_val = loser_record.get(field)
+
+        if _is_blank(winner_val) and not _is_blank(loser_val) and not overwrite_blanks:
+            # Fallback: winner blank, loser has value -> use loser
+            selections[field] = loser
+        else:
+            selections[field] = winner
+
+    return selections
 
 
 def evaluate_condition(record: dict, condition: dict) -> bool:
@@ -143,7 +226,7 @@ async def execute_merge(
     supabase = get_supabase()
 
     # Get the match pair
-    match = supabase.table("match_pairs").select("*").eq("id", match_id).single().execute()
+    match = supabase.table("match_pairs").select("*").eq("id", match_id).eq("location_id", internal_location_id).single().execute()
     if not match.data:
         raise ValueError("Match not found")
 
@@ -151,6 +234,30 @@ async def execute_merge(
     record_b_data = match.data.get("record_b_data", {})
     record_a_id = match.data["record_a_id"]
     record_b_id = match.data["record_b_id"]
+    rule_id = match.data.get("rule_id")
+
+    # Fetch rule settings once (used for strategy auto-compute, field preservation, and related records)
+    rule_merge_settings: dict = {}
+    rule_merge_strategy = "standard"
+    if rule_id:
+        rule_result = supabase.table("match_rules").select(
+            "merge_settings, merge_strategy"
+        ).eq("id", rule_id).single().execute()
+        if rule_result.data:
+            rule_merge_settings = rule_result.data.get("merge_settings") or {}
+            rule_merge_strategy = rule_result.data.get("merge_strategy") or "standard"
+
+    overwrite_blanks = rule_merge_settings.get("overwrite_blanks", False)
+
+    # Auto-compute field_selections from strategy if not provided
+    if not field_selections:
+        field_selections = compute_strategy_selections(
+            strategy=rule_merge_strategy,
+            record_a=record_a_data,
+            record_b=record_b_data,
+            overwrite_blanks=overwrite_blanks,
+        )
+        logger.info(f"Auto-computed field_selections from strategy '{rule_merge_strategy}': {field_selections}")
 
     # Determine master and duplicate
     if master_record_id == record_a_id:
@@ -185,23 +292,15 @@ async def execute_merge(
         else:
             continue
 
+        # When overwrite_blanks is True, include None/empty values (they'll clear the field)
         if value is not None:
             merged_fields[field] = value
+        elif overwrite_blanks:
+            merged_fields[field] = ""
 
     # Apply field preservation if enabled
     if preserve_alternates:
-        # Get rule's merge_settings for field preservation mappings
-        rule_id = match.data.get("rule_id")
-        preservation = {}
-
-        if rule_id:
-            rule_result = supabase.table("match_rules").select(
-                "merge_settings"
-            ).eq("id", rule_id).single().execute()
-
-            if rule_result.data:
-                merge_settings = rule_result.data.get("merge_settings") or {}
-                preservation = merge_settings.get("field_preservation", {})
+        preservation = rule_merge_settings.get("field_preservation", {})
 
         if preservation.get("enabled"):
             mappings = preservation.get("mappings", [])
@@ -289,16 +388,8 @@ async def execute_merge(
         "source", "country", "assignedTo",
     }
 
-    # Get related records configuration from rule's merge_settings
-    related_records_config = {}
-    rule_id = match.data.get("rule_id")
-    if rule_id:
-        rule_result = supabase.table("match_rules").select(
-            "merge_settings"
-        ).eq("id", rule_id).single().execute()
-        if rule_result.data:
-            merge_settings = rule_result.data.get("merge_settings") or {}
-            related_records_config = merge_settings.get("related_records", {})
+    # Get related records configuration from rule's merge_settings (already fetched above)
+    related_records_config = rule_merge_settings.get("related_records", {})
 
     try:
         async with GHLClient(access_token, ghl_location_id) as client:
@@ -356,17 +447,24 @@ async def execute_merge(
                 supabase.table("snapshots").insert(related_snapshots).execute()
                 logger.info(f"Saved {len(related_snapshots)} related record snapshots")
 
-            # Update master record with merged fields (only allowed, non-empty fields)
+            # Update master record with merged fields (only allowed fields)
             update_payload = {}
             for field, value in merged_fields.items():
                 if field not in ALLOWED_UPDATE_FIELDS:
                     continue
-                # Skip empty/falsy values, but keep False for booleans
-                if value is None:
-                    continue
-                if isinstance(value, (list, dict, str)) and len(value) == 0:
-                    continue
-                update_payload[field] = value
+                if overwrite_blanks:
+                    # When overwrite_blanks is enabled, include empty values to clear fields
+                    if value is None:
+                        update_payload[field] = ""
+                    else:
+                        update_payload[field] = value
+                else:
+                    # Skip empty/falsy values, but keep False for booleans
+                    if value is None:
+                        continue
+                    if isinstance(value, (list, dict, str)) and len(value) == 0:
+                        continue
+                    update_payload[field] = value
 
             if update_payload:
                 logger.info(f"Updating master contact {master_record_id} with: {update_payload}")
@@ -506,7 +604,7 @@ async def rollback_merge(
     supabase = get_supabase()
 
     # Get the merge record
-    merge = supabase.table("merges").select("*").eq("id", merge_id).single().execute()
+    merge = supabase.table("merges").select("*").eq("id", merge_id).eq("location_id", internal_location_id).single().execute()
     if not merge.data:
         raise ValueError("Merge not found")
 

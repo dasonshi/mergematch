@@ -1,4 +1,3 @@
-import { motion } from "framer-motion";
 import { TrendingUp, CheckCircle, RotateCcw, Percent } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { AnimatedCounter } from "@/components/ui/animated-counter";
@@ -64,19 +63,14 @@ export function HistoryStats({
   return (
     <div className={className}>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((stat, index) => (
-          <motion.div
-            key={stat.label}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: index * 0.1 }}
-          >
+        {stats.map((stat) => (
+          <div key={stat.label}>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Card className="hover:shadow-md transition-shadow cursor-default">
                   <CardContent className="p-4">
                     <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-lg ${stat.bgColor}`}>
+                      <div className={`p-2.5 rounded-lg ${stat.bgColor}`}>
                         <stat.icon className={`h-5 w-5 ${stat.color}`} />
                       </div>
                       <div>
@@ -103,7 +97,7 @@ export function HistoryStats({
                 <p>{stat.tooltip}</p>
               </TooltipContent>
             </Tooltip>
-          </motion.div>
+          </div>
         ))}
       </div>
     </div>

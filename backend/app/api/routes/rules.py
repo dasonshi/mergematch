@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Query, Header, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 import uuid
 import logging
@@ -55,18 +55,19 @@ class RelatedRecordsSettings(BaseModel):
 
 
 class MergeSettings(BaseModel):
+    overwrite_blanks: Optional[bool] = False
     field_preservation: Optional[FieldPreservationSettings] = None
     related_records: Optional[RelatedRecordsSettings] = None
 
 
 class MatchRuleCreate(BaseModel):
-    name: str
-    source_object: str  # contacts, companies, opportunities
+    name: str = Field(..., max_length=200)
+    source_object: str = Field(..., max_length=50)  # contacts, companies, opportunities
     match_fields: List[MatchField]
     auto_merge_threshold: float = 95.0
     review_threshold: float = 70.0
-    merge_strategy: str = "standard"
-    schedule_frequency: str = "manual"
+    merge_strategy: str = Field("standard", max_length=50)
+    schedule_frequency: str = Field("manual", max_length=50)
     is_active: bool = True
     merge_settings: Optional[MergeSettings] = None
 
@@ -236,7 +237,7 @@ async def toggle_rule_status(
 
     new_status = not current.data["is_active"]
 
-    result = supabase.table("match_rules").update({"is_active": new_status}).eq("id", rule_id).execute()
+    result = supabase.table("match_rules").update({"is_active": new_status}).eq("id", rule_id).eq("location_id", user.location_id).execute()
 
     return {"id": rule_id, "is_active": new_status}
 
@@ -283,4 +284,5 @@ async def scan_rule(
 
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Scan failed: {str(e)}")
+        logger.error(f"Scan failed for rule {rule_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Scan failed. Please try again.")

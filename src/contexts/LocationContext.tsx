@@ -202,7 +202,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
 
   const markTokenExpired = useCallback(() => {
     setConnectionStatus('token_expired');
-    setError('Token expired. Please reconnect to GoHighLevel.');
+    setError('Token expired. Please reconnect your CRM.');
   }, []);
 
   const checkAuth = useCallback(async () => {
@@ -328,7 +328,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
 
           if (response.status === 422 && errorData.detail?.error === 'app_not_installed') {
             setConnectionStatus('disconnected');
-            setError('App not installed. Please install from GHL Marketplace.');
+            setError('App not installed. Please install from the Marketplace.');
           } else {
             // Fall through to try regular auth
           }
@@ -363,11 +363,11 @@ export function LocationProvider({ children }: { children: ReactNode }) {
           }
         } else {
           setConnectionStatus('disconnected');
-          setError('Not authenticated. Please install the app from GHL.');
+          setError('Not authenticated. Please install the app from the Marketplace.');
         }
       } else {
         setConnectionStatus('disconnected');
-        setError('No location ID. Please install the app from GHL.');
+        setError('No location ID. Please install the app from the Marketplace.');
       }
     } catch (err) {
       console.error('Auth error:', err);

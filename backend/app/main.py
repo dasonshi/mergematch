@@ -1,5 +1,5 @@
 """
-MergeMatch API - Duplicate detection & merge platform for GoHighLevel
+MergeMatch API - Duplicate detection & merge platform
 """
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="MergeMatch API",
-    description="Duplicate detection & merge platform for GoHighLevel",
+    description="Duplicate detection & merge platform for CRM",
     version="1.0.0",
     docs_url="/docs" if settings.DEBUG else None,
     redoc_url="/redoc" if settings.DEBUG else None,
@@ -82,18 +82,16 @@ cors_origins = [
     "http://127.0.0.1:3000",
 ]
 
-# Add production origins
-if settings.ENVIRONMENT == "production":
-    cors_origins.extend([
-        "https://mergematch.app",
-        "https://www.mergematch.app",
-        "https://merge-match.vercel.app",
-    ])
+# Add origins from env
+if settings.CORS_ALLOWED_ORIGINS:
+    cors_origins.extend(
+        origin.strip() for origin in settings.CORS_ALLOWED_ORIGINS.split(",") if origin.strip()
+    )
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
-    allow_origin_regex=r"https://.*\.(gohighlevel|leadconnectorhq)\.com",
+    allow_origin_regex=r"https://app\.(gohighlevel|leadconnectorhq)\.com",
     allow_credentials=True,
     # SECURITY: Explicitly list allowed methods instead of wildcard
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],

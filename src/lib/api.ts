@@ -270,10 +270,13 @@ class ApiClient {
     return this.fetch<DetailedMergeStats>(`/v1/merges/stats/detailed?days=${days}`);
   }
 
-  async getMerges(limit = 50, status?: string, ruleId?: string) {
-    const params = new URLSearchParams({ limit: limit.toString() });
-    if (status) params.append('status', status);
+  async getMerges(limit = 50, status?: string, ruleId?: string, offset = 0, search?: string, dateFrom?: string, dateTo?: string) {
+    const params = new URLSearchParams({ limit: limit.toString(), offset: offset.toString() });
+    if (status && status !== 'all') params.append('status', status);
     if (ruleId) params.append('rule_id', ruleId);
+    if (search) params.append('search', search);
+    if (dateFrom) params.append('date_from', dateFrom);
+    if (dateTo) params.append('date_to', dateTo);
     return this.fetch<{ data: Merge[]; total: number }>(`/v1/merges/?${params}`);
   }
 
@@ -425,6 +428,7 @@ export interface RelatedRecordsSettings {
 }
 
 export interface RuleMergeSettings {
+  overwrite_blanks?: boolean;
   field_preservation?: FieldPreservationSettings;
   related_records?: RelatedRecordsSettings;
 }

@@ -19,6 +19,7 @@ import { ArrowLeft, Edit, Search, Play, Loader2, ChevronDown, ChevronUp, RotateC
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
+import { computeStrategySelections, computeMasterId, StrategyId } from "@/lib/merge-strategies";
 import { ResponsiveTable, ResponsiveTableContent } from "@/components/ui/responsive-table";
 import { cn } from "@/lib/utils";
 
@@ -152,15 +153,23 @@ export default function MatchRuleDetail() {
     }
   }, [searchParams, rule, scanMutation.isPending, setSearchParams]);
 
-  // Quick merge mutation (uses record A as master with all its values)
+  // Quick merge mutation (strategy-aware)
   const quickMergeMutation = useMutation({
     mutationFn: async (match: any) => {
-      // Default all fields to "a" (master)
-      // Note: companyName excluded - it's read-only in GHL (derived from linked business)
-        const fields = ["firstName", "lastName", "email", "phone", "tags", "address1", "city", "state", "postalCode"];
-      const selections: Record<string, string> = {};
-      fields.forEach(f => { selections[f] = "a"; });
-      return api.executeMerge(match.id, match.record_a_id, selections);
+      const strategy = (rule?.merge_strategy || "standard") as StrategyId;
+      const overwriteBlanks = rule?.merge_settings?.overwrite_blanks ?? false;
+      const recordA = match.record_a_data || {};
+      const recordB = match.record_b_data || {};
+      const fields = ["firstName", "lastName", "email", "phone", "tags", "address1", "city", "state", "postalCode"];
+      const selections = computeStrategySelections({
+        strategy,
+        recordA,
+        recordB,
+        fields,
+        overwriteBlanks,
+      });
+      const masterId = computeMasterId(strategy, recordA, recordB, fields, match.record_a_id, match.record_b_id);
+      return api.executeMerge(match.id, masterId, selections);
     },
     onMutate: (match) => {
       setMergingIds(prev => new Set(prev).add(match.id));
@@ -346,13 +355,21 @@ export default function MatchRuleDetail() {
 
       const match = matches[i];
       try {
-        // Default all fields to "a" (master)
-        // Note: companyName excluded - it's read-only in GHL (derived from linked business)
+        const strategy = (rule?.merge_strategy || "standard") as StrategyId;
+        const overwriteBlanks = rule?.merge_settings?.overwrite_blanks ?? false;
+        const recordA = match.record_a_data || {};
+        const recordB = match.record_b_data || {};
         const fields = ["firstName", "lastName", "email", "phone", "tags", "address1", "city", "state", "postalCode"];
-        const selections: Record<string, string> = {};
-        fields.forEach(f => { selections[f] = "a"; });
+        const selections = computeStrategySelections({
+          strategy,
+          recordA,
+          recordB,
+          fields,
+          overwriteBlanks,
+        });
+        const masterId = computeMasterId(strategy, recordA, recordB, fields, match.record_a_id, match.record_b_id);
 
-        await api.executeMerge(match.id, match.record_a_id, selections);
+        await api.executeMerge(match.id, masterId, selections);
         successCount++;
       } catch {
         failCount++;
@@ -550,7 +567,7 @@ export default function MatchRuleDetail() {
             <p className="text-xs text-muted-foreground mt-1">
               {lastWebhookAt
                 ? new Date(lastWebhookAt).toLocaleTimeString()
-                : "Via webhook from GHL"}
+                : "Via webhook"}
             </p>
           </CardContent>
         </Card>

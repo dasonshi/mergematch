@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Query, Header, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 import httpx
 import logging
@@ -16,7 +16,7 @@ router = APIRouter()
 
 
 class RejectRequest(BaseModel):
-    reason: Optional[str] = None
+    reason: Optional[str] = Field(None, max_length=1000)
 
 
 class CleanupRequest(BaseModel):

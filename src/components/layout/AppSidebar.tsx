@@ -1,6 +1,7 @@
 import { NavLink, useLocation as useRouterLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
+  ListChecks,
   GitMerge,
   History,
   Settings,
@@ -28,6 +29,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { title: "Dashboard", href: "/", icon: LayoutDashboard },
+  { title: "Match Rules", href: "/match-rules", icon: ListChecks },
   { title: "Merge Strategies", href: "/merge-strategies", icon: GitMerge, requiresPlan: true },
   { title: "History", href: "/history", icon: History },
   { title: "Settings", href: "/settings", icon: Settings },

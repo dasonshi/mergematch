@@ -30,12 +30,13 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Switch } from "@/components/ui/switch";
 import { StepIndicator } from "@/components/ui/step-indicator";
 import { UpgradeBadge } from "@/components/ui/upgrade-badge";
 import { CustomLogicBuilder, CustomLogicConfig, createEmptyLogicConfig } from "@/components/ui/custom-logic-builder";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, MatchRule, MatchField, ObjectField, RuleMergeSettings } from "@/lib/api";
+import { api, MatchRule, MatchField, ObjectField, RuleMergeSettings, FieldPreservationMapping } from "@/lib/api";
 import { useLocation } from "@/contexts/LocationContext";
 
 // Standard object types with tier requirements
@@ -75,7 +76,7 @@ const fallbackFields: Record<string, { id: string; name: string }[]> = {
 // Fields with a fixed algorithm — the algorithm selector is hidden for these
 const FIXED_ALGORITHM_FIELDS: Record<string, { algorithm: string; label: string }> = {
   email: { algorithm: "exact", label: "Exact Match" },
-  phone: { algorithm: "phone", label: "Phone Match" },
+  phone: { algorithm: "exact", label: "Exact Match" },
   emailDomain: { algorithm: "email_domain", label: "Domain Match" },
   website: { algorithm: "exact", label: "Exact Match" },
   dateOfBirth: { algorithm: "exact", label: "Exact Match" },
@@ -91,9 +92,9 @@ const TEXT_MATCH_TYPES = [
 const isFixedAlgorithmField = (fieldId: string) => fieldId in FIXED_ALGORITHM_FIELDS;
 
 const strategies = [
-  { id: "standard", name: "Standard Contact Merge", description: "Keep most complete record, prefer master values", prebuilt: true },
-  { id: "recent", name: "Most Recent Wins", description: "Keep most recently updated values", prebuilt: true },
-  { id: "oldest", name: "Original Record Priority", description: "Prefer oldest/original record data", prebuilt: true },
+  { id: "standard", name: "Standard Contact Merge", description: "Prefer the record with the most complete data", prebuilt: true },
+  { id: "recent", name: "Most Recent Wins", description: "Prefer values from the most recently updated record", prebuilt: true },
+  { id: "oldest", name: "Original Record Priority", description: "Prefer the oldest record by creation date", prebuilt: true },
   { id: "manual", name: "Manual Review Required", description: "Require manual selection for every field", prebuilt: true },
 ];
 
@@ -194,6 +195,10 @@ export default function MatchRuleForm() {
     tasks: "copy_to_master",
     opportunities: "keep_all",
   });
+
+  // Strategy settings
+  const [overwriteBlanks, setOverwriteBlanks] = useState(false);
+  const [fieldPreservationMappings, setFieldPreservationMappings] = useState<FieldPreservationMapping[]>([]);
 
   // Fetch existing rule when editing
   const { data: existingRule, isLoading: ruleLoading } = useQuery({
@@ -368,6 +373,14 @@ export default function MatchRuleForm() {
           opportunities_custom_logic: relatedRecords.opportunities_custom_logic || undefined,
         });
       }
+
+      // Load strategy settings
+      if (mergeSettings?.overwrite_blanks !== undefined) {
+        setOverwriteBlanks(mergeSettings.overwrite_blanks);
+      }
+      if (mergeSettings?.field_preservation?.mappings) {
+        setFieldPreservationMappings(mergeSettings.field_preservation.mappings);
+      }
     }
   }, [existingRule]);
 
@@ -500,8 +513,13 @@ export default function MatchRuleForm() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Build merge_settings with related records config (for contacts)
-    const mergeSettings: RuleMergeSettings = {};
+    // Build merge_settings
+    const mergeSettings: RuleMergeSettings = {
+      overwrite_blanks: overwriteBlanks,
+      field_preservation: fieldPreservationMappings.length > 0
+        ? { enabled: true, auto_create_fields: false, mappings: fieldPreservationMappings }
+        : undefined,
+    };
     if (objectType === "contacts") {
       mergeSettings.related_records = relatedRecordsConfig;
     }
@@ -938,16 +956,23 @@ export default function MatchRuleForm() {
                                 </Button>
                               </div>
                             ) : (
-                              <button
-                                type="button"
-                                className="text-xs text-muted-foreground hover:text-foreground transition-colors underline"
-                                onClick={() => {
-                                  const firstOther = fieldOptions.find(f => f.id !== field.name);
-                                  if (firstOther) updateField(index, "matchAgainst", firstOther.id);
-                                }}
-                              >
-                                Match against a different field
-                              </button>
+                              <Tooltip delayDuration={0}>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className="text-xs text-muted-foreground hover:text-foreground transition-colors underline"
+                                    onClick={() => {
+                                      const firstOther = fieldOptions.find(f => f.id !== field.name);
+                                      if (firstOther) updateField(index, "matchAgainst", firstOther.id);
+                                    }}
+                                  >
+                                    Match against a different field
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom" className="max-w-xs">
+                                  Compare this field's value against a different field on the other record. Useful for matching custom fields like "Phone 2" against the standard "Phone" field.
+                                </TooltipContent>
+                              </Tooltip>
                             )}
                           </div>
                         )}
@@ -1074,6 +1099,133 @@ export default function MatchRuleForm() {
                             )}
                           </div>
                           <p className="text-sm text-muted-foreground mt-1">{s.description}</p>
+
+                          {/* Expanded settings for selected strategy */}
+                          {strategy === s.id && (
+                            <div className="mt-4 space-y-4" onClick={(e) => e.stopPropagation()}>
+                              {/* Field Merge Rules */}
+                              <div className="p-4 rounded-lg border bg-background">
+                                <h4 className="text-sm font-semibold mb-3">Field Merge Rules</h4>
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <Label htmlFor="overwrite-blanks" className="text-sm font-medium cursor-pointer">
+                                      Overwrite with blank values
+                                    </Label>
+                                    <p className="text-xs text-muted-foreground mt-0.5">
+                                      When enabled, blank values from the winning record will replace non-blank values
+                                    </p>
+                                  </div>
+                                  <Switch
+                                    id="overwrite-blanks"
+                                    checked={overwriteBlanks}
+                                    onCheckedChange={setOverwriteBlanks}
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Field Value Preservation */}
+                              <div className="p-4 rounded-lg border bg-background">
+                                <h4 className="text-sm font-semibold mb-1">Field Value Preservation</h4>
+                                <p className="text-xs text-muted-foreground mb-3">
+                                  Save the duplicate's value to another field before it's overwritten.
+                                </p>
+
+                                {fieldPreservationMappings.map((mapping, idx) => (
+                                  <div key={idx} className="flex items-center gap-2 mb-2">
+                                    <Select
+                                      value={mapping.source}
+                                      onValueChange={(val) => {
+                                        const updated = [...fieldPreservationMappings];
+                                        updated[idx] = { ...updated[idx], source: val };
+                                        setFieldPreservationMappings(updated);
+                                      }}
+                                    >
+                                      <SelectTrigger className="flex-1 bg-background">
+                                        <SelectValue placeholder="Source field..." />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {fieldOptions.filter(f => !f.isCustom).map((opt) => (
+                                          <SelectItem key={opt.id} value={opt.id}>
+                                            {opt.name}
+                                          </SelectItem>
+                                        ))}
+                                        {fieldOptions.some(f => f.isCustom) && (
+                                          <>
+                                            <SelectSeparator />
+                                            <SelectGroup>
+                                              <SelectLabel>Custom Fields</SelectLabel>
+                                              {fieldOptions.filter(f => f.isCustom).map((opt) => (
+                                                <SelectItem key={opt.id} value={opt.id}>
+                                                  {opt.name}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectGroup>
+                                          </>
+                                        )}
+                                      </SelectContent>
+                                    </Select>
+
+                                    <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+
+                                    <Select
+                                      value={mapping.target}
+                                      onValueChange={(val) => {
+                                        const updated = [...fieldPreservationMappings];
+                                        updated[idx] = { ...updated[idx], target: val };
+                                        setFieldPreservationMappings(updated);
+                                      }}
+                                    >
+                                      <SelectTrigger className="flex-1 bg-background">
+                                        <SelectValue placeholder="Target custom field..." />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {fieldOptions.filter(f => f.isCustom).length > 0 ? (
+                                          fieldOptions.filter(f => f.isCustom).map((opt) => (
+                                            <SelectItem key={opt.id} value={opt.id}>
+                                              {opt.name}
+                                            </SelectItem>
+                                          ))
+                                        ) : (
+                                          <SelectItem value="_none_" disabled className="text-xs text-muted-foreground italic">
+                                            No custom fields available
+                                          </SelectItem>
+                                        )}
+                                      </SelectContent>
+                                    </Select>
+
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="shrink-0"
+                                      onClick={() => {
+                                        setFieldPreservationMappings(
+                                          fieldPreservationMappings.filter((_, i) => i !== idx)
+                                        );
+                                      }}
+                                    >
+                                      <Trash2 className="h-4 w-4 text-muted-foreground" />
+                                    </Button>
+                                  </div>
+                                ))}
+
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setFieldPreservationMappings([
+                                      ...fieldPreservationMappings,
+                                      { source: "", target: "" },
+                                    ]);
+                                  }}
+                                >
+                                  <Plus className="mr-1 h-4 w-4" />
+                                  Add field mapping
+                                </Button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>

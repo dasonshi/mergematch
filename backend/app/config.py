@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     # Frontend
     FRONTEND_URL: str = "http://localhost:8081"
 
+    # CORS - comma-separated allowed origins (in addition to FRONTEND_URL and localhost)
+    CORS_ALLOWED_ORIGINS: str = ""
+
     class Config:
         env_file = ".env"
         extra = "ignore"

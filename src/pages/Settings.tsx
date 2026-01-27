@@ -226,14 +226,14 @@ export default function Settings() {
   };
 
   return (
-    <div className="space-y-8 ">
+    <div className="space-y-6">
       <PageHeader 
         title="Settings" 
         description="Configure your MergeMatch preferences"
       />
 
       {/* Connection Section */}
-      <Card className="animate-fade-in shadow-md">
+      <Card className="shadow-sm">
         <CardHeader className="bg-muted/30 border-b">
           <CardTitle className="text-lg font-bold">Connection</CardTitle>
         </CardHeader>
@@ -277,7 +277,7 @@ export default function Settings() {
       </Card>
 
       {/* Subscription Section */}
-      <Card className="animate-fade-in shadow-md" style={{ animationDelay: "50ms" }}>
+      <Card className="shadow-sm">
         <CardHeader className="bg-muted/30 border-b">
           <CardTitle className="text-lg font-bold">Subscription</CardTitle>
         </CardHeader>
@@ -306,7 +306,7 @@ export default function Settings() {
 
           {/* Upgrade CTA Card - only show if can upgrade */}
           {canUpgrade && (
-            <Card className="border-primary/50 bg-primary/10 shadow-md">
+            <Card className="border-primary/50 bg-primary/10 shadow-sm">
               <CardContent className="pt-6">
                 <div className="flex items-start justify-between">
                   <div className="space-y-3">
@@ -360,7 +360,7 @@ export default function Settings() {
       </Card>
 
       {/* Preferences Section */}
-      <Card className="animate-fade-in shadow-md" style={{ animationDelay: "150ms" }}>
+      <Card className="shadow-sm">
         <CardHeader className="bg-muted/30 border-b">
           <CardTitle className="text-lg font-bold">Preferences</CardTitle>
         </CardHeader>
@@ -413,7 +413,7 @@ export default function Settings() {
       </Card>
 
       {/* Merge Strategies Section */}
-      <Card className="animate-fade-in shadow-md" style={{ animationDelay: "100ms" }}>
+      <Card className="shadow-sm">
         <CardHeader className="bg-muted/30 border-b">
           <CardTitle className="text-lg font-bold">Merge Strategies</CardTitle>
           <CardDescription>Configure how alternate values are preserved during merges</CardDescription>
@@ -572,7 +572,7 @@ export default function Settings() {
       </Card>
 
       {/* White-Label Section */}
-      <Card className="animate-fade-in shadow-md" style={{ animationDelay: "150ms" }}>
+      <Card className="shadow-sm">
         <CardHeader className="bg-muted/30 border-b">
           <CardTitle className="text-lg font-bold">White-Label</CardTitle>
           <CardDescription>Customize branding for your clients</CardDescription>
@@ -629,7 +629,7 @@ export default function Settings() {
         <Separator />
 
         {/* Force Full Resync */}
-        <Card className="animate-fade-in border-destructive/50 shadow-md" style={{ animationDelay: "200ms" }}>
+        <Card className="border-destructive/50 shadow-sm">
           <CardContent className="pt-6">
             <div className="flex items-start justify-between">
               <div className="space-y-1">
@@ -669,7 +669,7 @@ export default function Settings() {
         </Card>
 
         {/* Delete All Data */}
-        <Card className="animate-fade-in border-destructive/50 shadow-md" style={{ animationDelay: "250ms" }}>
+        <Card className="border-destructive/50 shadow-sm">
           <CardContent className="pt-6">
             <div className="flex items-start justify-between">
               <div className="space-y-1">
@@ -712,7 +712,7 @@ export default function Settings() {
         </Card>
 
         {/* Disconnect Account */}
-        <Card className="animate-fade-in border-destructive/50 shadow-md" style={{ animationDelay: "300ms" }}>
+        <Card className="border-destructive/50 shadow-sm">
           <CardContent className="pt-6">
             <div className="flex items-start justify-between">
               <div className="space-y-1">

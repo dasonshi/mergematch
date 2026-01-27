@@ -68,7 +68,7 @@ export default function StatsSummary() {
           </Button>
         </PageHeader>
 
-        <Card className="border-0 shadow-md">
+        <Card className="shadow-sm">
           <CardContent className="flex flex-col items-center justify-center py-16">
             <div className="rounded-full bg-destructive/10 p-4 mb-4">
               <XCircle className="h-8 w-8 text-destructive" />
@@ -98,7 +98,7 @@ export default function StatsSummary() {
           </Button>
         </PageHeader>
 
-        <Card className="border-0 shadow-md">
+        <Card className="shadow-sm">
           <CardContent className="flex flex-col items-center justify-center py-16">
             <div className="rounded-full bg-muted p-4 mb-4">
               <Target className="h-8 w-8 text-muted-foreground" />
@@ -162,14 +162,14 @@ export default function StatsSummary() {
 
       {/* Key Metrics Row */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="border-0 shadow-md">
+        <Card className="shadow-sm">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Total Merged</p>
                 <p className="text-3xl font-bold text-emerald-500">{stats.summary.completed}</p>
               </div>
-              <div className="rounded-full bg-emerald-500/10 p-3">
+              <div className="rounded-lg bg-emerald-500/10 p-2.5">
                 <CheckCircle className="h-6 w-6 text-emerald-500" />
               </div>
             </div>
@@ -195,14 +195,14 @@ export default function StatsSummary() {
           </CardContent>
         </Card>
 
-        <Card className="border-0 shadow-md">
+        <Card className="shadow-sm">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Success Rate</p>
                 <p className="text-3xl font-bold">{stats.success_rate}%</p>
               </div>
-              <div className="rounded-full bg-blue-500/10 p-3">
+              <div className="rounded-lg bg-blue-500/10 p-2.5">
                 <Target className="h-6 w-6 text-blue-500" />
               </div>
             </div>
@@ -212,14 +212,14 @@ export default function StatsSummary() {
           </CardContent>
         </Card>
 
-        <Card className="border-0 shadow-md">
+        <Card className="shadow-sm">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Restored</p>
                 <p className="text-3xl font-bold text-amber-500">{stats.summary.rolled_back}</p>
               </div>
-              <div className="rounded-full bg-amber-500/10 p-3">
+              <div className="rounded-lg bg-amber-500/10 p-2.5">
                 <RotateCcw className="h-6 w-6 text-amber-500" />
               </div>
             </div>
@@ -229,14 +229,14 @@ export default function StatsSummary() {
           </CardContent>
         </Card>
 
-        <Card className="border-0 shadow-md">
+        <Card className="shadow-sm">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Avg/Active Day</p>
                 <p className="text-3xl font-bold">{avgPerDay}</p>
               </div>
-              <div className="rounded-full bg-purple-500/10 p-3">
+              <div className="rounded-lg bg-purple-500/10 p-2.5">
                 <Calendar className="h-6 w-6 text-purple-500" />
               </div>
             </div>
@@ -250,7 +250,7 @@ export default function StatsSummary() {
       {/* Charts Row */}
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Activity Timeline */}
-        <Card className="border-0 shadow-md lg:col-span-2">
+        <Card className="shadow-sm lg:col-span-2">
           <CardHeader>
             <CardTitle>Merge Activity</CardTitle>
             <CardDescription>Daily merge operations over the last 30 days</CardDescription>
@@ -295,7 +295,7 @@ export default function StatsSummary() {
         </Card>
 
         {/* Status Distribution */}
-        <Card className="border-0 shadow-md">
+        <Card className="shadow-sm">
           <CardHeader>
             <CardTitle>Status Distribution</CardTitle>
             <CardDescription>Breakdown of all operations</CardDescription>
@@ -329,7 +329,7 @@ export default function StatsSummary() {
 
       {/* By Rule Breakdown */}
       {stats.by_rule.length > 0 && (
-        <Card className="border-0 shadow-md">
+        <Card className="shadow-sm">
           <CardHeader>
             <CardTitle>Performance by Rule</CardTitle>
             <CardDescription>Merge results grouped by match rule</CardDescription>
@@ -363,7 +363,7 @@ export default function StatsSummary() {
 
       {/* Quick Info Cards */}
       <div className="grid gap-4 sm:grid-cols-2">
-        <Card className="border-0 shadow-md">
+        <Card className="shadow-sm">
           <CardContent className="pt-6">
             <div className="text-center">
               <p className="text-sm text-muted-foreground mb-1">Total Records</p>
@@ -373,7 +373,7 @@ export default function StatsSummary() {
           </CardContent>
         </Card>
 
-        <Card className="border-0 shadow-md">
+        <Card className="shadow-sm">
           <CardContent className="pt-6">
             <div className="text-center">
               <p className="text-sm text-muted-foreground mb-1">Active Rules</p>

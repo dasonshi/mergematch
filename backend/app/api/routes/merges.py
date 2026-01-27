@@ -4,6 +4,7 @@ from typing import Dict, Optional, List
 from datetime import datetime, timedelta
 from collections import defaultdict
 import uuid
+import logging
 
 from app.db.supabase import get_supabase
 from app.services.auth_service import get_location_tokens_with_refresh
@@ -11,13 +12,15 @@ from app.services.merge_service import execute_merge, rollback_merge
 from app.core.security import get_current_user_flexible
 from app.core.rate_limit import limiter, RATE_LIMIT_MERGE
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 
 class MergeRequest(BaseModel):
     match_id: str
     master_record_id: str
-    field_selections: Dict[str, str]  # field -> "a" or "b"
+    field_selections: Dict[str, str] = {}  # field -> "a" or "b"; empty = auto-compute from strategy
     preserve_alternates: bool = False  # Save alternate values to custom fields
 
 
@@ -140,25 +143,53 @@ async def list_merges(
     offset: int = 0,
     status: Optional[str] = Query(None, description="Filter by status (completed, failed, rolled_back)"),
     rule_id: Optional[str] = Query(None, description="Filter by rule ID"),
+    search: Optional[str] = Query(None, description="Search by master_record_name"),
+    date_from: Optional[str] = Query(None, description="ISO date start filter"),
+    date_to: Optional[str] = Query(None, description="ISO date end filter"),
 ):
     """List merge history with rule info."""
     user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
 
     supabase = get_supabase()
 
-    # Get merges with rule info through match_pairs
-    query = supabase.table("merges").select(
-        "*, match_pairs(rule_id, match_rules(id, name))"
-    ).eq("location_id", user.location_id)
+    # Use inner join when filtering by rule_id for accurate results
+    if rule_id:
+        select_str = "*, match_pairs!inner(rule_id, match_rules(id, name))"
+        count_select = "id, match_pairs!inner(rule_id)"
+    else:
+        select_str = "*, match_pairs(rule_id, match_rules(id, name))"
+        count_select = "id"
 
-    # Apply status filter if provided
+    query = supabase.table("merges").select(select_str).eq("location_id", user.location_id)
+    count_query = supabase.table("merges").select(count_select, count="exact").eq("location_id", user.location_id)
+
+    # Apply shared filters to both queries
     if status:
         query = query.eq("status", status)
+        count_query = count_query.eq("status", status)
 
-    # Apply rule_id filter through match_pairs join
     if rule_id:
         query = query.eq("match_pairs.rule_id", rule_id)
+        count_query = count_query.eq("match_pairs.rule_id", rule_id)
 
+    if search:
+        query = query.ilike("master_record_name", f"%{search}%")
+        count_query = count_query.ilike("master_record_name", f"%{search}%")
+
+    if date_from:
+        query = query.gte("created_at", date_from)
+        count_query = count_query.gte("created_at", date_from)
+
+    if date_to:
+        end = f"{date_to}T23:59:59"
+        query = query.lte("created_at", end)
+        count_query = count_query.lte("created_at", end)
+
+    # Execute count query
+    count_result = count_query.execute()
+    total = count_result.count if count_result.count is not None else 0
+
+    # Execute data query with pagination
     result = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
 
     # Flatten the rule info for easier frontend consumption
@@ -169,12 +200,9 @@ async def list_merges(
         if match_pair and match_pair.get("match_rules"):
             merge_data["rule_id"] = match_pair["match_rules"]["id"]
             merge_data["rule_name"] = match_pair["match_rules"]["name"]
-        # Skip merges that don't match the rule_id filter (join may return nulls)
-        if rule_id and merge_data.get("rule_id") != rule_id:
-            continue
         data.append(merge_data)
 
-    return {"data": data, "total": len(data)}
+    return {"data": data, "total": total}
 
 
 @router.post("/")
@@ -192,7 +220,8 @@ async def execute_merge_route(
     try:
         tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Token retrieval failed: {str(e)}")
+        logger.error(f"Token retrieval failed for location {user.ghl_location_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Token retrieval failed. Please try again.")
 
     if not tokens:
         raise HTTPException(status_code=401, detail="Location not authenticated or token refresh failed")
@@ -212,7 +241,8 @@ async def execute_merge_route(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Merge failed: {str(e)}")
+        logger.error(f"Merge failed for match {body.match_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Merge failed. Please try again.")
 
 
 @router.get("/{merge_id}")
@@ -276,4 +306,5 @@ async def rollback_merge_route(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Rollback failed: {str(e)}")
+        logger.error(f"Rollback failed for merge {merge_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Rollback failed. Please try again.")

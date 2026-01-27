@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
+import { computeStrategySelections, StrategyId } from "@/lib/merge-strategies";
 
 // Fields to display and their labels
 const fieldLabels: Record<string, string> = {
@@ -87,16 +88,18 @@ export default function MatchReview() {
   const allFields = new Set([...Object.keys(recordA), ...Object.keys(recordB)]);
   const displayFields = Object.keys(fieldLabels).filter(f => allFields.has(f));
 
-  // Track selections - default to record A (master) unless empty
+  // Track selections - strategy-aware defaults
   const getDefaultSelections = () => {
-    const selections: Record<string, string> = {};
-    displayFields.forEach((field) => {
-      const valueA = recordA[field];
-      const valueB = recordB[field];
-      // Default to A if it has a value, otherwise B
-      selections[field] = valueA ? "a" : (valueB ? "b" : "a");
+    const strategy = (rule?.merge_strategy || "standard") as StrategyId;
+    const overwriteBlanks = rule?.merge_settings?.overwrite_blanks ?? false;
+
+    return computeStrategySelections({
+      strategy,
+      recordA: recordA as Record<string, unknown>,
+      recordB: recordB as Record<string, unknown>,
+      fields: displayFields,
+      overwriteBlanks,
     });
-    return selections;
   };
 
   const [selections, setSelections] = useState<Record<string, string>>({});

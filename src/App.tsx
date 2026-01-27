@@ -12,6 +12,7 @@ import MatchRuleForm from "./pages/MatchRuleForm";
 import MatchReview from "./pages/MatchReview";
 import MergeStrategies from "./pages/MergeStrategies";
 import MergeStrategyForm from "./pages/MergeStrategyForm";
+import MatchRules from "./pages/MatchRules";
 import History from "./pages/History";
 import MergeDetail from "./pages/MergeDetail";
 import PendingMatches from "./pages/PendingMatches";
@@ -33,8 +34,7 @@ const App = () => (
             <MainLayout>
             <Routes>
               <Route path="/" element={<Index />} />
-              {/* Redirect /match-rules to dashboard */}
-              <Route path="/match-rules" element={<Navigate to="/" replace />} />
+              <Route path="/match-rules" element={<MatchRules />} />
               <Route path="/match-rules/new" element={<MatchRuleForm />} />
               <Route path="/match-rules/:id" element={<MatchRuleDetail />} />
               <Route path="/match-rules/:id/edit" element={<MatchRuleForm />} />

@@ -1,8 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DateRange } from "react-day-picker";
-import { Eye, RotateCcw, Loader2, ExternalLink, Search, X, Filter, ChevronDown, MoreHorizontal, Download } from "lucide-react";
+import { Eye, RotateCcw, Loader2, ExternalLink, Search, X, Filter, ChevronDown, MoreHorizontal, Download, ChevronLeft, ChevronRight } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -73,16 +73,62 @@ export default function History() {
   const [filtersOpen, setFiltersOpen] = useState(true);
 
   // Filter state
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
 
-  // Fetch merges
+  // Pagination state
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+
+  // Export state
+  const [isExporting, setIsExporting] = useState(false);
+
+  // Debounce search input (300ms)
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchInput), 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  // Derive date strings for query keys and API calls
+  const dateFromStr = dateRange?.from?.toISOString()?.split("T")[0];
+  const dateToStr = dateRange?.to?.toISOString()?.split("T")[0];
+
+  // Reset to page 1 when any filter or page size changes
+  useEffect(() => {
+    setPage(1);
+  }, [statusFilter, debouncedSearch, dateFromStr, dateToStr, pageSize]);
+
+  const offset = (page - 1) * pageSize;
+
+  // Server-side paginated query
   const { data: mergesData, isLoading } = useQuery({
-    queryKey: ["merges", locationId],
-    queryFn: () => api.getMerges(100),
+    queryKey: ["merges", locationId, pageSize, offset, statusFilter, debouncedSearch, dateFromStr, dateToStr],
+    queryFn: () => api.getMerges(
+      pageSize,
+      statusFilter !== "all" ? statusFilter : undefined,
+      undefined,
+      offset,
+      debouncedSearch || undefined,
+      dateFromStr,
+      dateToStr,
+    ),
     enabled: !!locationId,
   });
+
+  // Dedicated stats from server (not computed from page slice)
+  const { data: mergeStatsData } = useQuery({
+    queryKey: ["merge-stats", locationId],
+    queryFn: () => api.getMergeStats(),
+    enabled: !!locationId,
+  });
+
+  const merges = mergesData?.data || [];
+  const total = mergesData?.total || 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const startRecord = total > 0 ? offset + 1 : 0;
+  const endRecord = Math.min(offset + merges.length, total);
 
   // Rollback mutation
   const rollbackMutation = useMutation({
@@ -95,6 +141,7 @@ export default function History() {
         description: "The duplicate contact has been restored.",
       });
       queryClient.invalidateQueries({ queryKey: ["merges"] });
+      queryClient.invalidateQueries({ queryKey: ["merge-stats"] });
       queryClient.invalidateQueries({ queryKey: ["matches"] });
       setRestoreItem(null);
     },
@@ -107,92 +154,66 @@ export default function History() {
     },
   });
 
-  const allMerges = mergesData?.data || [];
-
-  // Calculate stats
-  const stats = useMemo(() => {
-    const total = allMerges.length;
-    const completed = allMerges.filter((m: MergeItem) => m.status === "completed").length;
-    const rolledBack = allMerges.filter((m: MergeItem) => m.status === "rolled_back").length;
-    return { total, completed, rolledBack };
-  }, [allMerges]);
-
-  // Filter merges
-  const filteredMerges = useMemo(() => {
-    return allMerges.filter((item: MergeItem) => {
-      // Search filter
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        const matchesSearch =
-          item.master_record_name?.toLowerCase().includes(query) ||
-          item.rule_name?.toLowerCase().includes(query) ||
-          item.master_record_id?.toLowerCase().includes(query);
-        if (!matchesSearch) return false;
-      }
-
-      // Status filter
-      if (statusFilter !== "all" && item.status !== statusFilter) {
-        return false;
-      }
-
-      // Date range filter
-      if (dateRange?.from || dateRange?.to) {
-        const itemDate = new Date(item.created_at);
-        if (dateRange.from) {
-          const start = new Date(dateRange.from);
-          start.setHours(0, 0, 0, 0);
-          if (itemDate < start) return false;
-        }
-        if (dateRange.to) {
-          const end = new Date(dateRange.to);
-          end.setHours(23, 59, 59, 999);
-          if (itemDate > end) return false;
-        }
-      }
-
-      return true;
-    });
-  }, [allMerges, searchQuery, statusFilter, dateRange]);
-
-  const hasActiveFilters = searchQuery || statusFilter !== "all" || dateRange?.from || dateRange?.to;
-  const activeFilterCount = [searchQuery, statusFilter !== "all", dateRange?.from || dateRange?.to].filter(Boolean).length;
+  const hasActiveFilters = searchInput || statusFilter !== "all" || dateRange?.from || dateRange?.to;
+  const activeFilterCount = [searchInput, statusFilter !== "all", dateRange?.from || dateRange?.to].filter(Boolean).length;
 
   const clearFilters = () => {
-    setSearchQuery("");
+    setSearchInput("");
+    setDebouncedSearch("");
     setStatusFilter("all");
     setDateRange(undefined);
   };
 
-  const handleExport = () => {
-    // Create CSV content
-    const headers = ["Rule", "Master Record", "Master Record ID", "Duplicate ID", "Status", "Date"];
-    const rows = filteredMerges.map((item: MergeItem) => [
-      item.rule_name || "-",
-      item.master_record_name || "-",
-      item.master_record_id,
-      item.duplicate_record_id,
-      item.status,
-      new Date(item.created_at).toISOString(),
-    ]);
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      // Fetch ALL matching records with current filters (not just current page)
+      const allData = await api.getMerges(
+        10000,
+        statusFilter !== "all" ? statusFilter : undefined,
+        undefined,
+        0,
+        debouncedSearch || undefined,
+        dateFromStr,
+        dateToStr,
+      );
 
-    const csvContent = [
-      headers.join(","),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(",")),
-    ].join("\n");
+      const headers = ["Rule", "Master Record", "Master Record ID", "Duplicate ID", "Status", "Date"];
+      const rows = allData.data.map((item: MergeItem) => [
+        item.rule_name || "-",
+        item.master_record_name || "-",
+        item.master_record_id,
+        item.duplicate_record_id,
+        item.status,
+        new Date(item.created_at).toISOString(),
+      ]);
 
-    // Download file
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `merge-history-${new Date().toISOString().split("T")[0]}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+      const csvContent = [
+        headers.join(","),
+        ...rows.map(row => row.map(cell => `"${cell}"`).join(",")),
+      ].join("\n");
 
-    toast({
-      title: "Export complete",
-      description: `Exported ${filteredMerges.length} records to CSV.`,
-    });
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `merge-history-${new Date().toISOString().split("T")[0]}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: "Export complete",
+        description: `Exported ${allData.data.length} records to CSV.`,
+      });
+    } catch {
+      toast({
+        title: "Export failed",
+        description: "Could not export merge history.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const formatDateTime = (dateString: string) => {
@@ -255,7 +276,7 @@ export default function History() {
       hideOnMobile: true,
       accessor: (item) => (
         <div className="flex items-center gap-2 text-muted-foreground">
-          <span className="font-mono text-sm">← {item.duplicate_record_id?.slice(0, 12)}...</span>
+          <span className="font-mono text-sm">&larr; {item.duplicate_record_id?.slice(0, 12)}...</span>
           {item.status === "rolled_back" && item.restored_record_id && locationId && (
             <a
               href={getCrmContactUrl(locationId, item.restored_record_id)}
@@ -334,17 +355,26 @@ export default function History() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <PageHeader title="Merge History" />
-        <Button variant="outline" size="sm" onClick={handleExport} disabled={filteredMerges.length === 0}>
-          <Download className="h-4 w-4 mr-2" />
-          Export CSV
+        <Button variant="outline" size="sm" onClick={handleExport} disabled={total === 0 || isExporting}>
+          {isExporting ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Exporting...
+            </>
+          ) : (
+            <>
+              <Download className="h-4 w-4 mr-2" />
+              Export CSV
+            </>
+          )}
         </Button>
       </div>
 
-      {/* Stats Dashboard */}
+      {/* Stats Dashboard — powered by dedicated stats endpoint */}
       <HistoryStats
-        totalMerges={stats.total}
-        completedMerges={stats.completed}
-        rollbackCount={stats.rolledBack}
+        totalMerges={mergeStatsData?.total ?? 0}
+        completedMerges={mergeStatsData?.completed ?? 0}
+        rollbackCount={mergeStatsData?.rolled_back ?? 0}
       />
 
       {/* Collapsible Filters */}
@@ -378,9 +408,9 @@ export default function History() {
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
                       id="search"
-                      placeholder="Search by name or rule..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search by name..."
+                      value={searchInput}
+                      onChange={(e) => setSearchInput(e.target.value)}
                       className="pl-9"
                     />
                   </div>
@@ -421,7 +451,7 @@ export default function History() {
       <Card className="overflow-hidden">
         <CardContent className="p-0">
           <DataTable
-            data={filteredMerges}
+            data={merges}
             columns={columns}
             keyField="id"
             minWidth="750px"
@@ -449,13 +479,56 @@ export default function History() {
         </CardContent>
       </Card>
 
-      {/* Footer */}
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>
-          Showing {filteredMerges.length} of {allMerges.length} merges
-          {hasActiveFilters && " (filtered)"}
-        </span>
-      </div>
+      {/* Pagination Footer */}
+      {total > 0 && (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm text-muted-foreground">
+          {/* Page size selector */}
+          <div className="flex items-center gap-2">
+            <span>Rows per page</span>
+            <Select value={pageSize.toString()} onValueChange={(v) => setPageSize(Number(v))}>
+              <SelectTrigger className="w-[70px] h-8">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+                <SelectItem value="100">100</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Range indicator */}
+          <span>
+            Showing {startRecord}&ndash;{endRecord} of {total}
+            {hasActiveFilters && " (filtered)"}
+          </span>
+
+          {/* Prev / Next buttons */}
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 w-8 p-0"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="px-2 min-w-[80px] text-center">
+              Page {page} of {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 w-8 p-0"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Restore Confirmation Dialog */}
       <Dialog open={!!restoreItem} onOpenChange={() => setRestoreItem(null)}>

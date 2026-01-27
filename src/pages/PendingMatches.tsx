@@ -33,6 +33,7 @@ import { DataTable, DataTableColumn } from "@/components/ui/data-table";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
+import { computeStrategySelections, computeMasterId, StrategyId } from "@/lib/merge-strategies";
 import { cn } from "@/lib/utils";
 
 // Helper to get field value from record (handles nested custom fields)
@@ -170,10 +171,20 @@ export default function PendingMatches() {
   // Quick merge mutation
   const quickMergeMutation = useMutation({
     mutationFn: async (match: MatchPair) => {
+      const strategy = (rule?.merge_strategy || "standard") as StrategyId;
+      const overwriteBlanks = rule?.merge_settings?.overwrite_blanks ?? false;
+      const recordA = match.record_a_data || {};
+      const recordB = match.record_b_data || {};
       const fields = ["firstName", "lastName", "email", "phone", "tags", "address1", "city", "state", "postalCode"];
-      const selections: Record<string, string> = {};
-      fields.forEach(f => { selections[f] = "a"; });
-      return api.executeMerge(match.id, match.record_a_id, selections);
+      const selections = computeStrategySelections({
+        strategy,
+        recordA,
+        recordB,
+        fields,
+        overwriteBlanks,
+      });
+      const masterId = computeMasterId(strategy, recordA, recordB, fields, match.record_a_id, match.record_b_id);
+      return api.executeMerge(match.id, masterId, selections);
     },
     onMutate: (match) => {
       setMergingIds(prev => new Set(prev).add(match.id));
@@ -266,10 +277,20 @@ export default function PendingMatches() {
 
       const match = matches[i];
       try {
+        const strategy = (rule?.merge_strategy || "standard") as StrategyId;
+        const overwriteBlanks = rule?.merge_settings?.overwrite_blanks ?? false;
+        const recordA = match.record_a_data || {};
+        const recordB = match.record_b_data || {};
         const fields = ["firstName", "lastName", "email", "phone", "tags", "address1", "city", "state", "postalCode"];
-        const selections: Record<string, string> = {};
-        fields.forEach(f => { selections[f] = "a"; });
-        await api.executeMerge(match.id, match.record_a_id, selections);
+        const selections = computeStrategySelections({
+          strategy,
+          recordA,
+          recordB,
+          fields,
+          overwriteBlanks,
+        });
+        const masterId = computeMasterId(strategy, recordA, recordB, fields, match.record_a_id, match.record_b_id);
+        await api.executeMerge(match.id, masterId, selections);
         successCount++;
       } catch {
         failCount++;
@@ -430,7 +451,7 @@ export default function PendingMatches() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
-          <Button variant="secondary" size="sm" asChild>
+          <Button size="sm" asChild>
             <Link to={`/match-rules/${ruleId}`}>
               <ArrowLeft className="h-4 w-4 mr-1" />
               {rule.name}

@@ -366,6 +366,12 @@ def validate_security_config():
         if not settings.GHL_CLIENT_ID or not settings.GHL_CLIENT_SECRET:
             errors.append("GHL_CLIENT_ID and GHL_CLIENT_SECRET must be set")
 
+        if not getattr(settings, "GHL_WEBHOOK_SECRET", None):
+            errors.append("GHL_WEBHOOK_SECRET must be set for webhook signature verification")
+
+        if not getattr(settings, "GHL_APP_SHARED_SECRET", None):
+            errors.append("GHL_APP_SHARED_SECRET must be set for SSO decryption")
+
         if errors:
             for error in errors:
                 print(f"❌ Security Error: {error}")
