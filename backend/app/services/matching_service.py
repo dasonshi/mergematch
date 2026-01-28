@@ -422,6 +422,146 @@ async def run_scan(
     }
 
 
+# ============================================================================
+# Targeted Candidate Generation (for real-time single-contact dedupe)
+# ============================================================================
+
+# Algorithms that guarantee exact matching (no false negatives with API search)
+_EXACT_ALGORITHMS = {"exact", "phone"}
+# Fields with reliable exact-match APIs in GHL
+_EXACT_SEARCHABLE_FIELDS = {"email", "phone"}
+
+
+def can_use_targeted_search(match_fields: List[dict]) -> bool:
+    """
+    Determine if targeted search can GUARANTEE finding all duplicates.
+
+    Returns True ONLY if ALL match fields:
+    1. Use exact-match algorithms (exact, phone) - NOT fuzzy
+    2. Match on fields with exact-match GHL APIs (email, phone)
+    3. Don't use cross-field matching
+
+    If ANY field uses fuzzy matching, emailDomain, custom fields, or
+    cross-field logic, we MUST fall back to full scan to avoid false negatives.
+    """
+    if not match_fields:
+        return False
+
+    for field_config in match_fields:
+        field = field_config.get("field", "")
+        algorithm = field_config.get("algorithm", "exact")
+        match_against = field_config.get("match_against")
+
+        # Cross-field matching requires full scan
+        if match_against and match_against != field:
+            return False
+
+        # Fuzzy algorithms can miss matches via API search
+        if algorithm not in _EXACT_ALGORITHMS:
+            return False
+
+        # Field must have an exact-match GHL API
+        if field not in _EXACT_SEARCHABLE_FIELDS:
+            return False
+
+    return True
+
+
+async def fetch_all_contacts(client, contact_id: str) -> List[dict]:
+    """Fetch all contacts via pagination (fallback for complex rules)."""
+    import logging
+    logger = logging.getLogger(__name__)
+
+    all_contacts = []
+    start_after = None
+
+    while True:
+        try:
+            page_result = await client.get_contacts(limit=100, start_after=start_after)
+            page_contacts = page_result.get("contacts", [])
+            if not page_contacts:
+                break
+
+            for c in page_contacts:
+                if isinstance(c, dict) and c.get("id") and c["id"] != contact_id:
+                    all_contacts.append(c)
+
+            start_after = (
+                page_result.get("meta", {}).get("startAfterId")
+                or page_result.get("startAfterId")
+            )
+            if not start_after or len(page_contacts) < 100:
+                break
+        except Exception as e:
+            logger.error(f"Failed to fetch contacts page: {e}")
+            break
+
+    return all_contacts
+
+
+async def generate_candidates(
+    client,
+    new_contact: dict,
+    match_fields: List[dict],
+    contact_id: str,
+) -> tuple:
+    """
+    Generate candidate contacts for duplicate checking.
+
+    IMPORTANT: To guarantee zero false negatives, targeted search is ONLY used
+    when ALL match fields use exact algorithms on email/phone. Any fuzzy matching,
+    emailDomain, custom fields, or cross-field logic triggers a full scan.
+
+    Returns (candidates_list, used_full_scan).
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    # Check if we can safely use targeted search
+    if not can_use_targeted_search(match_fields):
+        # Fall back to full scan - this rule has fields that can't be
+        # reliably searched via GHL API (fuzzy, emailDomain, custom, etc.)
+        logger.info(
+            "Rule requires full scan (has fuzzy matching, unsearchable fields, "
+            "or cross-field logic)"
+        )
+        candidates = await fetch_all_contacts(client, contact_id)
+        logger.info(f"Full scan: {len(candidates)} contacts fetched")
+        return candidates, True
+
+    # Safe to use targeted search - all fields are exact email/phone
+    candidates_by_id: Dict[str, dict] = {}
+
+    for field_config in match_fields:
+        field = field_config.get("field", "")
+        val = get_field_value(new_contact, field)
+        if not val:
+            continue
+
+        email_param = val if field == "email" else None
+        number_param = val if field == "phone" else None
+
+        try:
+            result = await client.search_duplicate_contact(
+                email=email_param, number=number_param,
+            )
+            # Handle single contact response
+            contact = result.get("contact")
+            if contact and isinstance(contact, dict) and contact.get("id"):
+                if contact["id"] != contact_id:
+                    candidates_by_id[contact["id"]] = contact
+            # Handle array response
+            for c in result.get("contacts", []):
+                if isinstance(c, dict) and c.get("id") and c["id"] != contact_id:
+                    candidates_by_id[c["id"]] = c
+        except Exception as e:
+            logger.warning(f"Duplicate API search failed for {field}={val}: {e}")
+
+    candidates = list(candidates_by_id.values())
+    logger.info(f"Targeted search: {len(candidates)} candidates (email/phone exact match)")
+    return candidates, False
+
+
 async def check_single_contact(
     contact_id: str,
     ghl_location_id: str,
@@ -477,53 +617,45 @@ async def check_single_contact(
                 "error": f"Contact not found: {contact_id}"
             }
 
-        # Fetch ALL existing contacts from GHL via pagination (max 100 per page)
-        all_contacts = []
-        start_after = None
-        while True:
-            try:
-                page_result = await client.get_contacts(limit=100, start_after=start_after)
-                page_contacts = page_result.get("contacts", [])
-                if not page_contacts:
-                    break
-                all_contacts.extend(page_contacts)
-                # GHL returns startAfterId for next page
-                start_after = page_result.get("meta", {}).get("startAfterId") or page_result.get("startAfterId")
-                if not start_after or len(page_contacts) < 100:
-                    break
-            except Exception as e:
-                logger.error(f"Failed to fetch contacts page: {e}")
-                break
+        all_matches = []
+        total_candidates = 0
 
-    logger.info(f"Checking contact {contact_id} against {len(all_contacts)} existing contacts")
+        # Check against each rule using targeted candidate generation
+        for rule in rules_result.data:
+            match_fields = rule.get("match_fields", [])
+            review_threshold = float(rule.get("review_threshold", 0.70)) * 100
+            auto_merge_threshold = float(rule.get("auto_merge_threshold", 0.95)) * 100
 
-    # Filter out the new contact itself
-    existing_contacts = [c for c in all_contacts if c.get("id") != contact_id]
+            # Generate candidates targeted to this rule's fields
+            candidates, used_full_scan = await generate_candidates(
+                client=client,
+                new_contact=new_contact,
+                match_fields=match_fields,
+                contact_id=contact_id,
+            )
+            total_candidates += len(candidates)
 
-    all_matches = []
-
-    # Check against each rule
-    for rule in rules_result.data:
-        match_fields = rule.get("match_fields", [])
-        review_threshold = float(rule.get("review_threshold", 0.70)) * 100
-        auto_merge_threshold = float(rule.get("auto_merge_threshold", 0.95)) * 100
-
-        # Compare new contact against each existing contact
-        for existing in existing_contacts:
-            is_match, confidence, field_scores = compare_records(
-                new_contact, existing, match_fields
+            logger.info(
+                f"Rule '{rule.get('name')}': checking {contact_id} against "
+                f"{len(candidates)} candidates (full_scan={used_full_scan})"
             )
 
-            if is_match and confidence >= review_threshold:
-                all_matches.append({
-                    "matched_contact_id": existing.get("id"),
-                    "matched_contact_data": existing,
-                    "confidence_score": round(confidence, 2),
-                    "field_scores": field_scores,
-                    "auto_merge_eligible": confidence >= auto_merge_threshold and plan != "free",
-                    "rule_id": rule["id"],
-                    "rule_name": rule.get("name", "Unknown Rule"),
-                })
+            # Compare new contact against each candidate
+            for existing in candidates:
+                is_match, confidence, field_scores = compare_records(
+                    new_contact, existing, match_fields
+                )
+
+                if is_match and confidence >= review_threshold:
+                    all_matches.append({
+                        "matched_contact_id": existing.get("id"),
+                        "matched_contact_data": existing,
+                        "confidence_score": round(confidence, 2),
+                        "field_scores": field_scores,
+                        "auto_merge_eligible": confidence >= auto_merge_threshold and plan != "free",
+                        "rule_id": rule["id"],
+                        "rule_name": rule.get("name", "Unknown Rule"),
+                    })
 
     # Sort by confidence score (highest first)
     all_matches.sort(key=lambda x: x["confidence_score"], reverse=True)
@@ -542,5 +674,5 @@ async def check_single_contact(
             "phone": new_contact.get("phone"),
             "name": f"{new_contact.get('firstName', '')} {new_contact.get('lastName', '')}".strip(),
         },
-        "contacts_scanned": len(existing_contacts),
+        "contacts_scanned": total_candidates,
     }

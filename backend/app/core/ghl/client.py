@@ -67,6 +67,43 @@ class GHLClient:
         response.raise_for_status()
         return response.json()
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.TimeoutException)),
+    )
+    async def search_duplicate_contact(
+        self,
+        email: Optional[str] = None,
+        number: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Search for duplicate contacts by email and/or phone number.
+        Uses GET /contacts/search/duplicate endpoint.
+
+        Returns dict with 'contact' key (single match) or empty if no match.
+        """
+        params = {"locationId": self.location_id}
+        if email:
+            params["email"] = email
+        if number:
+            params["number"] = number
+
+        if not email and not number:
+            return {}
+
+        logger.info(f"[GHL] GET /contacts/search/duplicate with params: {params}")
+        response = await self._client.get("/contacts/search/duplicate", params=params)
+
+        # GHL returns 400 when no duplicate found
+        if response.status_code == 400:
+            return {}
+
+        if response.status_code >= 400:
+            logger.error(f"[GHL] Duplicate search failed: {response.status_code} - {response.text[:500]}")
+        response.raise_for_status()
+        return response.json()
+
     async def search_contacts(
         self,
         limit: int = 1,
