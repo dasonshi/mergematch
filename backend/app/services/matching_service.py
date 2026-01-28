@@ -477,9 +477,23 @@ async def check_single_contact(
                 "error": f"Contact not found: {contact_id}"
             }
 
-        # Fetch ALL existing contacts from GHL (fresh data for consecutive duplicate handling)
-        all_contacts_result = await client.get_contacts(limit=10000)
-        all_contacts = all_contacts_result.get("contacts", [])
+        # Fetch ALL existing contacts from GHL via pagination (max 100 per page)
+        all_contacts = []
+        start_after = None
+        while True:
+            try:
+                page_result = await client.get_contacts(limit=100, start_after=start_after)
+                page_contacts = page_result.get("contacts", [])
+                if not page_contacts:
+                    break
+                all_contacts.extend(page_contacts)
+                # GHL returns startAfterId for next page
+                start_after = page_result.get("meta", {}).get("startAfterId") or page_result.get("startAfterId")
+                if not start_after or len(page_contacts) < 100:
+                    break
+            except Exception as e:
+                logger.error(f"Failed to fetch contacts page: {e}")
+                break
 
     logger.info(f"Checking contact {contact_id} against {len(all_contacts)} existing contacts")
 
