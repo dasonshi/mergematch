@@ -280,7 +280,7 @@ async def check_duplicate(
     request: Request,
     body: DedupeCheckRequest,
     authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    location_id: Optional[str] = Query(None, alias="locationId", description="GHL Location ID"),
 ):
     """
     Check a contact for duplicates and optionally auto-merge.
