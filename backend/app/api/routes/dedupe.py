@@ -4,10 +4,11 @@ Dedupe check endpoint for real-time duplicate detection in GHL workflows.
 This endpoint allows GHL workflows to check incoming contacts for duplicates
 and optionally auto-merge them based on configured match rules.
 """
-from fastapi import APIRouter, HTTPException, Header, Query
+from fastapi import APIRouter, HTTPException, Header, Query, Request
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 import uuid
+import json
 import logging
 
 from app.db.supabase import get_supabase
@@ -276,6 +277,7 @@ class DedupeCheckResponse(BaseModel):
 
 @router.post("/check", response_model=DedupeCheckResponse)
 async def check_duplicate(
+    request: Request,
     body: DedupeCheckRequest,
     authorization: Optional[str] = Header(None, alias="Authorization"),
     location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
@@ -301,6 +303,12 @@ async def check_duplicate(
     - action_taken: What action was taken
     - master_record_id: If merged, which record survived
     """
+    # DEBUG: Log raw request to understand GHL test panel payload
+    raw_body = await request.body()
+    logger.info(f"Dedupe check raw body: {raw_body.decode('utf-8', errors='replace')}")
+    logger.info(f"Dedupe check headers: Authorization={'present' if authorization else 'missing'}, query location_id={location_id}")
+    logger.info(f"Dedupe check parsed: data={body.data}, extras={body.extras}, branches={body.branches}, flat contact_id={body.contact_id}, flat location_id={body.location_id}")
+
     # Resolve fields from GHL Default or flat payload
     try:
         contact_id_val = body.get_contact_id()
