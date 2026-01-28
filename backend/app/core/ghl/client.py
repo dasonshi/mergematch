@@ -44,13 +44,13 @@ class GHLClient:
     async def get_contacts(
         self,
         limit: int = 100,
-        start_after: Optional[str] = None,
+        start_after_id: Optional[str] = None,
         query: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Fetch contacts with pagination."""
         params = {"locationId": self.location_id, "limit": limit}
-        if start_after:
-            params["startAfter"] = start_after
+        if start_after_id:
+            params["startAfterId"] = start_after_id
         if query:
             params["query"] = query
 

@@ -51,7 +51,7 @@ async def list_contacts(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
     limit: int = Query(100, le=100),
-    start_after: Optional[str] = Query(None),
+    start_after_id: Optional[str] = Query(None, alias="startAfterId"),
     query: Optional[str] = Query(None, description="Search query"),
 ):
     """
@@ -67,7 +67,7 @@ async def list_contacts(
         try:
             result = await client.get_contacts(
                 limit=limit,
-                start_after=start_after,
+                start_after_id=start_after_id,
                 query=query,
             )
             return {

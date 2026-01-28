@@ -473,11 +473,11 @@ async def fetch_all_contacts(client, contact_id: str) -> List[dict]:
     logger = logging.getLogger(__name__)
 
     all_contacts = []
-    start_after = None
+    start_after_id = None
 
     while True:
         try:
-            page_result = await client.get_contacts(limit=100, start_after=start_after)
+            page_result = await client.get_contacts(limit=100, start_after_id=start_after_id)
             page_contacts = page_result.get("contacts", [])
             if not page_contacts:
                 break
@@ -486,11 +486,11 @@ async def fetch_all_contacts(client, contact_id: str) -> List[dict]:
                 if isinstance(c, dict) and c.get("id") and c["id"] != contact_id:
                     all_contacts.append(c)
 
-            start_after = (
+            start_after_id = (
                 page_result.get("meta", {}).get("startAfterId")
                 or page_result.get("startAfterId")
             )
-            if not start_after or len(page_contacts) < 100:
+            if not start_after_id or len(page_contacts) < 100:
                 break
         except Exception as e:
             logger.error(f"Failed to fetch contacts page: {e}")
