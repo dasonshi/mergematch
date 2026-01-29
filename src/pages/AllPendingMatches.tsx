@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef } from "react";
-import { Link, useParams, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Loader2, Search, X, Filter, ChevronDown, Play } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
@@ -22,23 +22,20 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, DataTableColumn } from "@/components/ui/data-table";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/lib/api";
+import { api, MatchRule, MatchPair } from "@/lib/api";
 import { computeStrategySelections, computeMasterId, StrategyId } from "@/lib/merge-strategies";
 import { cn } from "@/lib/utils";
-
-// Helper to get field value from record (handles nested custom fields)
-const getFieldValue = (record: Record<string, any>, field: string): string => {
-  if (field.startsWith("customField.")) {
-    const customKey = field.replace("customField.", "");
-    const customFields = record.customFields || record.customField || {};
-    return customFields[customKey] || record[customKey] || "";
-  }
-  return record[field] || "";
-};
 
 // Get the record's display name
 const getRecordName = (record: Record<string, any>): string => {
@@ -48,37 +45,7 @@ const getRecordName = (record: Record<string, any>): string => {
   return record.firstName || record.name || record.email || "—";
 };
 
-// Get match field values as subheading (up to 3 fields)
-const getMatchFieldSubheading = (
-  record: Record<string, any>,
-  matchFields: Array<{ field: string; algorithm: string }>
-): string => {
-  const fields = matchFields.slice(0, 3);
-  const values = fields
-    .map((f) => getFieldValue(record, f.field))
-    .filter((v) => v);
-
-  if (values.length === 0) {
-    return record.email || record.phone || "";
-  }
-
-  return values.join(" • ");
-};
-
-interface MatchPair {
-  id: string;
-  rule_id: string;
-  record_a_id: string;
-  record_b_id: string;
-  record_a_data?: Record<string, any>;
-  record_b_data?: Record<string, any>;
-  confidence_score: number;
-  status: string;
-  created_at: string;
-}
-
-export default function PendingMatches() {
-  const { id: ruleId } = useParams();
+export default function AllPendingMatches() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { locationId, isLoading: authLoading } = useLocation();
@@ -88,26 +55,29 @@ export default function PendingMatches() {
   const [filtersOpen, setFiltersOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [confidenceFilter, setConfidenceFilter] = useState<string>("all");
+  const [ruleFilter, setRuleFilter] = useState<string>("all");
 
   // Merge state
   const [mergingIds, setMergingIds] = useState<Set<string>>(new Set());
   const [showMergeAllDialog, setShowMergeAllDialog] = useState(false);
   const [bulkMergeProgress, setBulkMergeProgress] = useState({ current: 0, total: 0, inProgress: false });
   const abortMergeRef = useRef(false);
-  const [isValidating, setIsValidating] = useState(false);
 
-  // Fetch rule details
-  const { data: rule, isLoading: ruleLoading } = useQuery({
-    queryKey: ["rule", ruleId, locationId],
-    queryFn: () => api.getMatchRule(ruleId!),
-    enabled: !!locationId && !!ruleId,
+  // Fetch all match rules
+  const { data: rulesData, isLoading: rulesLoading } = useQuery({
+    queryKey: ["rules", locationId],
+    queryFn: () => api.getMatchRules(),
+    enabled: !!locationId,
   });
 
-  // Fetch pending matches
+  const rules = rulesData?.data || [];
+  const rulesMap = new Map(rules.map((r: MatchRule) => [r.id, r]));
+
+  // Fetch all pending matches
   const { data: matchesData, isLoading: matchesLoading } = useQuery({
-    queryKey: ["matches", ruleId, locationId],
-    queryFn: () => api.getMatches("pending", ruleId, 1000),
-    enabled: !!locationId && !!ruleId,
+    queryKey: ["matches", "pending", "all", locationId],
+    queryFn: () => api.getMatches("pending", undefined, 1000),
+    enabled: !!locationId,
     gcTime: 0,
   });
 
@@ -119,17 +89,34 @@ export default function PendingMatches() {
     const highConfidence = allMatches.filter((m: MatchPair) => m.confidence_score >= 0.9).length;
     const mediumConfidence = allMatches.filter((m: MatchPair) => m.confidence_score >= 0.8 && m.confidence_score < 0.9).length;
     const lowConfidence = allMatches.filter((m: MatchPair) => m.confidence_score < 0.8).length;
-    return { total, highConfidence, mediumConfidence, lowConfidence };
+
+    // Count by rule
+    const byRule = allMatches.reduce((acc: Record<string, number>, m: any) => {
+      const ruleId = m.rule_id;
+      if (ruleId) {
+        acc[ruleId] = (acc[ruleId] || 0) + 1;
+      }
+      return acc;
+    }, {});
+    const rulesWithMatches = Object.keys(byRule).length;
+
+    return { total, highConfidence, mediumConfidence, lowConfidence, rulesWithMatches, byRule };
   }, [allMatches]);
 
   // Filter matches
   const filteredMatches = useMemo(() => {
-    return allMatches.filter((item: MatchPair) => {
+    return allMatches.filter((item: any) => {
+      // Rule filter
+      if (ruleFilter !== "all" && item.rule_id !== ruleFilter) {
+        return false;
+      }
+
       // Search filter
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
         const recordA = item.record_a_data || {};
         const recordB = item.record_b_data || {};
+        const rule = rulesMap.get(item.rule_id);
         const matchesSearch =
           recordA.firstName?.toLowerCase().includes(query) ||
           recordA.lastName?.toLowerCase().includes(query) ||
@@ -138,7 +125,8 @@ export default function PendingMatches() {
           recordB.firstName?.toLowerCase().includes(query) ||
           recordB.lastName?.toLowerCase().includes(query) ||
           recordB.email?.toLowerCase().includes(query) ||
-          recordB.phone?.toLowerCase().includes(query);
+          recordB.phone?.toLowerCase().includes(query) ||
+          rule?.name?.toLowerCase().includes(query);
         if (!matchesSearch) return false;
       }
 
@@ -152,21 +140,25 @@ export default function PendingMatches() {
 
       return true;
     });
-  }, [allMatches, searchQuery, confidenceFilter]);
+  }, [allMatches, searchQuery, confidenceFilter, ruleFilter, rulesMap]);
 
-  const hasActiveFilters = searchQuery || confidenceFilter !== "all";
-  const activeFilterCount = [searchQuery, confidenceFilter !== "all"].filter(Boolean).length;
+  const hasActiveFilters = searchQuery || confidenceFilter !== "all" || ruleFilter !== "all";
+  const activeFilterCount = [searchQuery, confidenceFilter !== "all", ruleFilter !== "all"].filter(Boolean).length;
 
   const clearFilters = () => {
     setSearchQuery("");
     setConfidenceFilter("all");
+    setRuleFilter("all");
   };
 
   // Quick merge mutation
   const quickMergeMutation = useMutation({
-    mutationFn: async (match: MatchPair) => {
-      const strategy = (rule?.merge_strategy || "standard") as StrategyId;
-      const overwriteBlanks = rule?.merge_settings?.overwrite_blanks ?? false;
+    mutationFn: async (match: any) => {
+      const rule = rulesMap.get(match.rule_id);
+      if (!rule) throw new Error("Rule not found");
+
+      const strategy = (rule.merge_strategy || "standard") as StrategyId;
+      const overwriteBlanks = rule.merge_settings?.overwrite_blanks ?? false;
       const recordA = match.record_a_data || {};
       const recordB = match.record_b_data || {};
       const fields = ["firstName", "lastName", "email", "phone", "tags", "address1", "city", "state", "postalCode"];
@@ -195,6 +187,7 @@ export default function PendingMatches() {
       });
       queryClient.invalidateQueries({ queryKey: ["matches"] });
       queryClient.invalidateQueries({ queryKey: ["merges"] });
+      queryClient.invalidateQueries({ queryKey: ["merge-stats"] });
     },
     onError: (error: Error, match) => {
       toast({
@@ -209,43 +202,6 @@ export default function PendingMatches() {
       });
     },
   });
-
-  // Validate and merge all
-  const handleMergeAllClick = async () => {
-    if (!ruleId) return;
-
-    setIsValidating(true);
-    try {
-      const result = await api.validateMatches(ruleId) as { valid: string[]; stale: string[]; stale_cleaned?: number };
-      queryClient.invalidateQueries({ queryKey: ["matches"] });
-
-      if (result.stale_cleaned && result.stale_cleaned > 0) {
-        toast({
-          title: "Stale Matches Cleaned",
-          description: `Removed ${result.stale_cleaned} stale match(es).`,
-        });
-      }
-
-      if (result.valid.length > 0) {
-        setShowMergeAllDialog(true);
-      } else {
-        toast({
-          title: "No Valid Matches",
-          description: result.stale_cleaned
-            ? "All matches were stale and have been cleaned up."
-            : "No pending matches found to merge.",
-        });
-      }
-    } catch (error) {
-      toast({
-        title: "Validation Failed",
-        description: error instanceof Error ? error.message : "Could not validate matches.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsValidating(false);
-    }
-  };
 
   // Bulk merge
   const handleMergeAll = async () => {
@@ -271,8 +227,14 @@ export default function PendingMatches() {
 
       const match = matches[i];
       try {
-        const strategy = (rule?.merge_strategy || "standard") as StrategyId;
-        const overwriteBlanks = rule?.merge_settings?.overwrite_blanks ?? false;
+        const rule = rulesMap.get(match.rule_id);
+        if (!rule) {
+          failCount++;
+          continue;
+        }
+
+        const strategy = (rule.merge_strategy || "standard") as StrategyId;
+        const overwriteBlanks = rule.merge_settings?.overwrite_blanks ?? false;
         const recordA = match.record_a_data || {};
         const recordB = match.record_b_data || {};
         const fields = ["firstName", "lastName", "email", "phone", "tags", "address1", "city", "state", "postalCode"];
@@ -290,23 +252,14 @@ export default function PendingMatches() {
         failCount++;
       }
       setBulkMergeProgress({ current: i + 1, total: matches.length, inProgress: true });
-      queryClient.invalidateQueries({ queryKey: ["merges"] });
     }
 
     setBulkMergeProgress({ current: 0, total: 0, inProgress: false });
     queryClient.invalidateQueries({ queryKey: ["matches"] });
+    queryClient.invalidateQueries({ queryKey: ["merges"] });
+    queryClient.invalidateQueries({ queryKey: ["merge-stats"] });
 
     if (!abortMergeRef.current) {
-      if (ruleId && rule) {
-        try {
-          await api.createBulkMergeNotification(ruleId, rule.name || "Unknown Rule", successCount, failCount);
-          queryClient.invalidateQueries({ queryKey: ["notifications"] });
-          queryClient.invalidateQueries({ queryKey: ["unread-count"] });
-        } catch (e) {
-          console.error("Failed to create notification:", e);
-        }
-      }
-
       toast({
         title: "Bulk Merge Complete",
         description: `Successfully merged ${successCount} records.${failCount > 0 ? ` ${failCount} failed.` : ''}`,
@@ -315,23 +268,17 @@ export default function PendingMatches() {
     }
   };
 
-  // Table columns - uses rule.match_fields to show relevant field values
-  const matchFields = rule?.match_fields || [];
-  const columns: DataTableColumn<MatchPair>[] = [
+  // Table columns
+  const columns: DataTableColumn<any>[] = [
     {
       header: "Record A",
       accessor: (item) => {
         const recordA = item.record_a_data || {};
-        const subheading = getMatchFieldSubheading(recordA, matchFields);
         return (
           <div>
-            <div className="font-medium">
-              {getRecordName(recordA)}
-            </div>
-            {subheading && (
-              <div className="text-xs text-muted-foreground">
-                {subheading}
-              </div>
+            <div className="font-medium">{getRecordName(recordA)}</div>
+            {recordA.email && (
+              <div className="text-xs text-muted-foreground">{recordA.email}</div>
             )}
           </div>
         );
@@ -341,18 +288,28 @@ export default function PendingMatches() {
       header: "Record B",
       accessor: (item) => {
         const recordB = item.record_b_data || {};
-        const subheading = getMatchFieldSubheading(recordB, matchFields);
         return (
           <div>
-            <div className="font-medium">
-              {getRecordName(recordB)}
-            </div>
-            {subheading && (
-              <div className="text-xs text-muted-foreground">
-                {subheading}
-              </div>
+            <div className="font-medium">{getRecordName(recordB)}</div>
+            {recordB.email && (
+              <div className="text-xs text-muted-foreground">{recordB.email}</div>
             )}
           </div>
+        );
+      },
+    },
+    {
+      header: "Rule",
+      hideOnMobile: true,
+      accessor: (item) => {
+        const rule = rulesMap.get(item.rule_id);
+        return (
+          <Link
+            to={`/match-rules/${item.rule_id}`}
+            className="text-sm text-muted-foreground hover:text-primary"
+          >
+            {rule?.name || "Unknown"}
+          </Link>
         );
       },
     },
@@ -392,7 +349,7 @@ export default function PendingMatches() {
         return (
           <div className="flex justify-end gap-2">
             <Button variant="outline" size="sm" asChild>
-              <Link to={`/match-rules/${ruleId}/review/${item.id}`}>Review</Link>
+              <Link to={`/match-rules/${item.rule_id}/review/${item.id}`}>Review</Link>
             </Button>
             <Button
               size="sm"
@@ -407,21 +364,10 @@ export default function PendingMatches() {
     },
   ];
 
-  if (authLoading || ruleLoading || matchesLoading) {
+  if (authLoading || rulesLoading || matchesLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  if (!rule) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-muted-foreground">Rule not found</p>
-        <Link to="/" className="text-primary hover:underline mt-4 block">
-          Back to Dashboard
-        </Link>
       </div>
     );
   }
@@ -431,25 +377,20 @@ export default function PendingMatches() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
-          <Button size="sm" asChild>
-            <Link to={`/match-rules/${ruleId}`}>
+          <Button variant="ghost" size="sm" asChild>
+            <Link to="/">
               <ArrowLeft className="h-4 w-4 mr-1" />
-              {rule.name}
+              Dashboard
             </Link>
           </Button>
-          <PageHeader title="Pending Matches" />
+          <PageHeader title="All Pending Matches" />
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button
-            onClick={handleMergeAllClick}
-            disabled={filteredMatches.length === 0 || bulkMergeProgress.inProgress || isValidating}
+            onClick={() => setShowMergeAllDialog(true)}
+            disabled={filteredMatches.length === 0 || bulkMergeProgress.inProgress}
           >
-            {isValidating ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Validating...
-              </>
-            ) : bulkMergeProgress.inProgress ? (
+            {bulkMergeProgress.inProgress ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Merging {bulkMergeProgress.current}/{bulkMergeProgress.total}
@@ -475,11 +416,17 @@ export default function PendingMatches() {
       </div>
 
       {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-5">
         <Card>
           <CardContent className="p-4">
             <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total Pending</span>
             <p className="text-2xl font-bold mt-1">{stats.total}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Rules</span>
+            <p className="text-2xl font-bold mt-1">{stats.rulesWithMatches}</p>
           </CardContent>
         </Card>
         <Card>
@@ -533,12 +480,30 @@ export default function PendingMatches() {
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
                       id="search"
-                      placeholder="Search by name, email, phone..."
+                      placeholder="Search by name, email, phone, rule..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="pl-9"
                     />
                   </div>
+                </div>
+
+                {/* Rule Filter */}
+                <div className="space-y-2 min-w-[200px]">
+                  <Label className="text-sm font-medium">Rule</Label>
+                  <Select value={ruleFilter} onValueChange={setRuleFilter}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All Rules" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Rules</SelectItem>
+                      {rules.filter((r: MatchRule) => stats.byRule[r.id]).map((rule: MatchRule) => (
+                        <SelectItem key={rule.id} value={rule.id}>
+                          {rule.name} ({stats.byRule[rule.id]})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 {/* Confidence Filter */}
@@ -547,7 +512,7 @@ export default function PendingMatches() {
                   <div className="flex gap-2">
                     {[
                       { value: "all", label: "All" },
-                      { value: "high", label: "High (90%+)" },
+                      { value: "high", label: "High" },
                       { value: "medium", label: "Medium" },
                       { value: "low", label: "Low" },
                     ].map((option) => (
@@ -575,7 +540,7 @@ export default function PendingMatches() {
             data={filteredMatches}
             columns={columns}
             keyField="id"
-            minWidth="600px"
+            minWidth="700px"
             emptyState={
               <div className="p-12 text-center">
                 {hasActiveFilters ? (
@@ -590,7 +555,7 @@ export default function PendingMatches() {
                   <>
                     <p className="text-muted-foreground mb-4">No pending matches found</p>
                     <Button variant="outline" asChild>
-                      <Link to={`/match-rules/${ruleId}`}>Back to Rule</Link>
+                      <Link to="/">Back to Dashboard</Link>
                     </Button>
                   </>
                 )}
@@ -615,7 +580,8 @@ export default function PendingMatches() {
             <AlertDialogTitle>Merge All Pending Matches?</AlertDialogTitle>
             <AlertDialogDescription>
               This will merge <span className="font-semibold">{filteredMatches.length}</span> pending matches
-              using Record A as the master for each pair. All duplicate records will be deleted.
+              across <span className="font-semibold">{new Set(filteredMatches.map((m: any) => m.rule_id)).size}</span> rules
+              using each rule's configured merge strategy.
               <br /><br />
               Snapshots will be saved for 30-day rollback.
             </AlertDialogDescription>

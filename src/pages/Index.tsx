@@ -4,10 +4,12 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { RefreshCw, ArrowRight, Plus, Check, ClipboardList, FolderOpen, Building2, Users, Loader2, RotateCcw, Eye, MoreHorizontal, TrendingUp } from "lucide-react";
+import { RefreshCw, ArrowRight, Plus, Check, ClipboardList, FolderOpen, Building2, Users, Loader2, RotateCcw, Eye, MoreHorizontal, TrendingUp, GitMerge } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, MatchRule, Merge, MatchPair } from "@/lib/api";
+import { computeStrategySelections, computeMasterId, StrategyId } from "@/lib/merge-strategies";
+import { cn } from "@/lib/utils";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 import { DataTable, DataTableColumn } from "@/components/ui/data-table";
@@ -32,6 +34,9 @@ export default function Dashboard() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+
+  // Merge state for pending matches table
+  const [mergingIds, setMergingIds] = useState<Set<string>>(new Set());
 
   // Fetch sync status from backend
   const { data: syncStatus, refetch: refetchSyncStatus } = useQuery({
@@ -206,6 +211,55 @@ export default function Dashboard() {
     },
   });
 
+  // Quick merge mutation for pending matches
+  const quickMergeMutation = useMutation({
+    mutationFn: async ({ match, rule }: { match: MatchPair; rule: MatchRule }) => {
+      const strategy = (rule?.merge_strategy || "standard") as StrategyId;
+      const overwriteBlanks = rule?.merge_settings?.overwrite_blanks ?? false;
+      const recordA = (match as any).record_a_data || {};
+      const recordB = (match as any).record_b_data || {};
+      const fields = ["firstName", "lastName", "email", "phone", "tags", "address1", "city", "state", "postalCode"];
+      const selections = computeStrategySelections({
+        strategy,
+        recordA,
+        recordB,
+        fields,
+        overwriteBlanks,
+      });
+      const masterId = computeMasterId(strategy, recordA, recordB, fields, match.record_a_id, match.record_b_id);
+      return api.executeMerge(match.id, masterId, selections);
+    },
+    onMutate: ({ match }) => {
+      setMergingIds(prev => new Set(prev).add(match.id));
+    },
+    onSuccess: (_, { match }) => {
+      toast({
+        title: "Merge Successful",
+        description: "The contacts have been merged.",
+      });
+      setMergingIds(prev => {
+        const next = new Set(prev);
+        next.delete(match.id);
+        return next;
+      });
+      queryClient.invalidateQueries({ queryKey: ["matches"] });
+      queryClient.invalidateQueries({ queryKey: ["merges"] });
+      queryClient.invalidateQueries({ queryKey: ["merge-stats"] });
+    },
+    onError: (error: Error, { match }) => {
+      toast({
+        title: "Merge Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+      setMergingIds(prev => {
+        const next = new Set(prev);
+        next.delete(match.id);
+        return next;
+      });
+    },
+  });
+
   // Combined loading flag so all stat cards transition together
   const statsLoading = contactsLoading || companiesLoading || matchesLoading || mergeStatsLoading;
 
@@ -355,6 +409,105 @@ export default function Dashboard() {
           </DropdownMenu>
         </div>
       ),
+    },
+  ];
+
+  // Helper to get record display name
+  const getRecordName = (record: Record<string, any>): string => {
+    if (record.firstName && record.lastName) {
+      return `${record.firstName} ${record.lastName}`;
+    }
+    return record.firstName || record.name || record.email || "—";
+  };
+
+  // Create a map of rule IDs to rules for quick lookup
+  const rulesMap = new Map(rules.map((r: MatchRule) => [r.id, r]));
+
+  // Define columns for Pending Matches table
+  const pendingMatchesColumns: DataTableColumn<MatchPair>[] = [
+    {
+      header: "Record A",
+      accessor: (item) => {
+        const recordA = (item as any).record_a_data || {};
+        return (
+          <div>
+            <div className="font-medium">{getRecordName(recordA)}</div>
+            {recordA.email && (
+              <div className="text-xs text-muted-foreground">{recordA.email}</div>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      header: "Record B",
+      accessor: (item) => {
+        const recordB = (item as any).record_b_data || {};
+        return (
+          <div>
+            <div className="font-medium">{getRecordName(recordB)}</div>
+            {recordB.email && (
+              <div className="text-xs text-muted-foreground">{recordB.email}</div>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      header: "Rule",
+      hideOnMobile: true,
+      accessor: (item) => {
+        const rule = rulesMap.get((item as any).rule_id);
+        return (
+          <Link
+            to={`/match-rules/${(item as any).rule_id}`}
+            className="text-sm text-muted-foreground hover:text-primary"
+          >
+            {rule?.name || "Unknown"}
+          </Link>
+        );
+      },
+    },
+    {
+      header: "Confidence",
+      accessor: (item) => {
+        const confidence = Math.round((item.confidence_score || 0) * 100);
+        return (
+          <Badge
+            variant="outline"
+            className={cn(
+              "font-semibold",
+              confidence >= 90 ? "bg-green-100 text-green-700 border-green-200" :
+              confidence >= 80 ? "bg-amber-100 text-amber-700 border-amber-200" :
+              "bg-red-100 text-red-700 border-red-200"
+            )}
+          >
+            {confidence}%
+          </Badge>
+        );
+      },
+    },
+    {
+      header: "Actions",
+      align: "right",
+      accessor: (item) => {
+        const rule = rulesMap.get((item as any).rule_id);
+        const isMerging = mergingIds.has(item.id);
+        return (
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" asChild>
+              <Link to={`/match-rules/${(item as any).rule_id}/review/${item.id}`}>Review</Link>
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => rule && quickMergeMutation.mutate({ match: item, rule })}
+              disabled={isMerging || !rule}
+            >
+              {isMerging ? <Loader2 className="h-3 w-3 animate-spin" /> : "Merge"}
+            </Button>
+          </div>
+        );
+      },
     },
   ];
 
@@ -550,7 +703,7 @@ export default function Dashboard() {
               </div>
               {!statsLoading && rulesWithPending > 0 && (
                 <Button className="mt-4 w-full" asChild>
-                  <Link to={`/match-rules/${rules.find((r: MatchRule) => pendingByRule[r.id] > 0)?.id}`}>
+                  <Link to="/pending-matches">
                     Review Now <ArrowRight className="ml-2 h-4 w-4" />
                   </Link>
                 </Button>
@@ -655,6 +808,43 @@ export default function Dashboard() {
             />
           </CardContent>
         </Card>
+
+        {/* Pending Matches Table */}
+        {pendingMatches.length > 0 && (
+          <Card className="overflow-hidden hover:shadow-md transition-shadow">
+            <CardHeader className="flex flex-row items-center justify-between pb-4">
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-primary/10 p-2">
+                  <GitMerge className="h-4 w-4 text-primary" />
+                </div>
+                <CardTitle className="text-lg font-semibold">Pending Matches</CardTitle>
+                <Badge variant="secondary">{pendingTotalCount}</Badge>
+              </div>
+              <Button variant="link" asChild>
+                <Link to="/pending-matches">View All <ArrowRight className="ml-1 h-3.5 w-3.5" /></Link>
+              </Button>
+            </CardHeader>
+            <CardContent className="p-0">
+              <DataTable
+                data={pendingMatches.slice(0, 5)}
+                columns={pendingMatchesColumns}
+                keyField="id"
+                loading={matchesLoading}
+                minWidth="700px"
+              />
+              {pendingTotalCount > 5 && (
+                <div className="p-4 border-t text-center">
+                  <Button variant="outline" asChild>
+                    <Link to="/pending-matches">
+                      View all {pendingTotalCount} pending matches
+                      <ArrowRight className="ml-2 h-4 w-4" />
+                    </Link>
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Recent Activity Table */}
         <Card className="overflow-hidden">

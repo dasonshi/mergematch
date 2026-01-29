@@ -16,6 +16,7 @@ import MatchRules from "./pages/MatchRules";
 import History from "./pages/History";
 import MergeDetail from "./pages/MergeDetail";
 import PendingMatches from "./pages/PendingMatches";
+import AllPendingMatches from "./pages/AllPendingMatches";
 import Settings from "./pages/Settings";
 import Help from "./pages/Help";
 import StatsSummary from "./pages/StatsSummary";
@@ -43,6 +44,7 @@ const App = () => (
               <Route path="/merge-strategies" element={<MergeStrategies />} />
               <Route path="/merge-strategies/new" element={<MergeStrategyForm />} />
               <Route path="/merge-strategies/:id/edit" element={<MergeStrategyForm />} />
+              <Route path="/pending-matches" element={<AllPendingMatches />} />
               <Route path="/history" element={<History />} />
               <Route path="/history/:mergeId" element={<MergeDetail />} />
               <Route path="/settings" element={<Settings />} />
