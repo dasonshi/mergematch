@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query, Header, Request
+from fastapi import APIRouter, HTTPException, Query, Header, Request, Depends
 from pydantic import BaseModel, Field
 from typing import Optional, List
 import httpx
@@ -6,7 +6,8 @@ import logging
 
 from app.db.supabase import get_supabase
 from app.services.auth_service import get_location_tokens
-from app.core.security import get_current_user_flexible
+from app.core.security import AuthenticatedUser
+from app.core.deps import get_user, get_auth_context, AuthContext
 from app.core.ghl.client import GHLClient
 from app.core.rate_limit import limiter
 
@@ -29,16 +30,13 @@ class CleanupRequest(BaseModel):
 @limiter.limit("100/minute")
 async def list_matches(
     request: Request,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    user: AuthenticatedUser = Depends(get_user),
     status: Optional[str] = Query(None, description="Filter by status: pending, approved, rejected, merged"),
     rule_id: Optional[str] = Query(None, description="Filter by match rule ID"),
     limit: int = Query(50, le=1000),
     offset: int = Query(0),
 ):
     """List match pairs for the current location."""
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-
     supabase = get_supabase()
 
     # Get the true total count (not limited by pagination)
@@ -96,20 +94,12 @@ async def list_matches(
 @router.post("/validate")
 async def validate_matches(
     rule_id: str = Query(..., description="Match rule ID"),
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    ctx: AuthContext = Depends(get_auth_context),
 ):
     """
     Validate match pairs - check if contacts still exist in GHL.
     Returns list of valid and stale match IDs.
     """
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-
-    # Get GHL access token (using ghl_location_id, not internal location_id)
-    tokens = await get_location_tokens(user.ghl_location_id)
-    if not tokens:
-        raise HTTPException(status_code=401, detail="No access token available")
-
     supabase = get_supabase()
 
     # Get pending matches for this rule
@@ -118,7 +108,7 @@ async def validate_matches(
         .select("id, record_a_id, record_b_id")
         .eq("rule_id", rule_id)
         .eq("status", "pending")
-        .eq("location_id", user.location_id)
+        .eq("location_id", ctx.location_id)
         .execute()
     )
 
@@ -134,7 +124,7 @@ async def validate_matches(
     logger.info(f"Validating {len(contact_ids)} unique contacts for {len(matches.data)} match pairs")
 
     # Check which contacts exist in GHL
-    async with GHLClient(tokens["access_token"], tokens["ghl_location_id"]) as client:
+    async with GHLClient(ctx.access_token, ctx.ghl_location_id) as client:
         existing_ids = set()
         for contact_id in contact_ids:
             try:
@@ -186,12 +176,9 @@ async def validate_matches(
 @router.post("/cleanup-stale")
 async def cleanup_stale_matches(
     body: CleanupRequest,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    user: AuthenticatedUser = Depends(get_user),
 ):
     """Mark stale match pairs as 'stale' status."""
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-
     supabase = get_supabase()
 
     cleaned = 0
@@ -216,12 +203,9 @@ async def cleanup_stale_matches(
 @router.get("/{match_id}")
 async def get_match(
     match_id: str,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    user: AuthenticatedUser = Depends(get_user),
 ):
     """Get details of a specific match pair."""
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-
     supabase = get_supabase()
     result = supabase.table("match_pairs").select("*").eq("id", match_id).eq("location_id", user.location_id).single().execute()
 
@@ -234,12 +218,9 @@ async def get_match(
 @router.post("/{match_id}/approve")
 async def approve_match(
     match_id: str,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    user: AuthenticatedUser = Depends(get_user),
 ):
     """Approve a match as a valid duplicate."""
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-
     supabase = get_supabase()
     result = supabase.table("match_pairs").update({"status": "approved"}).eq("id", match_id).eq("location_id", user.location_id).execute()
 
@@ -252,13 +233,10 @@ async def approve_match(
 @router.post("/{match_id}/reject")
 async def reject_match(
     match_id: str,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    user: AuthenticatedUser = Depends(get_user),
     body: RejectRequest = None,
 ):
     """Reject a match - not a duplicate."""
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-
     supabase = get_supabase()
     update_data = {"status": "rejected"}
     if body and body.reason:

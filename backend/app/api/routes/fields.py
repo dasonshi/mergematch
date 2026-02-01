@@ -1,10 +1,9 @@
-from fastapi import APIRouter, HTTPException, Query, Header
+from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import Optional, List, Dict, Any
 import logging
 
-from app.services.auth_service import get_location_tokens_with_refresh
 from app.core.ghl.client import GHLClient
-from app.core.security import get_current_user_flexible
+from app.core.deps import get_auth_context, AuthContext
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -71,8 +70,7 @@ def normalize_object_field(field: Dict[str, Any]) -> Dict[str, Any]:
 @router.get("/{object_type}")
 async def get_object_fields(
     object_type: str,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    ctx: AuthContext = Depends(get_auth_context),
 ) -> List[Dict[str, Any]]:
     """
     Get available fields for an object type.
@@ -86,15 +84,10 @@ async def get_object_fields(
     - 'opportunities' - Opportunity records
     - 'custom_objects.{key}' - Custom object records
     """
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-    tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
-    if not tokens:
-        raise HTTPException(status_code=401, detail="Location not authenticated or token refresh failed")
-
     # Start with standard fields (as fallback)
     standard_fields = STANDARD_FIELDS.get(object_type, [])
 
-    async with GHLClient(tokens["access_token"], user.ghl_location_id) as client:
+    async with GHLClient(ctx.access_token, ctx.ghl_location_id) as client:
         try:
             if object_type == "contacts":
                 # Fetch contact custom fields
@@ -161,19 +154,13 @@ async def get_object_fields(
 
 @router.get("/")
 async def list_available_objects(
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    ctx: AuthContext = Depends(get_auth_context),
 ) -> List[Dict[str, Any]]:
     """
     List all available object types including custom objects.
 
     Returns standard objects plus any custom objects defined in the location.
     """
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-    tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
-    if not tokens:
-        raise HTTPException(status_code=401, detail="Location not authenticated or token refresh failed")
-
     # Standard objects always available
     objects = [
         {"id": "contacts", "name": "Contacts", "standard": True},
@@ -184,7 +171,7 @@ async def list_available_objects(
     # Known standard object keys to filter out
     STANDARD_KEYS = {"contact", "business", "opportunity", "conversation", "appointment", "task", "note"}
 
-    async with GHLClient(tokens["access_token"], user.ghl_location_id) as client:
+    async with GHLClient(ctx.access_token, ctx.ghl_location_id) as client:
         try:
             # Fetch custom objects
             ghl_objects = await client.list_objects()
@@ -238,8 +225,7 @@ KNOWN_ASSOCIATIONS = {
 @router.get("/{object_type}/associations")
 async def get_object_associations(
     object_type: str,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    ctx: AuthContext = Depends(get_auth_context),
 ) -> List[Dict[str, Any]]:
     """
     Get associated/related objects for a given object type.
@@ -253,15 +239,10 @@ async def get_object_associations(
     - 'opportunities' - Returns contacts
     - 'custom_objects.{key}' - Returns defined associations
     """
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-    tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
-    if not tokens:
-        raise HTTPException(status_code=401, detail="Location not authenticated or token refresh failed")
-
     # Start with known associations as fallback
     known = KNOWN_ASSOCIATIONS.get(object_type, [])
 
-    async with GHLClient(tokens["access_token"], user.ghl_location_id) as client:
+    async with GHLClient(ctx.access_token, ctx.ghl_location_id) as client:
         try:
             # Try to fetch associations from GHL API
             ghl_associations = await client.get_associations_for_object(object_type)
@@ -301,20 +282,14 @@ async def get_object_associations(
 
 @router.get("/pipelines")
 async def get_pipelines(
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    ctx: AuthContext = Depends(get_auth_context),
 ) -> List[Dict[str, Any]]:
     """
     Get all pipelines and their stages for the location.
 
     Returns list of pipelines with their stages for use in dropdown selectors.
     """
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-    tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
-    if not tokens:
-        raise HTTPException(status_code=401, detail="Location not authenticated or token refresh failed")
-
-    async with GHLClient(tokens["access_token"], user.ghl_location_id) as client:
+    async with GHLClient(ctx.access_token, ctx.ghl_location_id) as client:
         try:
             pipelines = await client.get_pipelines()
             # Flatten stages from all pipelines for easy selection

@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { RefreshCw, ArrowRight, Plus, Check, ClipboardList, FolderOpen, Building2, Users, Loader2, RotateCcw, Eye, MoreHorizontal, TrendingUp, GitMerge } from "lucide-react";
+import { RefreshCw, ArrowRight, Plus, Check, ClipboardList, FolderOpen, Building2, Users, Loader2, RotateCcw, Eye, MoreHorizontal, TrendingUp, GitMerge, Trash2, AlertCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, MatchRule, Merge, MatchPair } from "@/lib/api";
@@ -22,8 +22,19 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function Dashboard() {
   const { locationId, locationName, isAuthenticated, isLoading: authLoading, error: authError, connectionStatus, reconnect } = useLocation();
@@ -125,21 +136,21 @@ export default function Dashboard() {
   };
 
   // Fetch contacts count
-  const { data: contactsData, isLoading: contactsLoading } = useQuery({
+  const { data: contactsData, isLoading: contactsLoading, isError: contactsError, refetch: refetchContacts } = useQuery({
     queryKey: ['contacts-stats', locationId],
     queryFn: () => api.getContactsStats(),
     enabled: isAuthenticated && !!locationId,
   });
 
   // Fetch companies count
-  const { data: companiesData, isLoading: companiesLoading } = useQuery({
+  const { data: companiesData, isLoading: companiesLoading, isError: companiesError, refetch: refetchCompanies } = useQuery({
     queryKey: ['companies', locationId],
     queryFn: () => api.getCompanies(),
     enabled: isAuthenticated && !!locationId,
   });
 
   // Fetch match rules
-  const { data: rulesData, isLoading: rulesLoading } = useQuery({
+  const { data: rulesData, isLoading: rulesLoading, isError: rulesError, refetch: refetchRules } = useQuery({
     queryKey: ['rules', locationId],
     queryFn: () => api.getMatchRules(),
     enabled: isAuthenticated && !!locationId,
@@ -148,7 +159,7 @@ export default function Dashboard() {
   });
 
   // Fetch pending matches (higher limit to get accurate per-rule counts)
-  const { data: matchesData, isLoading: matchesLoading } = useQuery({
+  const { data: matchesData, isLoading: matchesLoading, isError: matchesError, refetch: refetchMatches } = useQuery({
     queryKey: ['matches', 'pending', locationId],
     queryFn: () => api.getMatches('pending', undefined, 1000),
     enabled: isAuthenticated && !!locationId,
@@ -158,14 +169,14 @@ export default function Dashboard() {
   });
 
   // Fetch merge stats
-  const { data: mergeStatsData, isLoading: mergeStatsLoading } = useQuery({
+  const { data: mergeStatsData, isLoading: mergeStatsLoading, isError: mergeStatsError, refetch: refetchMergeStats } = useQuery({
     queryKey: ['merge-stats', locationId],
     queryFn: () => api.getMergeStats(),
     enabled: isAuthenticated && !!locationId,
   });
 
   // Fetch recent merges (completed only for activity table)
-  const { data: mergesData, isLoading: mergesLoading } = useQuery({
+  const { data: mergesData, isLoading: mergesLoading, isError: mergesError, refetch: refetchMerges } = useQuery({
     queryKey: ['merges', locationId],
     queryFn: () => api.getMerges(10),
     enabled: isAuthenticated && !!locationId,
@@ -205,6 +216,29 @@ export default function Dashboard() {
     onError: (error: Error) => {
       toast({
         title: "Rollback Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Delete rule state and mutation
+  const [ruleToDelete, setRuleToDelete] = useState<MatchRule | null>(null);
+
+  const deleteRuleMutation = useMutation({
+    mutationFn: (ruleId: string) => api.deleteMatchRule(ruleId),
+    onSuccess: () => {
+      toast({
+        title: "Rule Deleted",
+        description: "The match rule has been permanently deleted.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+      queryClient.invalidateQueries({ queryKey: ["matches"] });
+      setRuleToDelete(null);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Delete Failed",
         description: error.message,
         variant: "destructive",
       });
@@ -263,6 +297,18 @@ export default function Dashboard() {
   // Combined loading flag so all stat cards transition together
   const statsLoading = contactsLoading || companiesLoading || matchesLoading || mergeStatsLoading;
 
+  // Check if any critical query has errored
+  const hasQueryError = rulesError || matchesError;
+
+  const retryAllQueries = () => {
+    refetchContacts();
+    refetchCompanies();
+    refetchRules();
+    refetchMatches();
+    refetchMergeStats();
+    refetchMerges();
+  };
+
   // Calculate stats from real data
   const contactsCount = contactsData?.total ?? 0;
   const companiesCount = companiesData?.total ?? companiesData?.companies?.length ?? 0;
@@ -318,6 +364,19 @@ export default function Dashboard() {
           <a href={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/auth/install`}>
             Connect Your CRM
           </a>
+        </Button>
+      </div>
+    );
+  }
+
+  if (hasQueryError && !rulesLoading && !matchesLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
+        <AlertCircle className="h-8 w-8 text-destructive" />
+        <p className="text-muted-foreground">Failed to load dashboard data</p>
+        <Button variant="outline" onClick={retryAllQueries}>
+          <RefreshCw className="h-4 w-4 mr-2" />
+          Try Again
         </Button>
       </div>
     );
@@ -404,6 +463,14 @@ export default function Dashboard() {
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link to={`/match-rules/${rule.id}/edit`}>Edit Rule</Link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onClick={() => setRuleToDelete(rule)}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete Rule
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -836,7 +903,7 @@ export default function Dashboard() {
                 <div className="p-4 border-t text-center">
                   <Button variant="outline" asChild>
                     <Link to="/pending-matches">
-                      View all {pendingTotalCount} pending matches
+                      View all pending matches
                       <ArrowRight className="ml-2 h-4 w-4" />
                     </Link>
                   </Button>
@@ -865,6 +932,38 @@ export default function Dashboard() {
             />
           </CardContent>
         </Card>
+
+        {/* Delete Rule Confirmation Dialog */}
+        <AlertDialog open={!!ruleToDelete} onOpenChange={(open) => !open && setRuleToDelete(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Match Rule?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently delete the rule <span className="font-semibold">"{ruleToDelete?.name}"</span> and
+                all its pending matches. This action cannot be undone.
+                <br /><br />
+                Merge history will be preserved.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => ruleToDelete && deleteRuleMutation.mutate(ruleToDelete.id)}
+                disabled={deleteRuleMutation.isPending}
+              >
+                {deleteRuleMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  "Delete Rule"
+                )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </TooltipProvider>
   );

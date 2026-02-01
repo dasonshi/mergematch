@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query, Header, Request
+from fastapi import APIRouter, HTTPException, Query, Header, Request, Depends
 from pydantic import BaseModel
 from typing import Dict, Optional, List
 from datetime import datetime, timedelta
@@ -7,9 +7,9 @@ import uuid
 import logging
 
 from app.db.supabase import get_supabase
-from app.services.auth_service import get_location_tokens_with_refresh
 from app.services.merge_service import execute_merge, rollback_merge
-from app.core.security import get_current_user_flexible
+from app.core.security import AuthenticatedUser
+from app.core.deps import get_user, get_auth_context, AuthContext
 from app.core.rate_limit import limiter, RATE_LIMIT_MERGE
 
 logger = logging.getLogger(__name__)
@@ -28,12 +28,9 @@ class MergeRequest(BaseModel):
 @limiter.limit("100/minute")
 async def get_merge_stats(
     request: Request,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    user: AuthenticatedUser = Depends(get_user),
 ):
     """Get merge statistics by status."""
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-
     supabase = get_supabase()
 
     # Get counts by status
@@ -53,13 +50,10 @@ async def get_merge_stats(
 @limiter.limit("100/minute")
 async def get_detailed_merge_stats(
     request: Request,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    user: AuthenticatedUser = Depends(get_user),
     days: int = Query(30, description="Number of days to include in time series"),
 ):
     """Get detailed merge statistics including time series data."""
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-
     supabase = get_supabase()
 
     # Get all merges with timestamps and rule info
@@ -137,8 +131,7 @@ async def get_detailed_merge_stats(
 @limiter.limit("100/minute")
 async def list_merges(
     request: Request,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    user: AuthenticatedUser = Depends(get_user),
     limit: int = 50,
     offset: int = 0,
     status: Optional[str] = Query(None, description="Filter by status (completed, failed, rolled_back)"),
@@ -148,8 +141,6 @@ async def list_merges(
     date_to: Optional[str] = Query(None, description="ISO date end filter"),
 ):
     """List merge history with rule info."""
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-
     supabase = get_supabase()
 
     # Use inner join when filtering by rule_id for accurate results
@@ -210,31 +201,18 @@ async def list_merges(
 async def execute_merge_route(
     request: Request,
     body: MergeRequest,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    ctx: AuthContext = Depends(get_auth_context),
 ):
     """Execute a merge operation."""
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-
-    # Get tokens with better error handling
-    try:
-        tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
-    except Exception as e:
-        logger.error(f"Token retrieval failed for location {user.ghl_location_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Token retrieval failed. Please try again.")
-
-    if not tokens:
-        raise HTTPException(status_code=401, detail="Location not authenticated or token refresh failed")
-
     try:
         result = await execute_merge(
             match_id=body.match_id,
             master_record_id=body.master_record_id,
             field_selections=body.field_selections,
-            access_token=tokens["access_token"],
-            ghl_location_id=user.ghl_location_id,
-            tenant_id=user.tenant_id,
-            internal_location_id=user.location_id,
+            access_token=ctx.access_token,
+            ghl_location_id=ctx.ghl_location_id,
+            tenant_id=ctx.tenant_id,
+            internal_location_id=ctx.location_id,
             preserve_alternates=body.preserve_alternates,
         )
         return result
@@ -248,12 +226,9 @@ async def execute_merge_route(
 @router.get("/{merge_id}")
 async def get_merge(
     merge_id: str,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    user: AuthenticatedUser = Depends(get_user),
 ):
     """Get merge details including field selections and snapshots."""
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-
     supabase = get_supabase()
 
     # Get merge record
@@ -286,21 +261,15 @@ async def get_merge(
 @router.post("/{merge_id}/rollback")
 async def rollback_merge_route(
     merge_id: str,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    ctx: AuthContext = Depends(get_auth_context),
 ):
     """Rollback a merge (restore deleted record)."""
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-    tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
-    if not tokens:
-        raise HTTPException(status_code=401, detail="Location not authenticated or token refresh failed")
-
     try:
         result = await rollback_merge(
             merge_id=merge_id,
-            access_token=tokens["access_token"],
-            ghl_location_id=user.ghl_location_id,
-            internal_location_id=user.location_id,
+            access_token=ctx.access_token,
+            ghl_location_id=ctx.ghl_location_id,
+            internal_location_id=ctx.location_id,
         )
         return result
     except ValueError as e:

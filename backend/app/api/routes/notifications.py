@@ -2,11 +2,12 @@
 Notification routes for MergeMatch.
 Handles in-app notifications for bulk operations.
 """
-from fastapi import APIRouter, HTTPException, Query, Header
+from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
-from app.core.security import get_current_user_flexible
+from app.core.security import AuthenticatedUser
+from app.core.deps import get_user
 from app.services.notification_service import (
     get_notifications,
     get_unread_count,
@@ -46,14 +47,11 @@ async def list_notifications(
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     unread_only: bool = Query(False),
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    user: AuthenticatedUser = Depends(get_user),
 ):
     """
     List notifications for the current location.
     """
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-
     notifications = await get_notifications(
         location_id=user.location_id,
         limit=limit,
@@ -80,14 +78,11 @@ async def list_notifications(
 
 @router.get("/unread-count", response_model=UnreadCountResponse)
 async def get_unread_notifications_count(
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    user: AuthenticatedUser = Depends(get_user),
 ):
     """
     Get count of unread notifications for the current location.
     """
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-
     count = await get_unread_count(user.location_id)
 
     return UnreadCountResponse(count=count)
@@ -96,14 +91,11 @@ async def get_unread_notifications_count(
 @router.patch("/{notification_id}/read")
 async def mark_notification_read(
     notification_id: str,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    user: AuthenticatedUser = Depends(get_user),
 ):
     """
     Mark a notification as read.
     """
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-
     result = await mark_as_read(notification_id)
 
     if not result:
@@ -114,14 +106,11 @@ async def mark_notification_read(
 
 @router.post("/mark-all-read")
 async def mark_all_notifications_read(
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    user: AuthenticatedUser = Depends(get_user),
 ):
     """
     Mark all notifications as read for the current location.
     """
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-
     count = await mark_all_as_read(user.location_id)
 
     return {"success": True, "marked_count": count}
@@ -138,14 +127,11 @@ class CreateBulkMergeNotificationRequest(BaseModel):
 @router.post("/", response_model=NotificationResponse)
 async def create_notification_route(
     request: CreateBulkMergeNotificationRequest,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    user: AuthenticatedUser = Depends(get_user),
 ):
     """
     Create a notification for a bulk merge operation.
     """
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-
     notification = await create_bulk_merge_notification(
         location_id=user.location_id,
         rule_id=request.rule_id,

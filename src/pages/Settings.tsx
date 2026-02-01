@@ -88,14 +88,14 @@ export default function Settings() {
 
   // Fetch merge strategy settings
   const { data: mergeStrategy, isLoading: loadingStrategy } = useQuery({
-    queryKey: ['mergeStrategy'],
+    queryKey: ['mergeStrategy', locationId],
     queryFn: () => api.getMergeStrategy(),
     staleTime: 60000,
   });
 
   // Fetch custom fields from GHL
   const { data: customFields = [], isLoading: loadingFields } = useQuery({
-    queryKey: ['customFields'],
+    queryKey: ['customFields', locationId],
     queryFn: () => api.getCustomFields(),
     staleTime: 60000,
   });

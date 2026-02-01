@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Header, Query
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import Optional, List
 
-from app.core.security import get_current_user_flexible
+from app.core.security import AuthenticatedUser
+from app.core.deps import get_user
 
 router = APIRouter()
 
@@ -17,11 +18,9 @@ class JobCreate(BaseModel):
 
 @router.get("/")
 async def list_jobs(
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (deprecated)"),
+    user: AuthenticatedUser = Depends(get_user),
 ):
     """List scheduled dedup jobs."""
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
     # TODO: Query jobs by user.location_id
     return {"data": [], "total": 0}
 
@@ -29,11 +28,9 @@ async def list_jobs(
 @router.post("/")
 async def create_job(
     job: JobCreate,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (deprecated)"),
+    user: AuthenticatedUser = Depends(get_user),
 ):
     """Create a scheduled job."""
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
     # TODO: Create job for user.location_id
     return {"id": "job-id", "location_id": user.location_id, **job.model_dump()}
 
@@ -41,11 +38,9 @@ async def create_job(
 @router.get("/{job_id}")
 async def get_job(
     job_id: str,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (deprecated)"),
+    user: AuthenticatedUser = Depends(get_user),
 ):
     """Get job details and run history."""
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
     # TODO: Verify job belongs to user.location_id
     return {"id": job_id, "location_id": user.location_id, "runs": []}
 
@@ -53,11 +48,9 @@ async def get_job(
 @router.post("/{job_id}/run")
 async def trigger_job(
     job_id: str,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (deprecated)"),
+    user: AuthenticatedUser = Depends(get_user),
 ):
     """Manually trigger a job run."""
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
     # TODO: Queue Celery task for user.location_id
     return {"id": job_id, "run_id": "run-id", "status": "queued"}
 
@@ -65,11 +58,9 @@ async def trigger_job(
 @router.delete("/{job_id}")
 async def delete_job(
     job_id: str,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (deprecated)"),
+    user: AuthenticatedUser = Depends(get_user),
 ):
     """Delete a scheduled job."""
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
     # TODO: Verify job belongs to user.location_id before deleting
     return {"deleted": True}
 
@@ -78,10 +69,8 @@ async def delete_job(
 async def list_job_runs(
     job_id: str,
     limit: int = 10,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (deprecated)"),
+    user: AuthenticatedUser = Depends(get_user),
 ):
     """List run history for a job."""
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
     # TODO: Query runs for job, verify job belongs to user.location_id
     return {"data": [], "total": 0}

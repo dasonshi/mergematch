@@ -202,14 +202,14 @@ export default function MatchRuleForm() {
 
   // Fetch existing rule when editing
   const { data: existingRule, isLoading: ruleLoading } = useQuery({
-    queryKey: ['rule', id],
+    queryKey: ['rule', id, locationId],
     queryFn: () => api.getMatchRule(id!),
     enabled: isEditing && isAuthenticated && !!locationId,
   });
 
   // Fetch all rules to check for duplicate names
   const { data: allRules } = useQuery({
-    queryKey: ['rules'],
+    queryKey: ['rules', locationId],
     queryFn: () => api.getMatchRules(),
     enabled: isAuthenticated && !!locationId,
     staleTime: 30 * 1000, // Cache for 30 seconds
@@ -217,7 +217,7 @@ export default function MatchRuleForm() {
 
   // Fetch available objects (standard + custom from GHL)
   const { data: fetchedObjects } = useQuery({
-    queryKey: ['available-objects'],
+    queryKey: ['available-objects', locationId],
     queryFn: () => api.getAvailableObjects(),
     enabled: isAuthenticated,
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
@@ -225,7 +225,7 @@ export default function MatchRuleForm() {
 
   // Fetch available fields for selected object type
   const { data: fetchedFields, isLoading: fieldsLoading } = useQuery({
-    queryKey: ['object-fields', objectType],
+    queryKey: ['object-fields', objectType, locationId],
     queryFn: () => api.getObjectFields(objectType),
     enabled: !!objectType && isAuthenticated,
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
@@ -233,7 +233,7 @@ export default function MatchRuleForm() {
 
   // Fetch pipelines for pipeline stage dropdown in custom logic
   const { data: pipelines } = useQuery({
-    queryKey: ['pipelines'],
+    queryKey: ['pipelines', locationId],
     queryFn: () => api.getPipelines(),
     enabled: isAuthenticated, // Fetch for opportunity filters
     staleTime: 5 * 60 * 1000,

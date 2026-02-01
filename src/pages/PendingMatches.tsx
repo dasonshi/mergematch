@@ -1,9 +1,9 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Search, X, Filter, ChevronDown, Play } from "lucide-react";
-import { PageHeader } from "@/components/ui/page-header";
+import { ArrowLeft, Loader2, Search, X, Filter, ChevronDown, Play, AlertCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,7 +22,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import { DataTable, DataTableColumn } from "@/components/ui/data-table";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
@@ -84,6 +83,11 @@ export default function PendingMatches() {
   const { locationId, isLoading: authLoading } = useLocation();
   const queryClient = useQueryClient();
 
+  // Scroll to top on mount
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
   // Filter panel state
   const [filtersOpen, setFiltersOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -97,30 +101,39 @@ export default function PendingMatches() {
   const [isValidating, setIsValidating] = useState(false);
 
   // Fetch rule details
-  const { data: rule, isLoading: ruleLoading } = useQuery({
+  const { data: rule, isLoading: ruleLoading, isError: ruleError, refetch: refetchRule } = useQuery({
     queryKey: ["rule", ruleId, locationId],
     queryFn: () => api.getMatchRule(ruleId!),
     enabled: !!locationId && !!ruleId,
   });
 
   // Fetch pending matches
-  const { data: matchesData, isLoading: matchesLoading } = useQuery({
+  const { data: matchesData, isLoading: matchesLoading, isError: matchesError, refetch: refetchMatches } = useQuery({
     queryKey: ["matches", ruleId, locationId],
     queryFn: () => api.getMatches("pending", ruleId, 1000),
     enabled: !!locationId && !!ruleId,
     gcTime: 0,
   });
 
+  // Error state
+  const hasError = ruleError || matchesError;
+  const handleRetry = () => {
+    refetchRule();
+    refetchMatches();
+  };
+
   const allMatches = matchesData?.data || [];
+  const totalCount = matchesData?.total ?? allMatches.length;
+  const isTruncated = allMatches.length < totalCount;
 
   // Stats
   const stats = useMemo(() => {
-    const total = allMatches.length;
+    const total = totalCount;
     const highConfidence = allMatches.filter((m: MatchPair) => m.confidence_score >= 0.9).length;
     const mediumConfidence = allMatches.filter((m: MatchPair) => m.confidence_score >= 0.8 && m.confidence_score < 0.9).length;
     const lowConfidence = allMatches.filter((m: MatchPair) => m.confidence_score < 0.8).length;
     return { total, highConfidence, mediumConfidence, lowConfidence };
-  }, [allMatches]);
+  }, [allMatches, totalCount]);
 
   // Filter matches
   const filteredMatches = useMemo(() => {
@@ -415,6 +428,19 @@ export default function PendingMatches() {
     );
   }
 
+  if (hasError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <AlertCircle className="h-8 w-8 text-destructive" />
+        <p className="text-muted-foreground">Failed to load matches</p>
+        <Button variant="outline" onClick={handleRetry}>
+          <RefreshCw className="h-4 w-4 mr-2" />
+          Try Again
+        </Button>
+      </div>
+    );
+  }
+
   if (!rule) {
     return (
       <div className="text-center py-12">
@@ -428,36 +454,54 @@ export default function PendingMatches() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1">
-          <Button size="sm" asChild>
+      {/* Compact Header Row */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        {/* Left side: Back + Title + Inline Stats */}
+        <div className="flex flex-wrap items-center gap-3">
+          <Button variant="ghost" size="sm" asChild>
             <Link to={`/match-rules/${ruleId}`}>
-              <ArrowLeft className="h-4 w-4 mr-1" />
-              {rule.name}
+              <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
-          <PageHeader title="Pending Matches" />
+          <h1 className="text-xl font-bold tracking-tight text-foreground">
+            Pending Matches
+          </h1>
+          <div className="hidden sm:flex items-center gap-2 text-sm text-muted-foreground border-l pl-3">
+            <span className="font-medium text-foreground">{stats.total}</span>
+            <span>total</span>
+            <span className="text-muted-foreground/50">•</span>
+            <span className="text-green-600 font-medium">{stats.highConfidence}</span>
+            <span>high</span>
+            <span className="text-muted-foreground/50">•</span>
+            <span className="text-amber-600 font-medium">{stats.mediumConfidence}</span>
+            <span>med</span>
+            <span className="text-muted-foreground/50">•</span>
+            <span className="text-red-600 font-medium">{stats.lowConfidence}</span>
+            <span>low</span>
+          </div>
         </div>
+
+        {/* Right side: Action Buttons */}
         <div className="flex flex-wrap items-center gap-2">
           <Button
+            size="sm"
             onClick={handleMergeAllClick}
             disabled={filteredMatches.length === 0 || bulkMergeProgress.inProgress || isValidating}
           >
             {isValidating ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                 Validating...
               </>
             ) : bulkMergeProgress.inProgress ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Merging {bulkMergeProgress.current}/{bulkMergeProgress.total}
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                {bulkMergeProgress.current}/{bulkMergeProgress.total}
               </>
             ) : (
               <>
-                <Play className="mr-2 h-4 w-4" />
-                Merge All ({filteredMatches.length})
+                <Play className="mr-1.5 h-3.5 w-3.5" />
+                Merge All
               </>
             )}
           </Button>
@@ -467,39 +511,18 @@ export default function PendingMatches() {
               size="sm"
               onClick={() => { abortMergeRef.current = true; }}
             >
-              <X className="h-4 w-4 mr-1" />
-              Abort
+              <X className="h-3.5 w-3.5" />
             </Button>
           )}
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-4">
-        <Card>
-          <CardContent className="p-4">
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total Pending</span>
-            <p className="text-2xl font-bold mt-1">{stats.total}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">High (90%+)</span>
-            <p className="text-2xl font-bold mt-1 text-green-600">{stats.highConfidence}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Medium (80-90%)</span>
-            <p className="text-2xl font-bold mt-1 text-amber-600">{stats.mediumConfidence}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Low (&lt;80%)</span>
-            <p className="text-2xl font-bold mt-1 text-red-600">{stats.lowConfidence}</p>
-          </CardContent>
-        </Card>
+      {/* Mobile Stats Row */}
+      <div className="flex sm:hidden flex-wrap items-center gap-2 text-xs">
+        <Badge variant="secondary">{stats.total} total</Badge>
+        <Badge variant="outline" className="text-green-600 border-green-200">{stats.highConfidence} high</Badge>
+        <Badge variant="outline" className="text-amber-600 border-amber-200">{stats.mediumConfidence} med</Badge>
+        <Badge variant="outline" className="text-red-600 border-red-200">{stats.lowConfidence} low</Badge>
       </div>
 
       {/* Filters */}
@@ -603,8 +626,9 @@ export default function PendingMatches() {
       {/* Footer */}
       <div className="flex items-center justify-between text-sm text-muted-foreground">
         <span>
-          Showing {filteredMatches.length} of {allMatches.length} matches
+          Showing {filteredMatches.length} of {totalCount.toLocaleString()} matches
           {hasActiveFilters && " (filtered)"}
+          {isTruncated && " (viewing first 1,000)"}
         </span>
       </div>
 
@@ -614,8 +638,17 @@ export default function PendingMatches() {
           <AlertDialogHeader>
             <AlertDialogTitle>Merge All Pending Matches?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will merge <span className="font-semibold">{filteredMatches.length}</span> pending matches
-              using Record A as the master for each pair. All duplicate records will be deleted.
+              This will merge <span className="font-semibold">{filteredMatches.length.toLocaleString()}</span> pending matches
+              {isTruncated && (
+                <> (first batch of <span className="font-semibold">{totalCount.toLocaleString()}</span> total)</>
+              )}
+              {" "}using the rule's configured merge strategy.
+              {isTruncated && (
+                <>
+                  <br /><br />
+                  <span className="text-amber-600">Run again after completion to process remaining matches.</span>
+                </>
+              )}
               <br /><br />
               Snapshots will be saved for 30-day rollback.
             </AlertDialogDescription>
@@ -623,7 +656,7 @@ export default function PendingMatches() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleMergeAll}>
-              Merge All ({filteredMatches.length})
+              Merge All ({filteredMatches.length.toLocaleString()})
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

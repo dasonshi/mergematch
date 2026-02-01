@@ -1,10 +1,9 @@
-from fastapi import APIRouter, HTTPException, Query, Header
+from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import Optional
 import logging
 
-from app.services.auth_service import get_location_tokens_with_refresh
 from app.core.ghl.client import GHLClient
-from app.core.security import get_current_user_flexible
+from app.core.deps import get_auth_context, AuthContext
 
 logger = logging.getLogger(__name__)
 
@@ -13,25 +12,15 @@ router = APIRouter()
 
 @router.get("/")
 async def list_companies(
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    ctx: AuthContext = Depends(get_auth_context),
 ):
     """
     Fetch all companies (businesses) from GHL for the given location.
     Note: GHL API doesn't support pagination for this endpoint.
-    Supports JWT auth (preferred) or legacy query param.
     """
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-    logger.info(f"[COMPANIES] Request for location: {user.ghl_location_id}")
+    logger.info(f"[COMPANIES] Request for location: {ctx.ghl_location_id}")
 
-    tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
-    if not tokens:
-        logger.error(f"[COMPANIES] No tokens found for location: {user.ghl_location_id}")
-        raise HTTPException(status_code=401, detail="Location not authenticated or token refresh failed")
-
-    logger.info(f"[COMPANIES] Token retrieved, expires: {tokens.get('expires_at')}")
-
-    async with GHLClient(tokens["access_token"], user.ghl_location_id) as client:
+    async with GHLClient(ctx.access_token, ctx.ghl_location_id) as client:
         try:
             result = await client.get_companies()
             businesses = result.get("businesses", [])
@@ -42,27 +31,20 @@ async def list_companies(
             }
         except Exception as e:
             logger.exception(f"[COMPANIES] Failed: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to fetch companies: {str(e)}")
+            raise HTTPException(status_code=500, detail="Failed to fetch companies")
 
 
 @router.get("/{company_id}")
 async def get_company(
     company_id: str,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    ctx: AuthContext = Depends(get_auth_context),
 ):
     """
     Get a single company from GHL.
-    Supports JWT auth (preferred) or legacy query param.
     """
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-    tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
-    if not tokens:
-        raise HTTPException(status_code=401, detail="Location not authenticated or token refresh failed")
-
-    async with GHLClient(tokens["access_token"], user.ghl_location_id) as client:
+    async with GHLClient(ctx.access_token, ctx.ghl_location_id) as client:
         try:
             result = await client.get_company(company_id)
             return result.get("business", result)
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to fetch company: {str(e)}")
+            raise HTTPException(status_code=500, detail="Failed to fetch company")

@@ -2,12 +2,13 @@
 Sync routes for MergeMatch.
 Handles sync cooldown tracking and status.
 """
-from fastapi import APIRouter, HTTPException, Header, Query
+from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 
-from app.core.security import get_current_user_flexible
+from app.core.security import AuthenticatedUser
+from app.core.deps import get_user
 from app.db.supabase import get_supabase
 
 router = APIRouter()
@@ -28,14 +29,12 @@ class SyncTriggerResponse(BaseModel):
 
 @router.get("/status", response_model=SyncStatusResponse)
 async def get_sync_status(
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None),
+    user: AuthenticatedUser = Depends(get_user),
 ):
     """
     Get current sync status including cooldown info.
     Returns whether sync is available and when it was last performed.
     """
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
     supabase = get_supabase()
 
     # Get location settings
@@ -75,14 +74,12 @@ async def get_sync_status(
 
 @router.post("/trigger", response_model=SyncTriggerResponse)
 async def trigger_sync(
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None),
+    user: AuthenticatedUser = Depends(get_user),
 ):
     """
     Record a sync trigger and update the last_synced_at timestamp.
     Returns 429 if still in cooldown period.
     """
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
     supabase = get_supabase()
 
     # Get current location settings

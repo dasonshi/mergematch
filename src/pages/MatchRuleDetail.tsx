@@ -15,61 +15,33 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Edit, Search, Play, Loader2, ChevronDown, ChevronUp, RotateCcw, X } from "lucide-react";
+import { ArrowLeft, Edit, Search, Play, Loader2, ChevronDown, ChevronUp, RotateCcw, X, Trash2, ArrowRight, CalendarClock, Lock, AlertCircle, RefreshCw } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
 import { computeStrategySelections, computeMasterId, StrategyId } from "@/lib/merge-strategies";
 import { ResponsiveTable, ResponsiveTableContent } from "@/components/ui/responsive-table";
 import { cn } from "@/lib/utils";
-
-// Helper to get field value from record (handles nested custom fields)
-const getFieldValue = (record: Record<string, any>, field: string): string => {
-  if (field.startsWith("customField.")) {
-    const customKey = field.replace("customField.", "");
-    const customFields = record.customFields || record.customField || {};
-    return customFields[customKey] || record[customKey] || "";
-  }
-  return record[field] || "";
-};
-
-// Get the record's display name
-const getRecordName = (record: Record<string, any>): string => {
-  if (record.firstName && record.lastName) {
-    return `${record.firstName} ${record.lastName}`;
-  }
-  return record.firstName || record.name || record.email || "—";
-};
-
-// Get match field values as subheading (up to 3 fields)
-const getMatchFieldSubheading = (
-  record: Record<string, any>,
-  matchFields: Array<{ field: string; algorithm: string }>
-): string => {
-  const fields = matchFields.slice(0, 3);
-  const values = fields
-    .map((f) => getFieldValue(record, f.field))
-    .filter((v) => v);
-
-  if (values.length === 0) {
-    // Fallback if no match field values
-    return record.email || record.phone || "";
-  }
-
-  return values.join(" • ");
-};
+import { MergeHistoryCard, RuleSummaryCard, getRecordName, getMatchFieldSubheading } from "@/components/rules";
 
 export default function MatchRuleDetail() {
   const { id } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { locationId, isLoading: authLoading, canUseStrategies, lastWebhookAt } = useLocation();
+  const { locationId, isLoading: authLoading, canUseStrategies, lastWebhookAt, plan } = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [matchesExpanded, setMatchesExpanded] = useState(true);
+  const [matchSearchQuery, setMatchSearchQuery] = useState("");
   const [mergingIds, setMergingIds] = useState<Set<string>>(new Set());
   const [showMergeAllDialog, setShowMergeAllDialog] = useState(false);
   const [bulkMergeProgress, setBulkMergeProgress] = useState({ current: 0, total: 0, inProgress: false });
   const abortMergeRef = useRef(false);
+
+  // Scroll to top on mount
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
 
   // Stale data validation state
   const [isValidating, setIsValidating] = useState(false);
@@ -78,19 +50,26 @@ export default function MatchRuleDetail() {
   const [validMatchIds, setValidMatchIds] = useState<string[]>([]);
 
   // Fetch rule details
-  const { data: rule, isLoading: ruleLoading, isPending: rulePending } = useQuery({
+  const { data: rule, isLoading: ruleLoading, isPending: rulePending, isError: ruleError, refetch: refetchRule } = useQuery({
     queryKey: ["rule", id, locationId],
     queryFn: () => api.getMatchRule(id!),
     enabled: !!locationId && !!id,
   });
 
   // Fetch pending matches for this rule
-  const { data: matchesData, isLoading: matchesLoading } = useQuery({
+  const { data: matchesData, isLoading: matchesLoading, isError: matchesError, refetch: refetchMatches } = useQuery({
     queryKey: ["matches", id, locationId],
     queryFn: () => api.getMatches("pending", id),
     enabled: !!locationId && !!id,
     gcTime: 0, // No cache - always fresh
   });
+
+  // Error state
+  const hasError = ruleError || matchesError;
+  const handleRetry = () => {
+    refetchRule();
+    refetchMatches();
+  };
 
   // Fetch merge history for this rule only
   const { data: mergesData, isLoading: mergesLoading } = useQuery({
@@ -234,6 +213,28 @@ export default function MatchRuleDetail() {
     onError: (error: Error) => {
       toast({
         title: "Rollback Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Delete rule state and mutation
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
+  const deleteRuleMutation = useMutation({
+    mutationFn: () => api.deleteMatchRule(id!),
+    onSuccess: () => {
+      toast({
+        title: "Rule Deleted",
+        description: "The match rule has been permanently deleted.",
+      });
+      // Navigate back to dashboard after deletion
+      window.location.href = "/";
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Delete Failed",
         description: error.message,
         variant: "destructive",
       });
@@ -405,11 +406,50 @@ export default function MatchRuleDetail() {
   const pendingMatches = matchesData?.data || [];
   const mergeHistory = mergesData?.data || [];
 
+  // Filter pending matches by search query
+  const filteredPendingMatches = pendingMatches.filter((match: any) => {
+    if (!matchSearchQuery) return true;
+    const query = matchSearchQuery.toLowerCase();
+    const recordA = match.record_a_data || {};
+    const recordB = match.record_b_data || {};
+    return (
+      recordA.firstName?.toLowerCase().includes(query) ||
+      recordA.lastName?.toLowerCase().includes(query) ||
+      recordA.email?.toLowerCase().includes(query) ||
+      recordA.phone?.toLowerCase().includes(query) ||
+      recordB.firstName?.toLowerCase().includes(query) ||
+      recordB.lastName?.toLowerCase().includes(query) ||
+      recordB.email?.toLowerCase().includes(query) ||
+      recordB.phone?.toLowerCase().includes(query)
+    );
+  });
+
+  // Format date for inline display
+  const formatInlineDate = (dateStr: string | null | undefined) => {
+    if (!dateStr) return null;
+    const date = new Date(dateStr);
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) +
+           ' ' + date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  };
+
   // Show loading while waiting for auth/location or rule data
   if (authLoading || !locationId || ruleLoading || rulePending) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (hasError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <AlertCircle className="h-8 w-8 text-destructive" />
+        <p className="text-muted-foreground">Failed to load rule details</p>
+        <Button variant="outline" onClick={handleRetry}>
+          <RefreshCw className="h-4 w-4 mr-2" />
+          Try Again
+        </Button>
       </div>
     );
   }
@@ -426,50 +466,55 @@ export default function MatchRuleDetail() {
   }
 
   return (
-    <div className="space-y-6 ">
-      {/* Page Header with Actions */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1">
-          <Button size="sm" asChild>
+    <div className="space-y-6">
+      {/* Compact Header Row */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        {/* Left side: Back + Title + Inline Stats */}
+        <div className="flex flex-wrap items-center gap-3">
+          <Button variant="ghost" size="sm" asChild>
             <Link to="/">
-              <ArrowLeft className="h-4 w-4 mr-1" />
-              Dashboard
+              <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">
+          <h1 className="text-xl font-bold tracking-tight text-foreground">
             {rule.name}
           </h1>
+          <div className="hidden sm:flex items-center gap-2 text-sm text-muted-foreground border-l pl-3">
+            <span className="font-medium text-foreground">
+              {contactsStatsLoading ? "..." : contactsStats?.total?.toLocaleString() ?? "—"}
+            </span>
+            <span className="capitalize">{rule.source_object.endsWith('s') ? rule.source_object : `${rule.source_object}s`}</span>
+            <span className="text-muted-foreground/50">•</span>
+            <span>Last Scanned: {formatInlineDate(rule.last_scan_at) || "Never"}</span>
+            {lastWebhookAt && (
+              <>
+                <span className="text-muted-foreground/50">•</span>
+                <span>Updated: {formatInlineDate(lastWebhookAt)}</span>
+              </>
+            )}
+          </div>
         </div>
+
+        {/* Right side: Action Buttons */}
         <div className="flex flex-wrap items-center gap-2">
           <Button
-            variant="secondary"
-            onClick={() => scanMutation.mutate()}
-            disabled={scanMutation.isPending}
-          >
-            {scanMutation.isPending ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Search className="mr-2 h-4 w-4" />
-            )}
-            {scanMutation.isPending ? "Scanning..." : "Scan Now"}
-          </Button>
-          <Button
+            size="sm"
             onClick={handleMergeAllClick}
             disabled={pendingMatches.length === 0 || bulkMergeProgress.inProgress || isValidating}
           >
             {isValidating ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                 Validating...
               </>
             ) : bulkMergeProgress.inProgress ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Merging {bulkMergeProgress.current}/{bulkMergeProgress.total}
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                {bulkMergeProgress.current}/{bulkMergeProgress.total}
               </>
             ) : (
               <>
-                <Play className="mr-2 h-4 w-4" />
+                <Play className="mr-1.5 h-3.5 w-3.5" />
                 Merge All
               </>
             )}
@@ -480,28 +525,66 @@ export default function MatchRuleDetail() {
               size="sm"
               onClick={() => { abortMergeRef.current = true; }}
             >
-              <X className="h-4 w-4 mr-1" />
-              Abort
+              <X className="h-3.5 w-3.5" />
             </Button>
           )}
-          <Button variant="outline" asChild>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => scanMutation.mutate()}
+            disabled={scanMutation.isPending}
+          >
+            {scanMutation.isPending ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Search className="mr-1.5 h-3.5 w-3.5" />
+            )}
+            {scanMutation.isPending ? "Scanning..." : "Scan Now"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={plan === 'free'}
+            asChild={plan !== 'free'}
+          >
+            {plan === 'free' ? (
+              <span className="flex items-center">
+                <Lock className="mr-1.5 h-3 w-3" />
+                <CalendarClock className="mr-1.5 h-3.5 w-3.5" />
+                Schedule
+              </span>
+            ) : (
+              <Link to={`/match-rules/${id}/edit`}>
+                <CalendarClock className="mr-1.5 h-3.5 w-3.5" />
+                Schedule
+              </Link>
+            )}
+          </Button>
+          <Button variant="outline" size="sm" asChild>
             <Link to={`/match-rules/${id}/edit`}>
-              <Edit className="mr-2 h-4 w-4" />
-              Edit Rule
+              <Edit className="mr-1.5 h-3.5 w-3.5" />
+              Edit
             </Link>
           </Button>
-          {canUseStrategies ? (
-            <Button variant="outline" asChild>
-              <Link to="/merge-strategies/new">
-                New Strategy
-              </Link>
-            </Button>
-          ) : (
-            <Button variant="outline" disabled title="Upgrade to create custom strategies">
-              New Strategy
-            </Button>
-          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-destructive hover:bg-destructive hover:text-destructive-foreground"
+            onClick={() => setShowDeleteDialog(true)}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
         </div>
+      </div>
+
+      {/* Mobile Stats Row (visible only on small screens) */}
+      <div className="flex sm:hidden flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <Badge variant="secondary">
+          {contactsStatsLoading ? "..." : contactsStats?.total?.toLocaleString() ?? "—"} {rule.source_object.endsWith('s') ? rule.source_object : `${rule.source_object}s`}
+        </Badge>
+        <Badge variant="outline">
+          Last Scanned: {formatInlineDate(rule.last_scan_at) || "Never"}
+        </Badge>
       </div>
 
       {/* Scan Progress Banner */}
@@ -509,69 +592,20 @@ export default function MatchRuleDetail() {
         <Card className="border-primary/30 bg-primary/5 shadow-sm">
           <CardContent className="p-4">
             <div className="flex items-center gap-4">
-              <div className="rounded-lg bg-primary/10 p-2.5">
-                <Loader2 className="h-5 w-5 animate-spin text-primary" />
-              </div>
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-sm">Scanning for duplicates...</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Analyzing your {rule.source_object} records. This may take a moment.
+                <p className="font-medium text-sm">Scanning for duplicates...</p>
+                <p className="text-xs text-muted-foreground">
+                  Analyzing {rule.source_object} records
                 </p>
               </div>
             </div>
-            <div className="mt-3 h-1.5 w-full rounded-full bg-primary/10 overflow-hidden">
+            <div className="mt-3 h-1 w-full rounded-full bg-primary/10 overflow-hidden">
               <div className="h-full w-1/3 rounded-full bg-primary/40 animate-pulse" />
             </div>
           </CardContent>
         </Card>
       )}
-
-      {/* Top-Level Stats */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Card className="shadow-md">
-          <CardContent className="p-4">
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total Records</span>
-            <p className="text-2xl font-bold mt-1">
-              {contactsStatsLoading ? (
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              ) : (
-                contactsStats?.total?.toLocaleString() ?? "—"
-              )}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1 capitalize">{rule.source_object}</p>
-          </CardContent>
-        </Card>
-        <Card className="shadow-md">
-          <CardContent className="p-4">
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Last Scan</span>
-            <p className="text-lg font-bold mt-1">
-              {rule.last_scan_at
-                ? new Date(rule.last_scan_at).toLocaleDateString()
-                : "Never"}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              {rule.last_scan_at
-                ? new Date(rule.last_scan_at).toLocaleTimeString()
-                : "Run a scan to find duplicates"}
-            </p>
-          </CardContent>
-        </Card>
-        <Card className="shadow-md">
-          <CardContent className="p-4">
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Last Data Update</span>
-            <p className="text-lg font-bold mt-1">
-              {lastWebhookAt
-                ? new Date(lastWebhookAt).toLocaleDateString()
-                : "—"}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              {lastWebhookAt
-                ? new Date(lastWebhookAt).toLocaleTimeString()
-                : "Via webhook"}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
 
       {/* Rule Summary Card */}
       <Card className="shadow-md border-t-4 border-t-primary">
@@ -626,14 +660,28 @@ export default function MatchRuleDetail() {
       </Card>
 
       {/* Pending Matches Section */}
-      <div className="space-y-4">
-        <button
-          onClick={() => setMatchesExpanded(!matchesExpanded)}
-          className="flex items-center gap-2 text-xl font-bold hover:text-primary transition-colors w-full text-left"
-        >
-          {matchesExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
-          Pending Matches ({matchesLoading ? <Loader2 className="h-4 w-4 animate-spin inline" /> : pendingMatches.length})
-        </button>
+      <Card className="shadow-md overflow-hidden">
+        {/* Header with expand toggle and search */}
+        <div className="flex items-center justify-between gap-4 p-4 border-b bg-muted/30">
+          <button
+            onClick={() => setMatchesExpanded(!matchesExpanded)}
+            className="flex items-center gap-2 font-semibold hover:text-primary transition-colors"
+          >
+            {matchesExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            Pending Matches ({matchesLoading ? <Loader2 className="h-3 w-3 animate-spin inline" /> : pendingMatches.length})
+          </button>
+          {matchesExpanded && pendingMatches.length > 0 && (
+            <div className="relative w-48">
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search..."
+                value={matchSearchQuery}
+                onChange={(e) => setMatchSearchQuery(e.target.value)}
+                className="h-8 pl-8 text-sm"
+              />
+            </div>
+          )}
+        </div>
 
         {matchesExpanded && (
           <>
@@ -642,26 +690,31 @@ export default function MatchRuleDetail() {
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
             ) : pendingMatches.length === 0 ? (
-              <Card>
-                <CardContent className="p-4 text-center">
-                  <p className="text-muted-foreground text-sm">No pending matches. Click "Scan Now" to search.</p>
-                </CardContent>
-              </Card>
+              <div className="p-8 text-center">
+                <p className="text-muted-foreground text-sm">No pending matches. Click "Scan Now" to search.</p>
+              </div>
+            ) : filteredPendingMatches.length === 0 ? (
+              <div className="p-8 text-center">
+                <p className="text-muted-foreground text-sm">No matches found for "{matchSearchQuery}"</p>
+                <Button variant="link" size="sm" onClick={() => setMatchSearchQuery("")}>
+                  Clear search
+                </Button>
+              </div>
             ) : (
-              <Card className="shadow-md overflow-hidden">
+              <>
                 <div className="max-h-80 overflow-y-auto">
                   <ResponsiveTable>
                     <ResponsiveTableContent minWidth="600px">
-                      <thead className="bg-muted/30 sticky top-0">
+                      <thead className="bg-muted/30 sticky top-0 z-10">
                         <tr className="border-b">
-                          <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Record A</th>
-                          <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Record B</th>
-                          <th className="text-center py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Score</th>
-                          <th className="text-right py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Actions</th>
+                          <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground bg-muted/30">Record A</th>
+                          <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground bg-muted/30">Record B</th>
+                          <th className="text-center py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground bg-muted/30">Score</th>
+                          <th className="text-right py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground bg-muted/30">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {pendingMatches.map((match: any) => {
+                        {filteredPendingMatches.map((match: any) => {
                           const recordA = match.record_a_data || {};
                           const recordB = match.record_b_data || {};
                           const confidence = Math.round((match.confidence_score || 0) * 100);
@@ -726,105 +779,33 @@ export default function MatchRuleDetail() {
                     </ResponsiveTableContent>
                   </ResponsiveTable>
                 </div>
-              </Card>
+                {/* Footer bar with View All button */}
+                <div className="flex items-center justify-between p-3 border-t bg-muted/20">
+                  <span className="text-sm text-muted-foreground">
+                    {matchSearchQuery
+                      ? `${filteredPendingMatches.length} of ${pendingMatches.length} matches`
+                      : `${pendingMatches.length} pending matches`}
+                  </span>
+                  <Button variant="outline" size="sm" asChild>
+                    <Link to={`/match-rules/${id}/matches`}>
+                      View All
+                      <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+                    </Link>
+                  </Button>
+                </div>
+              </>
             )}
           </>
         )}
-
-        {pendingMatches.length > 0 && (
-          <Button variant="outline" size="sm" asChild>
-            <Link to={`/match-rules/${id}/matches`}>
-              View All Pending Matches →
-            </Link>
-          </Button>
-        )}
-      </div>
+      </Card>
 
       {/* Merge History Section */}
-      <div className="space-y-4">
-        <h2 className="text-xl font-bold">Merge History ({mergesLoading ? <Loader2 className="h-4 w-4 animate-spin inline" /> : mergeHistory.length})</h2>
-
-        {mergeHistory.length === 0 ? (
-          <Card className="shadow-md">
-            <CardContent className="p-8 text-center">
-              <p className="text-muted-foreground">No merges performed yet.</p>
-            </CardContent>
-          </Card>
-        ) : (
-          <Card className="shadow-md overflow-hidden">
-            <CardContent className="p-0">
-              <ResponsiveTable>
-                <ResponsiveTableContent minWidth="550px">
-                  <thead className="bg-muted/30">
-                    <tr className="border-b">
-                      <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Master Record</th>
-                      <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</th>
-                      <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Date</th>
-                      <th className="text-right py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {mergeHistory.map((item: any) => (
-                      <tr key={item.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
-                        <td className="py-3 px-4 font-medium">
-                          {item.master_record_name || item.master_record_id?.slice(0, 8) + "..."}
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-2">
-                            <Badge
-                              variant={item.status === 'completed' ? 'default' : item.status === 'failed' ? 'destructive' : 'outline'}
-                              className={cn(
-                                item.status === 'completed' && 'bg-green-600 hover:bg-green-700',
-                                item.status === 'rolled_back' && 'border-amber-500 text-amber-600'
-                              )}
-                            >
-                              {item.status === 'completed' ? 'Merged' :
-                               item.status === 'rolled_back' ? 'Restored' :
-                               item.status === 'failed' ? 'Failed' : item.status}
-                            </Badge>
-                            {item.status === 'failed' && item.error_message && (
-                              <span className="text-xs text-destructive/80 max-w-[150px] truncate" title={item.error_message}>
-                                {item.error_message}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 text-muted-foreground">
-                          {item.created_at ? new Date(item.created_at).toLocaleString() : "—"}
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <div className="flex justify-end gap-2">
-                            <Button variant="outline" size="sm" asChild>
-                              <Link to={`/history/${item.id}`}>View</Link>
-                            </Button>
-                            {item.status === "completed" && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => rollbackMutation.mutate(item.id)}
-                                disabled={rollbackMutation.isPending}
-                              >
-                                <RotateCcw className="h-3.5 w-3.5 mr-1" />
-                                Restore
-                              </Button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </ResponsiveTableContent>
-              </ResponsiveTable>
-            </CardContent>
-          </Card>
-        )}
-
-        <Button variant="outline" size="sm" asChild>
-          <Link to="/history">
-            View Full History →
-          </Link>
-        </Button>
-      </div>
+      <MergeHistoryCard
+        mergeHistory={mergeHistory}
+        isLoading={mergesLoading}
+        onRollback={(id) => rollbackMutation.mutate(id)}
+        isRollbackPending={rollbackMutation.isPending}
+      />
 
       {/* Merge All Confirmation Dialog */}
       <AlertDialog open={showMergeAllDialog} onOpenChange={setShowMergeAllDialog}>
@@ -876,6 +857,38 @@ export default function MatchRuleDetail() {
                 Continue with {validMatchIds.length} Valid
               </AlertDialogAction>
             )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Rule Confirmation Dialog */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Match Rule?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the rule <span className="font-semibold">"{rule?.name}"</span> and
+              all its pending matches. This action cannot be undone.
+              <br /><br />
+              Merge history will be preserved.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteRuleMutation.mutate()}
+              disabled={deleteRuleMutation.isPending}
+            >
+              {deleteRuleMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete Rule"
+              )}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

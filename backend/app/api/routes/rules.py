@@ -1,13 +1,13 @@
-from fastapi import APIRouter, HTTPException, Query, Header, Request
+from fastapi import APIRouter, HTTPException, Query, Header, Request, Depends
 from pydantic import BaseModel, Field
 from typing import List, Optional
 import uuid
 import logging
 
 from app.db.supabase import get_supabase
-from app.services.auth_service import get_location_tokens_with_refresh
 from app.services.matching_service import run_scan
-from app.core.security import get_current_user_flexible
+from app.core.security import AuthenticatedUser
+from app.core.deps import get_user, get_auth_context, AuthContext
 from app.core.rate_limit import limiter
 
 logger = logging.getLogger(__name__)
@@ -76,12 +76,9 @@ class MatchRuleCreate(BaseModel):
 @limiter.limit("100/minute")
 async def list_rules(
     request: Request,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    user: AuthenticatedUser = Depends(get_user),
 ):
     """List all match rules for the current tenant."""
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-
     supabase = get_supabase()
     result = supabase.table("match_rules").select("*").eq("location_id", user.location_id).execute()
 
@@ -91,12 +88,9 @@ async def list_rules(
 @router.post("/")
 async def create_rule(
     rule: MatchRuleCreate,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    user: AuthenticatedUser = Depends(get_user),
 ):
     """Create a new match rule."""
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-
     supabase = get_supabase()
 
     # Free tier: limit to 1 rule
@@ -140,12 +134,9 @@ async def create_rule(
 @router.get("/{rule_id}")
 async def get_rule(
     rule_id: str,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    user: AuthenticatedUser = Depends(get_user),
 ):
     """Get a specific match rule."""
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-
     supabase = get_supabase()
     result = supabase.table("match_rules").select("*").eq("id", rule_id).eq("location_id", user.location_id).single().execute()
 
@@ -159,12 +150,9 @@ async def get_rule(
 async def update_rule(
     rule_id: str,
     rule: MatchRuleCreate,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    user: AuthenticatedUser = Depends(get_user),
 ):
     """Update a match rule."""
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-
     # Free tier: cannot edit rules
     if user.plan == "free":
         raise HTTPException(
@@ -201,12 +189,9 @@ async def update_rule(
 @router.delete("/{rule_id}")
 async def delete_rule(
     rule_id: str,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    user: AuthenticatedUser = Depends(get_user),
 ):
     """Delete a match rule."""
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-
     # Free tier: cannot delete rules
     if user.plan == "free":
         raise HTTPException(
@@ -223,11 +208,9 @@ async def delete_rule(
 @router.patch("/{rule_id}/toggle")
 async def toggle_rule_status(
     rule_id: str,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    user: AuthenticatedUser = Depends(get_user),
 ):
     """Toggle a rule's active status."""
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
     supabase = get_supabase()
 
     # Get current status
@@ -245,16 +228,10 @@ async def toggle_rule_status(
 @router.post("/{rule_id}/scan")
 async def scan_rule(
     rule_id: str,
-    authorization: Optional[str] = Header(None, alias="Authorization"),
-    location_id: Optional[str] = Query(None, description="GHL Location ID (legacy)"),
+    ctx: AuthContext = Depends(get_auth_context),
     limit: int = Query(None, description="Max records to scan (defaults based on plan)"),
 ):
     """Run a duplicate scan for this rule."""
-    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
-    tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
-    if not tokens:
-        raise HTTPException(status_code=401, detail="Location not authenticated or token refresh failed")
-
     # Plan-based scan limits
     plan_limits = {
         "free": 1000,
@@ -262,18 +239,18 @@ async def scan_rule(
         "pro": 99999,
         "agency": 99999,
     }
-    max_limit = plan_limits.get(user.plan, 1000)
+    max_limit = plan_limits.get(ctx.plan, 1000)
     actual_limit = min(limit, max_limit) if limit else max_limit
 
     try:
         result = await run_scan(
-            ghl_location_id=user.ghl_location_id,
+            ghl_location_id=ctx.ghl_location_id,
             rule_id=rule_id,
-            access_token=tokens["access_token"],
-            tenant_id=user.tenant_id,
-            internal_location_id=user.location_id,
+            access_token=ctx.access_token,
+            tenant_id=ctx.tenant_id,
+            internal_location_id=ctx.location_id,
             limit=actual_limit,
-            plan=user.plan,  # Pass plan for auto_approve logic
+            plan=ctx.plan,  # Pass plan for auto_approve logic
         )
 
         # Update last_scan_at on the rule

@@ -1,17 +1,10 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Search, X, Filter, ChevronDown, Play } from "lucide-react";
-import { PageHeader } from "@/components/ui/page-header";
+import { ArrowLeft, Loader2, Search, X, Play, Filter, AlertCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -51,11 +44,19 @@ export default function AllPendingMatches() {
   const { locationId, isLoading: authLoading } = useLocation();
   const queryClient = useQueryClient();
 
-  // Filter panel state
-  const [filtersOpen, setFiltersOpen] = useState(true);
+  // Scroll to top on mount
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  // Filter state
   const [searchQuery, setSearchQuery] = useState("");
-  const [confidenceFilter, setConfidenceFilter] = useState<string>("all");
   const [ruleFilter, setRuleFilter] = useState<string>("all");
+
+  // Selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectAllMatching, setSelectAllMatching] = useState(false);
+  const [showMergeSelectedDialog, setShowMergeSelectedDialog] = useState(false);
 
   // Merge state
   const [mergingIds, setMergingIds] = useState<Set<string>>(new Set());
@@ -64,7 +65,7 @@ export default function AllPendingMatches() {
   const abortMergeRef = useRef(false);
 
   // Fetch all match rules
-  const { data: rulesData, isLoading: rulesLoading } = useQuery({
+  const { data: rulesData, isLoading: rulesLoading, isError: rulesError, refetch: refetchRules } = useQuery({
     queryKey: ["rules", locationId],
     queryFn: () => api.getMatchRules(),
     enabled: !!locationId,
@@ -74,18 +75,33 @@ export default function AllPendingMatches() {
   const rulesMap = new Map(rules.map((r: MatchRule) => [r.id, r]));
 
   // Fetch all pending matches
-  const { data: matchesData, isLoading: matchesLoading } = useQuery({
+  const { data: matchesData, isLoading: matchesLoading, isError: matchesError, refetch: refetchMatches } = useQuery({
     queryKey: ["matches", "pending", "all", locationId],
     queryFn: () => api.getMatches("pending", undefined, 1000),
     enabled: !!locationId,
     gcTime: 0,
   });
 
+  // Error state
+  const hasError = rulesError || matchesError;
+  const handleRetry = () => {
+    refetchRules();
+    refetchMatches();
+  };
+
   const allMatches = matchesData?.data || [];
+  const totalCount = matchesData?.total ?? allMatches.length;
+  const isTruncated = allMatches.length < totalCount;
+
+  // Clear selection when filters change
+  useEffect(() => {
+    setSelectedIds(new Set());
+    setSelectAllMatching(false);
+  }, [searchQuery, ruleFilter]);
 
   // Stats
   const stats = useMemo(() => {
-    const total = allMatches.length;
+    const total = totalCount;
     const highConfidence = allMatches.filter((m: MatchPair) => m.confidence_score >= 0.9).length;
     const mediumConfidence = allMatches.filter((m: MatchPair) => m.confidence_score >= 0.8 && m.confidence_score < 0.9).length;
     const lowConfidence = allMatches.filter((m: MatchPair) => m.confidence_score < 0.8).length;
@@ -101,7 +117,7 @@ export default function AllPendingMatches() {
     const rulesWithMatches = Object.keys(byRule).length;
 
     return { total, highConfidence, mediumConfidence, lowConfidence, rulesWithMatches, byRule };
-  }, [allMatches]);
+  }, [allMatches, totalCount]);
 
   // Filter matches
   const filteredMatches = useMemo(() => {
@@ -130,25 +146,20 @@ export default function AllPendingMatches() {
         if (!matchesSearch) return false;
       }
 
-      // Confidence filter
-      if (confidenceFilter !== "all") {
-        const score = item.confidence_score;
-        if (confidenceFilter === "high" && score < 0.9) return false;
-        if (confidenceFilter === "medium" && (score < 0.8 || score >= 0.9)) return false;
-        if (confidenceFilter === "low" && score >= 0.8) return false;
-      }
-
       return true;
     });
-  }, [allMatches, searchQuery, confidenceFilter, ruleFilter, rulesMap]);
+  }, [allMatches, searchQuery, ruleFilter, rulesMap]);
 
-  const hasActiveFilters = searchQuery || confidenceFilter !== "all" || ruleFilter !== "all";
-  const activeFilterCount = [searchQuery, confidenceFilter !== "all", ruleFilter !== "all"].filter(Boolean).length;
+  const hasActiveFilters = searchQuery || ruleFilter !== "all";
 
   const clearFilters = () => {
     setSearchQuery("");
-    setConfidenceFilter("all");
     setRuleFilter("all");
+  };
+
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+    setSelectAllMatching(false);
   };
 
   // Quick merge mutation
@@ -203,29 +214,26 @@ export default function AllPendingMatches() {
     },
   });
 
-  // Bulk merge
-  const handleMergeAll = async () => {
-    setShowMergeAllDialog(false);
-    const matches = filteredMatches;
-
-    if (matches.length === 0) return;
+  // Bulk merge handler (for both "Merge All" and "Merge Selected")
+  const handleBulkMerge = async (matchesToMerge: any[]) => {
+    if (matchesToMerge.length === 0) return;
 
     abortMergeRef.current = false;
-    setBulkMergeProgress({ current: 0, total: matches.length, inProgress: true });
+    setBulkMergeProgress({ current: 0, total: matchesToMerge.length, inProgress: true });
 
     let successCount = 0;
     let failCount = 0;
 
-    for (let i = 0; i < matches.length; i++) {
+    for (let i = 0; i < matchesToMerge.length; i++) {
       if (abortMergeRef.current) {
         toast({
           title: "Merge Aborted",
-          description: `Stopped after ${i} of ${matches.length} merges. ${successCount} succeeded, ${failCount} failed.`,
+          description: `Stopped after ${i} of ${matchesToMerge.length} merges. ${successCount} succeeded, ${failCount} failed.`,
         });
         break;
       }
 
-      const match = matches[i];
+      const match = matchesToMerge[i];
       try {
         const rule = rulesMap.get(match.rule_id);
         if (!rule) {
@@ -251,10 +259,12 @@ export default function AllPendingMatches() {
       } catch {
         failCount++;
       }
-      setBulkMergeProgress({ current: i + 1, total: matches.length, inProgress: true });
+      setBulkMergeProgress({ current: i + 1, total: matchesToMerge.length, inProgress: true });
     }
 
     setBulkMergeProgress({ current: 0, total: 0, inProgress: false });
+    setSelectedIds(new Set());
+    setSelectAllMatching(false);
     queryClient.invalidateQueries({ queryKey: ["matches"] });
     queryClient.invalidateQueries({ queryKey: ["merges"] });
     queryClient.invalidateQueries({ queryKey: ["merge-stats"] });
@@ -266,6 +276,19 @@ export default function AllPendingMatches() {
         variant: failCount > 0 ? "destructive" : "default",
       });
     }
+  };
+
+  const handleMergeAll = () => {
+    setShowMergeAllDialog(false);
+    handleBulkMerge(filteredMatches);
+  };
+
+  const handleMergeSelected = () => {
+    setShowMergeSelectedDialog(false);
+    const matchesToMerge = selectAllMatching
+      ? filteredMatches
+      : filteredMatches.filter((m: any) => selectedIds.has(m.id));
+    handleBulkMerge(matchesToMerge);
   };
 
   // Table columns
@@ -364,6 +387,9 @@ export default function AllPendingMatches() {
     },
   ];
 
+  // Selection display count
+  const displaySelectedCount = selectAllMatching ? filteredMatches.length : selectedIds.size;
+
   if (authLoading || rulesLoading || matchesLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -372,33 +398,128 @@ export default function AllPendingMatches() {
     );
   }
 
+  if (hasError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <AlertCircle className="h-8 w-8 text-destructive" />
+        <p className="text-muted-foreground">Failed to load matches</p>
+        <Button variant="outline" onClick={handleRetry}>
+          <RefreshCw className="h-4 w-4 mr-2" />
+          Try Again
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1">
+      {/* Header Row */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        {/* Left side: Back + Title */}
+        <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" asChild>
             <Link to="/">
-              <ArrowLeft className="h-4 w-4 mr-1" />
-              Dashboard
+              <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
-          <PageHeader title="All Pending Matches" />
+          <h1 className="text-xl font-bold tracking-tight text-foreground">
+            Pending Matches
+          </h1>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+
+        {/* Right side: Search + Rule Filter + Merge All */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 w-[200px]"
+            />
+          </div>
+
+          {/* Rule Filter */}
+          <Select value={ruleFilter} onValueChange={setRuleFilter}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="All Rules" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Rules</SelectItem>
+              {rules.filter((r: MatchRule) => stats.byRule[r.id]).map((rule: MatchRule) => (
+                <SelectItem key={rule.id} value={rule.id}>
+                  {rule.name} ({stats.byRule[rule.id]})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Merge All Button (only show when nothing selected) */}
+          {selectedIds.size === 0 && !selectAllMatching && (
+            <>
+              <Button
+                size="sm"
+                onClick={() => setShowMergeAllDialog(true)}
+                disabled={filteredMatches.length === 0 || bulkMergeProgress.inProgress}
+              >
+                {bulkMergeProgress.inProgress ? (
+                  <>
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    {bulkMergeProgress.current}/{bulkMergeProgress.total}
+                  </>
+                ) : (
+                  <>
+                    <Play className="mr-1.5 h-3.5 w-3.5" />
+                    Merge All
+                  </>
+                )}
+              </Button>
+              {bulkMergeProgress.inProgress && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => { abortMergeRef.current = true; }}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Selection Bar */}
+      {(selectedIds.size > 0 || selectAllMatching) && (
+        <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
+          <span className="text-sm font-medium">
+            {displaySelectedCount.toLocaleString()} selected
+          </span>
+          {!selectAllMatching && selectedIds.size < filteredMatches.length && (
+            <Button
+              variant="link"
+              size="sm"
+              className="text-primary p-0 h-auto"
+              onClick={() => setSelectAllMatching(true)}
+            >
+              Select all {filteredMatches.length.toLocaleString()} matching
+            </Button>
+          )}
+          <div className="flex-1" />
           <Button
-            onClick={() => setShowMergeAllDialog(true)}
-            disabled={filteredMatches.length === 0 || bulkMergeProgress.inProgress}
+            size="sm"
+            onClick={() => setShowMergeSelectedDialog(true)}
+            disabled={bulkMergeProgress.inProgress}
           >
             {bulkMergeProgress.inProgress ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Merging {bulkMergeProgress.current}/{bulkMergeProgress.total}
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                {bulkMergeProgress.current}/{bulkMergeProgress.total}
               </>
             ) : (
               <>
-                <Play className="mr-2 h-4 w-4" />
-                Merge All ({filteredMatches.length})
+                <Play className="mr-1.5 h-3.5 w-3.5" />
+                Merge Selected
               </>
             )}
           </Button>
@@ -408,130 +529,16 @@ export default function AllPendingMatches() {
               size="sm"
               onClick={() => { abortMergeRef.current = true; }}
             >
-              <X className="h-4 w-4 mr-1" />
-              Abort
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          {!bulkMergeProgress.inProgress && (
+            <Button variant="ghost" size="sm" onClick={clearSelection}>
+              Clear
             </Button>
           )}
         </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-5">
-        <Card>
-          <CardContent className="p-4">
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total Pending</span>
-            <p className="text-2xl font-bold mt-1">{stats.total}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Rules</span>
-            <p className="text-2xl font-bold mt-1">{stats.rulesWithMatches}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">High (90%+)</span>
-            <p className="text-2xl font-bold mt-1 text-green-600">{stats.highConfidence}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Medium (80-90%)</span>
-            <p className="text-2xl font-bold mt-1 text-amber-600">{stats.mediumConfidence}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Low (&lt;80%)</span>
-            <p className="text-2xl font-bold mt-1 text-red-600">{stats.lowConfidence}</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Filters */}
-      <Card>
-        <Collapsible open={filtersOpen} onOpenChange={setFiltersOpen}>
-          <div className="flex items-center justify-between p-4 border-b">
-            <CollapsibleTrigger asChild>
-              <Button variant="ghost" size="sm" className="gap-2">
-                <Filter className="h-4 w-4" />
-                Filters
-                {activeFilterCount > 0 && (
-                  <Badge variant="secondary" className="ml-1">{activeFilterCount}</Badge>
-                )}
-                <ChevronDown className={`h-4 w-4 transition-transform ${filtersOpen ? 'rotate-180' : ''}`} />
-              </Button>
-            </CollapsibleTrigger>
-            {hasActiveFilters && (
-              <Button variant="ghost" size="sm" onClick={clearFilters}>
-                <X className="h-4 w-4 mr-1" />
-                Clear all
-              </Button>
-            )}
-          </div>
-          <CollapsibleContent>
-            <CardContent className="pt-4">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
-                {/* Search */}
-                <div className="flex-1 space-y-2">
-                  <Label htmlFor="search" className="text-sm font-medium">Search</Label>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      id="search"
-                      placeholder="Search by name, email, phone, rule..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-9"
-                    />
-                  </div>
-                </div>
-
-                {/* Rule Filter */}
-                <div className="space-y-2 min-w-[200px]">
-                  <Label className="text-sm font-medium">Rule</Label>
-                  <Select value={ruleFilter} onValueChange={setRuleFilter}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="All Rules" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Rules</SelectItem>
-                      {rules.filter((r: MatchRule) => stats.byRule[r.id]).map((rule: MatchRule) => (
-                        <SelectItem key={rule.id} value={rule.id}>
-                          {rule.name} ({stats.byRule[rule.id]})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Confidence Filter */}
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">Confidence</Label>
-                  <div className="flex gap-2">
-                    {[
-                      { value: "all", label: "All" },
-                      { value: "high", label: "High" },
-                      { value: "medium", label: "Medium" },
-                      { value: "low", label: "Low" },
-                    ].map((option) => (
-                      <Button
-                        key={option.value}
-                        variant={confidenceFilter === option.value ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setConfidenceFilter(option.value)}
-                      >
-                        {option.label}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </CollapsibleContent>
-        </Collapsible>
-      </Card>
+      )}
 
       {/* Data Table */}
       <Card className="overflow-hidden">
@@ -541,6 +548,9 @@ export default function AllPendingMatches() {
             columns={columns}
             keyField="id"
             minWidth="700px"
+            selectable
+            selectedIds={selectedIds}
+            onSelectionChange={setSelectedIds}
             emptyState={
               <div className="p-12 text-center">
                 {hasActiveFilters ? (
@@ -568,8 +578,9 @@ export default function AllPendingMatches() {
       {/* Footer */}
       <div className="flex items-center justify-between text-sm text-muted-foreground">
         <span>
-          Showing {filteredMatches.length} of {allMatches.length} matches
+          Showing {filteredMatches.length} of {totalCount.toLocaleString()} matches
           {hasActiveFilters && " (filtered)"}
+          {isTruncated && " (viewing first 1,000)"}
         </span>
       </div>
 
@@ -579,9 +590,18 @@ export default function AllPendingMatches() {
           <AlertDialogHeader>
             <AlertDialogTitle>Merge All Pending Matches?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will merge <span className="font-semibold">{filteredMatches.length}</span> pending matches
-              across <span className="font-semibold">{new Set(filteredMatches.map((m: any) => m.rule_id)).size}</span> rules
+              This will merge <span className="font-semibold">{filteredMatches.length.toLocaleString()}</span> pending matches
+              {isTruncated && (
+                <> (first batch of <span className="font-semibold">{totalCount.toLocaleString()}</span> total)</>
+              )}
+              {" "}across <span className="font-semibold">{new Set(filteredMatches.map((m: any) => m.rule_id)).size}</span> rules
               using each rule's configured merge strategy.
+              {isTruncated && (
+                <>
+                  <br /><br />
+                  <span className="text-amber-600">Run again after completion to process remaining matches.</span>
+                </>
+              )}
               <br /><br />
               Snapshots will be saved for 30-day rollback.
             </AlertDialogDescription>
@@ -589,7 +609,28 @@ export default function AllPendingMatches() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleMergeAll}>
-              Merge All ({filteredMatches.length})
+              Merge All ({filteredMatches.length.toLocaleString()})
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Merge Selected Dialog */}
+      <AlertDialog open={showMergeSelectedDialog} onOpenChange={setShowMergeSelectedDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Merge Selected Matches?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will merge <span className="font-semibold">{displaySelectedCount.toLocaleString()}</span> selected matches
+              using each rule's configured merge strategy.
+              <br /><br />
+              Snapshots will be saved for 30-day rollback.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleMergeSelected}>
+              Merge Selected ({displaySelectedCount.toLocaleString()})
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
