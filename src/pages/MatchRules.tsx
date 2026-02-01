@@ -1,8 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import { Plus, ArrowRight, Loader2, MoreHorizontal } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { useState, useMemo } from "react";
+import { Plus, Loader2, Trash2, Search } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, MatchRule, MatchPair } from "@/lib/api";
@@ -10,18 +12,24 @@ import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 import { DataTable, DataTableColumn } from "@/components/ui/data-table";
 import { NoRulesEmpty } from "@/components/ui/empty-state";
-import { PageHeader } from "@/components/ui/page-header";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function MatchRules() {
   const { locationId, isAuthenticated, isLoading: authLoading } = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Fetch match rules
   const { data: rulesData, isLoading: rulesLoading } = useQuery({
@@ -61,12 +69,46 @@ export default function MatchRules() {
     },
   });
 
+  // Delete rule state and mutation
+  const [ruleToDelete, setRuleToDelete] = useState<MatchRule | null>(null);
+
+  const deleteRuleMutation = useMutation({
+    mutationFn: (ruleId: string) => api.deleteMatchRule(ruleId),
+    onSuccess: () => {
+      toast({
+        title: "Rule Deleted",
+        description: "The match rule has been permanently deleted.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["rules"] });
+      queryClient.invalidateQueries({ queryKey: ["matches"] });
+      setRuleToDelete(null);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Delete Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const rules = rulesData?.data ?? [];
   const pendingMatches = matchesData?.data ?? [];
 
+  // Filter rules by search
+  const filteredRules = useMemo(() => {
+    if (!searchQuery) return rules;
+    const query = searchQuery.toLowerCase();
+    return rules.filter((rule: MatchRule) =>
+      rule.name.toLowerCase().includes(query) ||
+      rule.source_object?.toLowerCase().includes(query) ||
+      rule.merge_strategy?.toLowerCase().includes(query)
+    );
+  }, [rules, searchQuery]);
+
   // Count pending matches per rule
   const pendingByRule = pendingMatches.reduce((acc: Record<string, number>, match: MatchPair) => {
-    const ruleId = (match as any).rule_id;
+    const ruleId = match.rule_id;
     if (ruleId) {
       acc[ruleId] = (acc[ruleId] || 0) + 1;
     }
@@ -155,27 +197,26 @@ export default function MatchRules() {
       header: "Actions",
       align: "right",
       accessor: (rule) => (
-        <div className="flex items-center justify-end gap-1">
+        <div className="flex items-center justify-end gap-2">
           {pendingByRule[rule.id] > 0 && (
             <Button size="sm" asChild>
               <Link to={`/match-rules/${rule.id}?action=merge-all`}>Merge All</Link>
             </Button>
           )}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem asChild>
-                <Link to={`/match-rules/${rule.id}`}>View Details</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to={`/match-rules/${rule.id}/edit`}>Edit Rule</Link>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Button variant="outline" size="sm" asChild>
+            <Link to={`/match-rules/${rule.id}`}>View</Link>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <Link to={`/match-rules/${rule.id}/edit`}>Edit</Link>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+            onClick={() => setRuleToDelete(rule)}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
         </div>
       ),
     },
@@ -183,22 +224,40 @@ export default function MatchRules() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Match Rules"
-        description="Create and manage your duplicate detection rules"
-      >
-        <Button size="lg" className="text-lg px-8 py-6 shadow-md" asChild>
-          <Link to="/match-rules/new">
-            <Plus className="mr-2 h-5 w-5" />
-            New Rule
-          </Link>
-        </Button>
-      </PageHeader>
+      {/* Header Row */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        {/* Left side: Title */}
+        <h1 className="text-xl font-bold tracking-tight text-foreground">
+          Match Rules
+        </h1>
+
+        {/* Right side: Search + New Rule */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search rules..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 w-[200px]"
+            />
+          </div>
+
+          {/* New Rule Button */}
+          <Button asChild>
+            <Link to="/match-rules/new">
+              <Plus className="mr-1.5 h-4 w-4" />
+              New Rule
+            </Link>
+          </Button>
+        </div>
+      </div>
 
       <Card className="overflow-hidden">
         <CardContent className="p-0">
           <DataTable
-            data={rules}
+            data={filteredRules}
             columns={rulesColumns}
             keyField="id"
             loading={rulesLoading}
@@ -207,6 +266,38 @@ export default function MatchRules() {
           />
         </CardContent>
       </Card>
+
+      {/* Delete Rule Confirmation Dialog */}
+      <AlertDialog open={!!ruleToDelete} onOpenChange={(open) => !open && setRuleToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Match Rule?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the rule <span className="font-semibold">"{ruleToDelete?.name}"</span> and
+              all its pending matches. This action cannot be undone.
+              <br /><br />
+              Merge history will be preserved.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => ruleToDelete && deleteRuleMutation.mutate(ruleToDelete.id)}
+              disabled={deleteRuleMutation.isPending}
+            >
+              {deleteRuleMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete Rule"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

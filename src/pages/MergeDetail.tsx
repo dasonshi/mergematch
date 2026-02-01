@@ -62,9 +62,9 @@ export default function MergeDetail() {
   const allFields = new Set([...Object.keys(recordA || {}), ...Object.keys(recordB || {})]);
   const displayFields = Object.keys(fieldLabels).filter(f => allFields.has(f));
 
-  const getDisplayValue = (value: any) => {
+  const getDisplayValue = (value: unknown) => {
     if (Array.isArray(value)) return value.join(", ");
-    return value || "(empty)";
+    return value ? String(value) : "(empty)";
   };
 
   const getResultValue = (field: string) => {
@@ -178,6 +178,26 @@ export default function MergeDetail() {
             {merge.rolled_back_at && (
               <p>Rolled back on: {formatDate(merge.rolled_back_at)}</p>
             )}
+            {merge.status === "completed" && (() => {
+              const mergedAt = new Date(merge.created_at).getTime();
+              const expiresAt = mergedAt + 30 * 24 * 60 * 60 * 1000; // 30 days
+              const now = Date.now();
+              const daysRemaining = Math.ceil((expiresAt - now) / (24 * 60 * 60 * 1000));
+
+              if (daysRemaining > 0) {
+                return (
+                  <p className={daysRemaining <= 7 ? "text-amber-600" : ""}>
+                    Rollback available for {daysRemaining} more day{daysRemaining !== 1 ? 's' : ''}
+                  </p>
+                );
+              } else {
+                return (
+                  <p className="text-red-600">
+                    Rollback window has expired
+                  </p>
+                );
+              }
+            })()}
           </div>
           {/* Error Message for Failed Merges */}
           {merge.status === "failed" && merge.error_message && (

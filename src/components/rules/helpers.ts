@@ -6,7 +6,7 @@
 /**
  * Get field value from record, handling nested custom fields.
  */
-export function getFieldValue(record: Record<string, any>, field: string): string {
+export function getFieldValue(record: Record<string, unknown>, field: string): string {
   if (field.startsWith("customField.")) {
     const customKey = field.replace("customField.", "");
     const customFields = record.customFields || record.customField || {};
@@ -18,7 +18,7 @@ export function getFieldValue(record: Record<string, any>, field: string): strin
 /**
  * Get the record's display name (first + last name, or fallback).
  */
-export function getRecordName(record: Record<string, any>): string {
+export function getRecordName(record: Record<string, unknown>): string {
   if (record.firstName && record.lastName) {
     return `${record.firstName} ${record.lastName}`;
   }
@@ -29,7 +29,7 @@ export function getRecordName(record: Record<string, any>): string {
  * Get match field values as subheading (up to 3 fields).
  */
 export function getMatchFieldSubheading(
-  record: Record<string, any>,
+  record: Record<string, unknown>,
   matchFields: Array<{ field: string; algorithm: string }>
 ): string {
   const fields = matchFields.slice(0, 3);

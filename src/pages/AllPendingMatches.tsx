@@ -31,7 +31,7 @@ import { computeStrategySelections, computeMasterId, StrategyId } from "@/lib/me
 import { cn } from "@/lib/utils";
 
 // Get the record's display name
-const getRecordName = (record: Record<string, any>): string => {
+const getRecordName = (record: Record<string, unknown>): string => {
   if (record.firstName && record.lastName) {
     return `${record.firstName} ${record.lastName}`;
   }
@@ -107,7 +107,7 @@ export default function AllPendingMatches() {
     const lowConfidence = allMatches.filter((m: MatchPair) => m.confidence_score < 0.8).length;
 
     // Count by rule
-    const byRule = allMatches.reduce((acc: Record<string, number>, m: any) => {
+    const byRule = allMatches.reduce((acc: Record<string, number>, m: MatchPair) => {
       const ruleId = m.rule_id;
       if (ruleId) {
         acc[ruleId] = (acc[ruleId] || 0) + 1;
@@ -121,7 +121,7 @@ export default function AllPendingMatches() {
 
   // Filter matches
   const filteredMatches = useMemo(() => {
-    return allMatches.filter((item: any) => {
+    return allMatches.filter((item: MatchPair) => {
       // Rule filter
       if (ruleFilter !== "all" && item.rule_id !== ruleFilter) {
         return false;
@@ -164,7 +164,7 @@ export default function AllPendingMatches() {
 
   // Quick merge mutation
   const quickMergeMutation = useMutation({
-    mutationFn: async (match: any) => {
+    mutationFn: async (match: MatchPair) => {
       const rule = rulesMap.get(match.rule_id);
       if (!rule) throw new Error("Rule not found");
 
@@ -215,7 +215,7 @@ export default function AllPendingMatches() {
   });
 
   // Bulk merge handler (for both "Merge All" and "Merge Selected")
-  const handleBulkMerge = async (matchesToMerge: any[]) => {
+  const handleBulkMerge = async (matchesToMerge: MatchPair[]) => {
     if (matchesToMerge.length === 0) return;
 
     abortMergeRef.current = false;
@@ -287,12 +287,12 @@ export default function AllPendingMatches() {
     setShowMergeSelectedDialog(false);
     const matchesToMerge = selectAllMatching
       ? filteredMatches
-      : filteredMatches.filter((m: any) => selectedIds.has(m.id));
+      : filteredMatches.filter((m: MatchPair) => selectedIds.has(m.id));
     handleBulkMerge(matchesToMerge);
   };
 
   // Table columns
-  const columns: DataTableColumn<any>[] = [
+  const columns: DataTableColumn<MatchPair>[] = [
     {
       header: "Record A",
       accessor: (item) => {
@@ -594,7 +594,7 @@ export default function AllPendingMatches() {
               {isTruncated && (
                 <> (first batch of <span className="font-semibold">{totalCount.toLocaleString()}</span> total)</>
               )}
-              {" "}across <span className="font-semibold">{new Set(filteredMatches.map((m: any) => m.rule_id)).size}</span> rules
+              {" "}across <span className="font-semibold">{new Set(filteredMatches.map((m: MatchPair) => m.rule_id)).size}</span> rules
               using each rule's configured merge strategy.
               {isTruncated && (
                 <>

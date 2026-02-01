@@ -167,7 +167,7 @@ class ApiClient {
   async getContacts(limit = 100, query?: string) {
     const params = new URLSearchParams({ limit: String(limit) });
     if (query) params.set('query', query);
-    return this.fetch<{ contacts: Contact[]; meta: any }>(`/v1/contacts/?${params}`);
+    return this.fetch<{ contacts: Contact[]; meta: { total?: number; startAfterId?: string; startAfter?: number } }>(`/v1/contacts/?${params}`);
   }
 
   async getContactsStats() {
@@ -309,7 +309,12 @@ class ApiClient {
       tenant_id: string;
       authenticated: boolean;
       plan: string;
-      billing_status: string
+      billing_status: string;
+      is_on_trial?: boolean;
+      trial_ends_at?: string | null;
+      upgrade_url?: string | null;
+      last_webhook_at?: string | null;
+      features?: Record<string, boolean>;
     }>('/auth/me');
   }
 
@@ -461,12 +466,19 @@ export interface MatchPair {
   id: string;
   rule_id: string;
   record_a_id: string;
+  record_a_type?: string;
   record_a_data: Record<string, unknown>;
   record_b_id: string;
+  record_b_type?: string;
   record_b_data: Record<string, unknown>;
   confidence_score: number;
   field_scores: Record<string, number>;
-  status: 'pending' | 'approved' | 'rejected' | 'merged';
+  status: 'pending' | 'approved' | 'rejected' | 'merged' | 'stale';
+  reviewed_by?: string;
+  reviewed_at?: string;
+  rejection_reason?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface Merge {
@@ -476,8 +488,14 @@ export interface Merge {
   duplicate_record_id: string;
   status: string;
   created_at: string;
+  completed_at?: string;
+  rolled_back_at?: string;
   rule_name?: string;
   error_message?: string;
+  master_snapshot?: Record<string, unknown>;
+  duplicate_snapshot?: Record<string, unknown>;
+  field_selections?: Record<string, string>;
+  restored_record_id?: string;
 }
 
 export interface ObjectField {

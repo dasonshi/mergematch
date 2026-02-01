@@ -346,20 +346,20 @@ export function LocationProvider({ children }: { children: ReactNode }) {
           setConnectionStatus('connected');
           setError(null);
           // Billing info from /me endpoint
-          if ('is_on_trial' in result) {
-            setIsOnTrial((result as any).is_on_trial || false);
+          if (result.is_on_trial !== undefined) {
+            setIsOnTrial(result.is_on_trial || false);
           }
-          if ('trial_ends_at' in result) {
-            setTrialEndsAt((result as any).trial_ends_at || null);
+          if (result.trial_ends_at !== undefined) {
+            setTrialEndsAt(result.trial_ends_at || null);
           }
-          if ('upgrade_url' in result) {
-            setUpgradeUrl((result as any).upgrade_url || null);
+          if (result.upgrade_url !== undefined) {
+            setUpgradeUrl(result.upgrade_url || null);
           }
-          if ('last_webhook_at' in result) {
-            setLastWebhookAt((result as any).last_webhook_at || null);
+          if (result.last_webhook_at !== undefined) {
+            setLastWebhookAt(result.last_webhook_at || null);
           }
-          if ('features' in result) {
-            setFeatures((result as any).features);
+          if (result.features) {
+            setFeatures(result.features);
           }
         } else {
           setConnectionStatus('disconnected');

@@ -115,8 +115,9 @@ export default function Dashboard() {
       queryClient.invalidateQueries({ queryKey: ["merge-stats"] });
 
       toast({ title: "Data synced successfully!" });
-    } catch (error: any) {
-      if (error.message?.includes('429') || error.message?.includes('cooldown')) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage?.includes('429') || errorMessage?.includes('cooldown')) {
         toast({
           title: "Sync on cooldown",
           description: "Please wait before syncing again.",
@@ -126,7 +127,7 @@ export default function Dashboard() {
       } else {
         toast({
           title: "Sync failed",
-          description: error.message,
+          description: errorMessage,
           variant: "destructive",
         });
       }
@@ -250,8 +251,8 @@ export default function Dashboard() {
     mutationFn: async ({ match, rule }: { match: MatchPair; rule: MatchRule }) => {
       const strategy = (rule?.merge_strategy || "standard") as StrategyId;
       const overwriteBlanks = rule?.merge_settings?.overwrite_blanks ?? false;
-      const recordA = (match as any).record_a_data || {};
-      const recordB = (match as any).record_b_data || {};
+      const recordA = match.record_a_data || {};
+      const recordB = match.record_b_data || {};
       const fields = ["firstName", "lastName", "email", "phone", "tags", "address1", "city", "state", "postalCode"];
       const selections = computeStrategySelections({
         strategy,
@@ -325,7 +326,7 @@ export default function Dashboard() {
 
   // Count pending matches per rule
   const pendingByRule = pendingMatches.reduce((acc: Record<string, number>, match: MatchPair) => {
-    const ruleId = (match as any).rule_id;
+    const ruleId = match.rule_id;
     if (ruleId) {
       acc[ruleId] = (acc[ruleId] || 0) + 1;
     }
@@ -480,7 +481,7 @@ export default function Dashboard() {
   ];
 
   // Helper to get record display name
-  const getRecordName = (record: Record<string, any>): string => {
+  const getRecordName = (record: Record<string, unknown>): string => {
     if (record.firstName && record.lastName) {
       return `${record.firstName} ${record.lastName}`;
     }
@@ -495,11 +496,11 @@ export default function Dashboard() {
     {
       header: "Record A",
       accessor: (item) => {
-        const recordA = (item as any).record_a_data || {};
+        const recordA = item.record_a_data || {};
         return (
           <div>
             <div className="font-medium">{getRecordName(recordA)}</div>
-            {recordA.email && (
+            {typeof recordA.email === 'string' && (
               <div className="text-xs text-muted-foreground">{recordA.email}</div>
             )}
           </div>
@@ -509,11 +510,11 @@ export default function Dashboard() {
     {
       header: "Record B",
       accessor: (item) => {
-        const recordB = (item as any).record_b_data || {};
+        const recordB = item.record_b_data || {};
         return (
           <div>
             <div className="font-medium">{getRecordName(recordB)}</div>
-            {recordB.email && (
+            {typeof recordB.email === 'string' && (
               <div className="text-xs text-muted-foreground">{recordB.email}</div>
             )}
           </div>
@@ -524,10 +525,10 @@ export default function Dashboard() {
       header: "Rule",
       hideOnMobile: true,
       accessor: (item) => {
-        const rule = rulesMap.get((item as any).rule_id);
+        const rule = rulesMap.get(item.rule_id);
         return (
           <Link
-            to={`/match-rules/${(item as any).rule_id}`}
+            to={`/match-rules/${item.rule_id}`}
             className="text-sm text-muted-foreground hover:text-primary"
           >
             {rule?.name || "Unknown"}
@@ -558,12 +559,12 @@ export default function Dashboard() {
       header: "Actions",
       align: "right",
       accessor: (item) => {
-        const rule = rulesMap.get((item as any).rule_id);
+        const rule = rulesMap.get(item.rule_id);
         const isMerging = mergingIds.has(item.id);
         return (
           <div className="flex justify-end gap-2">
             <Button variant="outline" size="sm" asChild>
-              <Link to={`/match-rules/${(item as any).rule_id}/review/${item.id}`}>Review</Link>
+              <Link to={`/match-rules/${item.rule_id}/review/${item.id}`}>Review</Link>
             </Button>
             <Button
               size="sm"

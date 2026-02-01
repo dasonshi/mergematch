@@ -30,7 +30,7 @@ import { computeStrategySelections, computeMasterId, StrategyId } from "@/lib/me
 import { cn } from "@/lib/utils";
 
 // Helper to get field value from record (handles nested custom fields)
-const getFieldValue = (record: Record<string, any>, field: string): string => {
+const getFieldValue = (record: Record<string, unknown>, field: string): string => {
   if (field.startsWith("customField.")) {
     const customKey = field.replace("customField.", "");
     const customFields = record.customFields || record.customField || {};
@@ -40,7 +40,7 @@ const getFieldValue = (record: Record<string, any>, field: string): string => {
 };
 
 // Get the record's display name
-const getRecordName = (record: Record<string, any>): string => {
+const getRecordName = (record: Record<string, unknown>): string => {
   if (record.firstName && record.lastName) {
     return `${record.firstName} ${record.lastName}`;
   }
@@ -49,7 +49,7 @@ const getRecordName = (record: Record<string, any>): string => {
 
 // Get match field values as subheading (up to 3 fields)
 const getMatchFieldSubheading = (
-  record: Record<string, any>,
+  record: Record<string, unknown>,
   matchFields: Array<{ field: string; algorithm: string }>
 ): string => {
   const fields = matchFields.slice(0, 3);
@@ -69,8 +69,8 @@ interface MatchPair {
   rule_id: string;
   record_a_id: string;
   record_b_id: string;
-  record_a_data?: Record<string, any>;
-  record_b_data?: Record<string, any>;
+  record_a_data?: Record<string, unknown>;
+  record_b_data?: Record<string, unknown>;
   confidence_score: number;
   status: string;
   created_at: string;

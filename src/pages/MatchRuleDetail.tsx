@@ -19,7 +19,7 @@ import { ArrowLeft, Edit, Search, Play, Loader2, ChevronDown, ChevronUp, RotateC
 import { Input } from "@/components/ui/input";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/lib/api";
+import { api, MatchPair } from "@/lib/api";
 import { computeStrategySelections, computeMasterId, StrategyId } from "@/lib/merge-strategies";
 import { ResponsiveTable, ResponsiveTableContent } from "@/components/ui/responsive-table";
 import { cn } from "@/lib/utils";
@@ -134,7 +134,7 @@ export default function MatchRuleDetail() {
 
   // Quick merge mutation (strategy-aware)
   const quickMergeMutation = useMutation({
-    mutationFn: async (match: any) => {
+    mutationFn: async (match: MatchPair) => {
       const strategy = (rule?.merge_strategy || "standard") as StrategyId;
       const overwriteBlanks = rule?.merge_settings?.overwrite_blanks ?? false;
       const recordA = match.record_a_data || {};
@@ -333,7 +333,7 @@ export default function MatchRuleDetail() {
 
     // If specific IDs provided, filter to only those; otherwise use all
     const matches = specificMatchIds
-      ? allMatches.filter((m: any) => specificMatchIds.includes(m.id))
+      ? allMatches.filter((m: MatchPair) => specificMatchIds.includes(m.id))
       : allMatches;
 
     if (matches.length === 0) return;
@@ -407,7 +407,7 @@ export default function MatchRuleDetail() {
   const mergeHistory = mergesData?.data || [];
 
   // Filter pending matches by search query
-  const filteredPendingMatches = pendingMatches.filter((match: any) => {
+  const filteredPendingMatches = pendingMatches.filter((match: MatchPair) => {
     if (!matchSearchQuery) return true;
     const query = matchSearchQuery.toLowerCase();
     const recordA = match.record_a_data || {};
@@ -608,56 +608,11 @@ export default function MatchRuleDetail() {
       )}
 
       {/* Rule Summary Card */}
-      <Card className="shadow-md border-t-4 border-t-primary">
-        <CardContent className="p-6">
-          <div className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
-            <div>
-              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Object</span>
-              <p className="font-medium capitalize mt-1">{rule.source_object}</p>
-            </div>
-            <div>
-              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Strategy</span>
-              <p className="font-medium capitalize mt-1">{rule.merge_strategy || 'standard'}</p>
-            </div>
-            <div>
-              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</span>
-              <div className="flex items-center gap-2 mt-1">
-                <Switch
-                  checked={rule.is_active}
-                  onCheckedChange={() => toggleMutation.mutate()}
-                  disabled={toggleMutation.isPending}
-                />
-                <span className="text-sm font-medium">
-                  {rule.is_active ? "Active" : "Inactive"}
-                </span>
-              </div>
-            </div>
-            <div>
-              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Fields</span>
-              <p className="font-medium mt-1">
-                {(rule.match_fields || []).map((f: any, i: number) => (
-                  <span key={f.field}>
-                    {f.match_against
-                      ? `${f.field} vs ${f.match_against} (${f.algorithm})`
-                      : `${f.field} (${f.algorithm})`}
-                    {i < rule.match_fields.length - 1 ? ", " : ""}
-                  </span>
-                ))}
-              </p>
-            </div>
-            <div>
-              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Thresholds</span>
-              <p className="font-medium mt-1">
-                Auto: {Math.round(rule.auto_merge_threshold * 100)}% | Review: {Math.round(rule.review_threshold * 100)}%
-              </p>
-            </div>
-            <div>
-              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Schedule</span>
-              <p className="font-medium capitalize mt-1">{rule.schedule_frequency || "manual"}</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <RuleSummaryCard
+        rule={rule}
+        onToggleStatus={() => toggleMutation.mutate()}
+        isTogglePending={toggleMutation.isPending}
+      />
 
       {/* Pending Matches Section */}
       <Card className="shadow-md overflow-hidden">
@@ -714,7 +669,7 @@ export default function MatchRuleDetail() {
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredPendingMatches.map((match: any) => {
+                        {filteredPendingMatches.map((match: MatchPair) => {
                           const recordA = match.record_a_data || {};
                           const recordB = match.record_b_data || {};
                           const confidence = Math.round((match.confidence_score || 0) * 100);

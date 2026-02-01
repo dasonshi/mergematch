@@ -48,6 +48,92 @@ const standardObjectTiers: Record<string, string> = {
 
 // Tier hierarchy for comparison
 const tierOrder = ["free", "starter", "pro", "agency"] as const;
+
+/**
+ * GHL Custom Field Type Compatibility Matrix
+ * Determines which source field types can be stored in which target custom field types
+ */
+
+// Target types that can accept text values
+const TEXT_ACCEPTING_TYPES = new Set([
+  'TEXT',
+  'LARGE_TEXT',
+  'TEXTAREA',
+  'PHONE',
+  'EMAIL',
+]);
+
+// Target types that require specific formats (not compatible with arbitrary text)
+const INCOMPATIBLE_TARGET_TYPES = new Set([
+  'NUMERICAL',
+  'NUMBER',
+  'MONETARY',
+  'CHECKBOX',
+  'FILE_UPLOAD',
+  'SIGNATURE',
+  'DROPDOWN',
+  'SINGLE_OPTIONS',
+  'MULTIPLE_OPTIONS',
+  'CHECKBOX_LIST',
+  'RADIO',
+  'TEXTBOX_LIST',
+]);
+
+/**
+ * Check if a source field type can be stored in a target custom field type
+ */
+function isTypeCompatible(sourceType: string, targetType: string): boolean {
+  const normalizedTarget = targetType?.toUpperCase() || 'TEXT';
+  const normalizedSource = sourceType?.toUpperCase() || 'TEXT';
+
+  // If target is explicitly incompatible, block it
+  if (INCOMPATIBLE_TARGET_TYPES.has(normalizedTarget)) {
+    return false;
+  }
+
+  // DATE source can go to DATE target or text types
+  if (normalizedSource === 'DATE') {
+    return normalizedTarget === 'DATE' || TEXT_ACCEPTING_TYPES.has(normalizedTarget);
+  }
+
+  // TEXT, PHONE, EMAIL sources can go to text-accepting types
+  if (['TEXT', 'PHONE', 'EMAIL'].includes(normalizedSource)) {
+    return TEXT_ACCEPTING_TYPES.has(normalizedTarget);
+  }
+
+  // Unknown source types - be permissive with text targets
+  return TEXT_ACCEPTING_TYPES.has(normalizedTarget);
+}
+
+/**
+ * Get human-readable reason why a type is incompatible
+ */
+function getIncompatibilityReason(targetType: string): string {
+  const normalized = targetType?.toUpperCase() || '';
+
+  if (['NUMERICAL', 'NUMBER', 'MONETARY'].includes(normalized)) {
+    return 'requires numeric value';
+  }
+  if (normalized === 'CHECKBOX') {
+    return 'requires true/false';
+  }
+  if (normalized === 'FILE_UPLOAD') {
+    return 'requires file upload';
+  }
+  if (normalized === 'SIGNATURE') {
+    return 'requires signature';
+  }
+  if (['DROPDOWN', 'SINGLE_OPTIONS', 'RADIO'].includes(normalized)) {
+    return 'requires predefined option';
+  }
+  if (['MULTIPLE_OPTIONS', 'CHECKBOX_LIST'].includes(normalized)) {
+    return 'requires predefined options';
+  }
+  if (normalized === 'TEXTBOX_LIST') {
+    return 'requires list format';
+  }
+  return 'incompatible type';
+}
 type Tier = typeof tierOrder[number];
 
 function hasAccess(userPlan: string, requiredTier: string): boolean {
@@ -257,16 +343,16 @@ export default function MatchRuleForm() {
 
   // Use fetched fields or fallback to static fields
   const baseFieldOptions = fetchedFields?.length
-    ? fetchedFields.map(f => ({ id: f.id, name: f.name, isCustom: f.isCustom }))
-    : (fallbackFields[objectType] || []).map(f => ({ ...f, isCustom: false }));
+    ? fetchedFields.map(f => ({ id: f.id, name: f.name, isCustom: f.isCustom, dataType: f.dataType || 'TEXT' }))
+    : (fallbackFields[objectType] || []).map(f => ({ ...f, isCustom: false, dataType: 'TEXT' }));
 
   // Add synthetic fields (derived from other fields)
-  const syntheticFields = [];
+  const syntheticFields: Array<{ id: string; name: string; isCustom: boolean; dataType: string; insertAfter: string }> = [];
   if (objectType === "contacts" || objectType === "companies") {
     // Add Email Domain field after Email if email exists
     const emailIndex = baseFieldOptions.findIndex(f => f.id === "email");
     if (emailIndex >= 0) {
-      syntheticFields.push({ id: "emailDomain", name: "Email Domain", isCustom: false, insertAfter: "email" });
+      syntheticFields.push({ id: "emailDomain", name: "Email Domain", isCustom: false, dataType: "TEXT", insertAfter: "email" });
     }
   }
 
@@ -275,9 +361,9 @@ export default function MatchRuleForm() {
   for (const sf of syntheticFields) {
     const insertIndex = fieldOptions.findIndex(f => f.id === sf.insertAfter);
     if (insertIndex >= 0) {
-      fieldOptions.splice(insertIndex + 1, 0, { id: sf.id, name: sf.name, isCustom: sf.isCustom });
+      fieldOptions.splice(insertIndex + 1, 0, { id: sf.id, name: sf.name, isCustom: sf.isCustom, dataType: sf.dataType });
     } else {
-      fieldOptions.push({ id: sf.id, name: sf.name, isCustom: sf.isCustom });
+      fieldOptions.push({ id: sf.id, name: sf.name, isCustom: sf.isCustom, dataType: sf.dataType });
     }
   }
 
@@ -396,7 +482,11 @@ export default function MatchRuleForm() {
 
   const updateField = (index: number, key: "name" | "matchType" | "operator" | "matchAgainst", value: string) => {
     const updated = [...fields];
-    (updated[index] as any)[key] = value;
+    if (key === "operator") {
+      updated[index] = { ...updated[index], [key]: value as "AND" | "OR" };
+    } else {
+      updated[index] = { ...updated[index], [key]: value };
+    }
     setFields(updated);
   };
 
@@ -404,7 +494,7 @@ export default function MatchRuleForm() {
   const getLogicExpression = () => {
     if (fields.length === 0 || !fields[0].name) return "";
 
-    let currentGroup: string[] = [];
+    const currentGroup: string[] = [];
 
     fields.forEach((field, i) => {
       if (!field.name) return;
@@ -1130,13 +1220,44 @@ export default function MatchRuleForm() {
                                   Save the duplicate's value to another field before it's overwritten.
                                 </p>
 
-                                {fieldPreservationMappings.map((mapping, idx) => (
+                                {fieldPreservationMappings.map((mapping, idx) => {
+                                  // Get source field's data type for compatibility check
+                                  const sourceField = fieldOptions.find(f => f.id === mapping.source);
+                                  const sourceType = sourceField?.dataType || 'TEXT';
+
+                                  // Filter ALL fields (standard + custom) by compatibility
+                                  // Exclude the source field itself from targets
+                                  const allTargetFields = fieldOptions.filter(f => f.id !== mapping.source);
+                                  const standardFields = allTargetFields.filter(f => !f.isCustom);
+                                  const customFields = allTargetFields.filter(f => f.isCustom);
+
+                                  const compatibleStandard = standardFields.filter(f =>
+                                    isTypeCompatible(sourceType, f.dataType || 'TEXT')
+                                  );
+                                  const incompatibleStandard = standardFields.filter(f =>
+                                    !isTypeCompatible(sourceType, f.dataType || 'TEXT')
+                                  );
+                                  const compatibleCustom = customFields.filter(f =>
+                                    isTypeCompatible(sourceType, f.dataType || 'TEXT')
+                                  );
+                                  const incompatibleCustom = customFields.filter(f =>
+                                    !isTypeCompatible(sourceType, f.dataType || 'TEXT')
+                                  );
+
+                                  return (
                                   <div key={idx} className="flex items-center gap-2 mb-2">
                                     <Select
                                       value={mapping.source}
                                       onValueChange={(val) => {
                                         const updated = [...fieldPreservationMappings];
                                         updated[idx] = { ...updated[idx], source: val };
+                                        // Clear target if now incompatible or same as source
+                                        const newSourceField = fieldOptions.find(f => f.id === val);
+                                        const newSourceType = newSourceField?.dataType || 'TEXT';
+                                        const currentTarget = fieldOptions.find(f => f.id === mapping.target);
+                                        if (currentTarget && (mapping.target === val || !isTypeCompatible(newSourceType, currentTarget.dataType || 'TEXT'))) {
+                                          updated[idx].target = '';
+                                        }
                                         setFieldPreservationMappings(updated);
                                       }}
                                     >
@@ -1176,19 +1297,49 @@ export default function MatchRuleForm() {
                                       }}
                                     >
                                       <SelectTrigger className="flex-1 bg-background">
-                                        <SelectValue placeholder="Target custom field..." />
+                                        <SelectValue placeholder="Target field..." />
                                       </SelectTrigger>
                                       <SelectContent>
-                                        {fieldOptions.filter(f => f.isCustom).length > 0 ? (
-                                          fieldOptions.filter(f => f.isCustom).map((opt) => (
-                                            <SelectItem key={opt.id} value={opt.id}>
-                                              {opt.name}
-                                            </SelectItem>
-                                          ))
-                                        ) : (
-                                          <SelectItem value="_none_" disabled className="text-xs text-muted-foreground italic">
-                                            No custom fields available
+                                        {/* Standard Fields - Compatible */}
+                                        {compatibleStandard.map((opt) => (
+                                          <SelectItem key={opt.id} value={opt.id}>
+                                            {opt.name}
                                           </SelectItem>
+                                        ))}
+
+                                        {/* Custom Fields - Compatible */}
+                                        {compatibleCustom.length > 0 && (
+                                          <>
+                                            <SelectSeparator />
+                                            <SelectGroup>
+                                              <SelectLabel>Custom Fields</SelectLabel>
+                                              {compatibleCustom.map((opt) => (
+                                                <SelectItem key={opt.id} value={opt.id}>
+                                                  {opt.name}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectGroup>
+                                          </>
+                                        )}
+
+                                        {/* Incompatible Fields */}
+                                        {(incompatibleStandard.length > 0 || incompatibleCustom.length > 0) && (
+                                          <>
+                                            <SelectSeparator />
+                                            <SelectItem value="_sep_" disabled className="text-muted-foreground text-xs">
+                                              ── Incompatible types ──
+                                            </SelectItem>
+                                            {incompatibleStandard.map((opt) => (
+                                              <SelectItem key={opt.id} value={opt.id} disabled className="text-muted-foreground">
+                                                {opt.name} - {getIncompatibilityReason(opt.dataType)}
+                                              </SelectItem>
+                                            ))}
+                                            {incompatibleCustom.map((opt) => (
+                                              <SelectItem key={opt.id} value={opt.id} disabled className="text-muted-foreground">
+                                                {opt.name} ({opt.dataType}) - {getIncompatibilityReason(opt.dataType)}
+                                              </SelectItem>
+                                            ))}
+                                          </>
                                         )}
                                       </SelectContent>
                                     </Select>
@@ -1207,7 +1358,8 @@ export default function MatchRuleForm() {
                                       <Trash2 className="h-4 w-4 text-muted-foreground" />
                                     </Button>
                                   </div>
-                                ))}
+                                  );
+                                })}
 
                                 <Button
                                   type="button"
