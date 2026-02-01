@@ -80,7 +80,7 @@ async def list_rules(
 ):
     """List all match rules for the current tenant."""
     supabase = get_supabase()
-    result = supabase.table("match_rules").select("*").eq("location_id", user.location_id).execute()
+    result = supabase.table("match_rules").select("*").eq("location_id", user.location_id).order("created_at", desc=True).execute()
 
     return {"data": result.data, "total": len(result.data)}
 
