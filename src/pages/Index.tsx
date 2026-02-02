@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -313,7 +313,14 @@ export default function Dashboard() {
   // Calculate stats from real data
   const contactsCount = contactsData?.total ?? 0;
   const companiesCount = companiesData?.total ?? companiesData?.companies?.length ?? 0;
-  const rules = rulesData?.data ?? [];
+  const rules = useMemo(() => {
+    const data = rulesData?.data ?? [];
+    return [...data].sort((a, b) => {
+      const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return dateB - dateA; // Newest first
+    });
+  }, [rulesData?.data]);
   const pendingMatches = matchesData?.data ?? [];
   const pendingTotalCount = matchesData?.total ?? pendingMatches.length;
   const recentMerges = mergesData?.data ?? [];
