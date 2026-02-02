@@ -2,7 +2,6 @@ import { NavLink, useLocation as useRouterLocation, useNavigate } from "react-ro
 import {
   LayoutDashboard,
   ListChecks,
-  GitMerge,
   History,
   Settings,
   HelpCircle,
@@ -11,8 +10,6 @@ import {
   X,
   Bell
 } from "lucide-react";
-import { UpgradeBadge } from "@/components/ui/upgrade-badge";
-import { useUpgradeModal } from "@/components/ui/upgrade-modal";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,24 +21,21 @@ interface NavItem {
   title: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
-  requiresPlan?: boolean;
 }
 
 const navItems: NavItem[] = [
   { title: "Dashboard", href: "/", icon: LayoutDashboard },
   { title: "Match Rules", href: "/match-rules", icon: ListChecks },
-  { title: "Merge Strategies", href: "/merge-strategies", icon: GitMerge, requiresPlan: true },
-  { title: "History", href: "/history", icon: History },
+  { title: "Merge History", href: "/history", icon: History },
   { title: "Settings", href: "/settings", icon: Settings },
   { title: "Help", href: "/help", icon: HelpCircle },
 ];
 
 export function AppSidebar() {
   const routerLocation = useRouterLocation();
-  const { canUseStrategies, plan } = useLocation();
+  const { plan } = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const unreadCount = useUnreadNotificationCount();
-  const { openUpgradeModal } = useUpgradeModal();
 
   const SidebarContent = () => (
     <div className="flex h-full flex-col">
@@ -76,21 +70,6 @@ export function AppSidebar() {
         {navItems.map((item) => {
           const isActive = routerLocation.pathname === item.href ||
             (item.href !== "/" && routerLocation.pathname.startsWith(item.href));
-          const isLocked = item.requiresPlan && !canUseStrategies;
-
-          if (isLocked) {
-            return (
-              <div
-                key={item.href}
-                onClick={() => openUpgradeModal("merge_strategies")}
-                className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-sidebar-muted hover:bg-sidebar-accent/30 transition-colors group cursor-pointer"
-              >
-                <item.icon className="h-4 w-4 shrink-0 opacity-60 group-hover:opacity-80" />
-                <span className="flex-1 opacity-60 group-hover:opacity-80">{item.title}</span>
-                <UpgradeBadge tier="pro" showTooltip={false} feature="merge_strategies" />
-              </div>
-            );
-          }
 
           return (
             <NavLink

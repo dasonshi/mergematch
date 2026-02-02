@@ -28,7 +28,7 @@ import { MergeHistoryCard, RuleSummaryCard, getRecordName, getMatchFieldSubheadi
 export default function MatchRuleDetail() {
   const { id } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { locationId, isLoading: authLoading, canUseStrategies, lastWebhookAt, plan } = useLocation();
+  const { locationId, isLoading: authLoading, lastWebhookAt, plan } = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [matchesExpanded, setMatchesExpanded] = useState(true);
