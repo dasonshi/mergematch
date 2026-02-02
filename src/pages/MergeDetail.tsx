@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Star, ExternalLink, Loader2, RotateCcw, Check, X } from "lucide-react";
+import { ArrowLeft, Star, ExternalLink, Loader2, RotateCcw, Check, X, ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,8 +10,14 @@ import { cn } from "@/lib/utils";
 import { useLocation } from "@/contexts/LocationContext";
 import { api } from "@/lib/api";
 
-// Fields to display and their labels
-const fieldLabels: Record<string, string> = {
+// Standard fields always shown
+const STANDARD_FIELDS = [
+  "firstName", "lastName", "email", "phone", "companyName",
+  "tags", "address1", "city", "state", "postalCode", "country"
+];
+
+// Human-readable labels for fields
+const FIELD_LABELS: Record<string, string> = {
   firstName: "First Name",
   lastName: "Last Name",
   email: "Email",
@@ -21,11 +28,60 @@ const fieldLabels: Record<string, string> = {
   city: "City",
   state: "State",
   postalCode: "Postal Code",
+  country: "Country",
+  timezone: "Timezone",
+  source: "Source",
+  website: "Website",
+  dateAdded: "Date Added",
+  dateUpdated: "Date Updated",
+  dateOfBirth: "Date of Birth",
+  assignedTo: "Assigned To",
+  dnd: "Do Not Disturb",
+  type: "Type",
+  fullName: "Full Name",
+  name: "Name",
+};
+
+// Fields to exclude from display (internal/system fields)
+const EXCLUDED_FIELDS = [
+  "id", "locationId", "businessId", "contactName", "followers",
+  "dndSettings", "inboundDndSettings", "customFields", "additionalEmails",
+  "firstNameRaw", "lastNameRaw", "profilePhoto"
+];
+
+interface RuleData {
+  name?: string;
+  match_fields?: Array<{ field: string; algorithm: string; operator: string }>;
+  merge_strategy?: string;
+  merge_settings?: {
+    field_preservation?: {
+      enabled: boolean;
+      mappings: Array<{ sourceField: string; targetField: string }>;
+    };
+  };
+}
+
+// Extract fields used in rule logic
+const getRuleFields = (rule?: RuleData): Set<string> => {
+  const fields = new Set<string>();
+  if (!rule) return fields;
+
+  // Match logic fields
+  rule.match_fields?.forEach(f => fields.add(f.field));
+
+  // Field preservation mappings
+  rule.merge_settings?.field_preservation?.mappings?.forEach(m => {
+    fields.add(m.sourceField);
+    fields.add(m.targetField);
+  });
+
+  return fields;
 };
 
 export default function MergeDetail() {
   const { mergeId } = useParams();
   const { locationId, isLoading: authLoading } = useLocation();
+  const [showAllFields, setShowAllFields] = useState(false);
 
   // Fetch merge details with snapshots
   const { data: merge, isLoading } = useQuery({
@@ -46,10 +102,10 @@ export default function MergeDetail() {
   const duplicateSnapshot = merge.duplicate_snapshot || {};
   const fieldSelections = merge.field_selections || {};
   const crmLocationId = merge.ghl_location_id || locationId;
+  const rule = merge.rule as RuleData | undefined;
 
   // Build CRM contact URL
   const getCrmContactUrl = (contactId: string) => {
-    // TODO: Make base URL configurable for whitelabel
     return `https://app.gohighlevel.com/v2/location/${crmLocationId}/contacts/detail/${contactId}`;
   };
 
@@ -58,19 +114,39 @@ export default function MergeDetail() {
   const recordA = masterIsMasterSnapshot ? masterSnapshot : duplicateSnapshot;
   const recordB = masterIsMasterSnapshot ? duplicateSnapshot : masterSnapshot;
 
-  // Determine which fields to show
-  const allFields = new Set([...Object.keys(recordA || {}), ...Object.keys(recordB || {})]);
-  const displayFields = Object.keys(fieldLabels).filter(f => allFields.has(f));
+  // Get all fields from both records (excluding system fields)
+  const allFields = new Set([
+    ...Object.keys(recordA || {}),
+    ...Object.keys(recordB || {})
+  ].filter(f => !EXCLUDED_FIELDS.includes(f)));
+
+  // Categorize fields
+  const ruleFieldSet = getRuleFields(rule);
+
+  const standardFields = STANDARD_FIELDS.filter(f => allFields.has(f));
+  const ruleFields = [...ruleFieldSet].filter(f =>
+    allFields.has(f) && !STANDARD_FIELDS.includes(f)
+  );
+  const otherFields = [...allFields].filter(f =>
+    !STANDARD_FIELDS.includes(f) && !ruleFieldSet.has(f)
+  );
 
   const getDisplayValue = (value: unknown) => {
-    if (Array.isArray(value)) return value.join(", ");
-    return value ? String(value) : "(empty)";
+    if (value === null || value === undefined) return "(empty)";
+    if (Array.isArray(value)) return value.length > 0 ? value.join(", ") : "(empty)";
+    if (typeof value === "boolean") return value ? "Yes" : "No";
+    if (typeof value === "object") return JSON.stringify(value);
+    return String(value) || "(empty)";
   };
 
   const getResultValue = (field: string) => {
     const source = fieldSelections[field];
     const value = source === "a" ? recordA?.[field] : recordB?.[field];
     return getDisplayValue(value);
+  };
+
+  const getFieldLabel = (field: string) => {
+    return FIELD_LABELS[field] || field.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
   };
 
   const getStatusBadge = (status: string) => {
@@ -88,6 +164,63 @@ export default function MergeDetail() {
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
+  };
+
+  // Render a field row
+  const renderFieldRow = (field: string, isRuleField: boolean = false) => {
+    const valueA = recordA?.[field];
+    const valueB = recordB?.[field];
+    const selectedSource = fieldSelections[field];
+
+    return (
+      <tr key={field} className="border-b last:border-0">
+        <td className="py-3 px-4 font-medium text-muted-foreground">
+          <div className="flex items-center gap-2">
+            {getFieldLabel(field)}
+            {isRuleField && (
+              <Badge variant="outline" className="text-xs px-1.5 py-0 border-blue-300 text-blue-600">
+                Rule
+              </Badge>
+            )}
+          </div>
+        </td>
+        <td
+          className={cn(
+            "py-3 px-4",
+            selectedSource === "a" && "bg-green-500/10"
+          )}
+        >
+          <div className="flex items-center gap-2">
+            {selectedSource === "a" && (
+              <Check className="h-4 w-4 text-green-500 flex-shrink-0" />
+            )}
+            <span className={cn((!valueA || (Array.isArray(valueA) && valueA.length === 0)) && "text-muted-foreground italic")}>
+              {getDisplayValue(valueA)}
+            </span>
+          </div>
+        </td>
+        <td
+          className={cn(
+            "py-3 px-4",
+            selectedSource === "b" && "bg-green-500/10"
+          )}
+        >
+          <div className="flex items-center gap-2">
+            {selectedSource === "b" && (
+              <Check className="h-4 w-4 text-green-500 flex-shrink-0" />
+            )}
+            <span className={cn((!valueB || (Array.isArray(valueB) && valueB.length === 0)) && "text-muted-foreground italic")}>
+              {getDisplayValue(valueB)}
+            </span>
+          </div>
+        </td>
+        <td className="py-3 px-4 bg-muted/50 font-medium">
+          <span className={cn(getResultValue(field) === "(empty)" && "text-muted-foreground italic")}>
+            {getResultValue(field)}
+          </span>
+        </td>
+      </tr>
+    );
   };
 
   return (
@@ -173,6 +306,12 @@ export default function MergeDetail() {
               </p>
             </div>
           </div>
+          {rule?.name && (
+            <div className="pt-2 border-t">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Match Rule</p>
+              <p className="text-sm mt-1">{rule.name}</p>
+            </div>
+          )}
           <div className="pt-2 border-t text-sm text-muted-foreground">
             <p>Merged on: {formatDate(merge.created_at)}</p>
             {merge.rolled_back_at && (
@@ -225,7 +364,7 @@ export default function MergeDetail() {
             <ResponsiveTableContent minWidth="600px">
               <thead className="bg-muted/30">
                 <tr className="border-b">
-                  <th className="w-32 py-3 px-4 text-left"></th>
+                  <th className="w-40 py-3 px-4 text-left"></th>
                   <th className="min-w-40 py-3 px-4 text-left">
                     <div className="flex items-center gap-2">
                       <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
@@ -252,54 +391,56 @@ export default function MergeDetail() {
                 </tr>
               </thead>
               <tbody>
-                {displayFields.map((field) => {
-                  const valueA = recordA?.[field];
-                  const valueB = recordB?.[field];
-                  const selectedSource = fieldSelections[field];
+                {/* Standard Fields */}
+                {standardFields.map((field) => renderFieldRow(field))}
 
-                  return (
-                    <tr key={field} className="border-b last:border-0">
-                      <td className="py-3 px-4 font-medium text-muted-foreground">
-                        {fieldLabels[field] || field}
-                      </td>
-                      <td
-                        className={cn(
-                          "py-3 px-4",
-                          selectedSource === "a" && "bg-green-500/10"
-                        )}
-                      >
-                        <div className="flex items-center gap-2">
-                          {selectedSource === "a" && (
-                            <Check className="h-4 w-4 text-green-500 flex-shrink-0" />
-                          )}
-                          <span className={cn(!valueA && "text-muted-foreground italic")}>
-                            {getDisplayValue(valueA)}
-                          </span>
-                        </div>
-                      </td>
-                      <td
-                        className={cn(
-                          "py-3 px-4",
-                          selectedSource === "b" && "bg-green-500/10"
-                        )}
-                      >
-                        <div className="flex items-center gap-2">
-                          {selectedSource === "b" && (
-                            <Check className="h-4 w-4 text-green-500 flex-shrink-0" />
-                          )}
-                          <span className={cn(!valueB && "text-muted-foreground italic")}>
-                            {getDisplayValue(valueB)}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 bg-muted/50 font-medium">
-                        <span className={cn(getResultValue(field) === "(empty)" && "text-muted-foreground italic")}>
-                          {getResultValue(field)}
-                        </span>
+                {/* Rule Fields (if any beyond standard) */}
+                {ruleFields.length > 0 && (
+                  <>
+                    <tr className="bg-muted/20">
+                      <td colSpan={4} className="py-2 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        Rule Logic Fields
                       </td>
                     </tr>
-                  );
-                })}
+                    {ruleFields.map((field) => renderFieldRow(field, true))}
+                  </>
+                )}
+
+                {/* Expandable Other Fields */}
+                {otherFields.length > 0 && (
+                  <>
+                    <tr>
+                      <td colSpan={4} className="py-0 px-0">
+                        <button
+                          onClick={() => setShowAllFields(!showAllFields)}
+                          className="w-full py-3 px-4 flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+                        >
+                          {showAllFields ? (
+                            <>
+                              <ChevronUp className="h-4 w-4" />
+                              Hide {otherFields.length} additional fields
+                            </>
+                          ) : (
+                            <>
+                              <ChevronDown className="h-4 w-4" />
+                              Show {otherFields.length} additional fields
+                            </>
+                          )}
+                        </button>
+                      </td>
+                    </tr>
+                    {showAllFields && (
+                      <>
+                        <tr className="bg-muted/20">
+                          <td colSpan={4} className="py-2 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Additional Fields
+                          </td>
+                        </tr>
+                        {otherFields.map((field) => renderFieldRow(field))}
+                      </>
+                    )}
+                  </>
+                )}
               </tbody>
             </ResponsiveTableContent>
           </ResponsiveTable>
@@ -309,6 +450,9 @@ export default function MergeDetail() {
             <span><Check className="h-3 w-3 inline text-green-500" /> = Value was selected</span>
             <span className="italic">(empty)</span> = No value in record
             <span><Star className="h-3 w-3 inline text-yellow-500 fill-yellow-500" /> = Master record (kept)</span>
+            {ruleFields.length > 0 && (
+              <span><Badge variant="outline" className="text-xs px-1.5 py-0 border-blue-300 text-blue-600">Rule</Badge> = Used in match/preserve logic</span>
+            )}
           </div>
         </CardContent>
       </Card>

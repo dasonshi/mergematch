@@ -255,6 +255,14 @@ async def get_merge(
     merge_data["duplicate_snapshot"] = duplicate_snapshot
     merge_data["ghl_location_id"] = user.ghl_location_id
 
+    # Get rule data via match_pair for field categorization
+    if merge_data.get("match_pair_id"):
+        match_pair = supabase.table("match_pairs").select("rule_id").eq("id", merge_data["match_pair_id"]).single().execute()
+        if match_pair.data and match_pair.data.get("rule_id"):
+            rule = supabase.table("match_rules").select("name, match_fields, merge_strategy, merge_settings").eq("id", match_pair.data["rule_id"]).single().execute()
+            if rule.data:
+                merge_data["rule"] = rule.data
+
     return merge_data
 
 
