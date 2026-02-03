@@ -481,13 +481,15 @@ export default function MatchRuleForm() {
   };
 
   const updateField = (index: number, key: "name" | "matchType" | "operator" | "matchAgainst", value: string) => {
-    const updated = [...fields];
-    if (key === "operator") {
-      updated[index] = { ...updated[index], [key]: value as "AND" | "OR" };
-    } else {
-      updated[index] = { ...updated[index], [key]: value };
-    }
-    setFields(updated);
+    setFields(prev => {
+      const updated = [...prev];
+      if (key === "operator") {
+        updated[index] = { ...updated[index], [key]: value as "AND" | "OR" };
+      } else {
+        updated[index] = { ...updated[index], [key]: value };
+      }
+      return updated;
+    });
   };
 
   // Generate human-readable logic expression
@@ -1387,38 +1389,6 @@ export default function MatchRuleForm() {
                   <div className="relative">
                     <div className="absolute inset-0 flex items-center">
                       <span className="w-full border-t" />
-                    </div>
-                    <div className="relative flex justify-center text-xs uppercase">
-                      <span className="bg-background px-2 text-muted-foreground">or</span>
-                    </div>
-                  </div>
-
-                  {/* Custom Strategy Option */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label>Custom Strategy</Label>
-                      <UpgradeBadge tier="pro" feature="custom_strategy" />
-                    </div>
-                    <div
-                      onClick={() => {
-                        // In real app, check if user has Pro+ tier
-                        const hasProPlan = plan === "pro" || plan === "agency";
-                        if (!hasProPlan) {
-                          // The UpgradeBadge handles the modal, but we can also trigger from the card
-                          return;
-                        }
-                        // Navigate to create custom strategy
-                        navigate("/merge-strategies/new");
-                      }}
-                      className="p-4 rounded-lg border-2 border-dashed border-muted bg-muted/20 cursor-pointer hover:border-primary/30 hover:bg-muted/30 transition-all group"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Plus className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-                        <span className="font-medium opacity-60 group-hover:opacity-100 transition-opacity">Create Custom Strategy</span>
-                      </div>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        Define custom field-level merge rules for complete control
-                      </p>
                     </div>
                   </div>
                 </CardContent>
