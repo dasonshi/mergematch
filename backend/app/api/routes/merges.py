@@ -8,6 +8,7 @@ import logging
 
 from app.db.supabase import get_supabase
 from app.services.merge_service import execute_merge, rollback_merge
+from app.services.billing_service import check_merge_quota
 from app.core.security import AuthenticatedUser
 from app.core.deps import get_user, get_auth_context, AuthContext
 from app.core.rate_limit import limiter, RATE_LIMIT_MERGE
@@ -210,6 +211,19 @@ async def execute_merge_route(
     ctx: AuthContext = Depends(get_auth_context),
 ):
     """Execute a merge operation."""
+    # Check merge quota before proceeding
+    quota = await check_merge_quota(ctx.location_id, ctx.plan)
+    if not quota["allowed"]:
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "error": "merge_limit_exceeded",
+                "message": f"Free plan allows {quota['limit']} merges. You've used {quota['used']}.",
+                "used": quota["used"],
+                "limit": quota["limit"],
+            }
+        )
+
     try:
         # Convert field_preservation_mappings to list of dicts if provided
         mappings_dicts = None

@@ -361,3 +361,32 @@ def get_upgrade_url(location_id: str) -> str:
     if app_id:
         return f"https://marketplace.gohighlevel.com/app/{app_id}?locationId={location_id}"
     return "https://marketplace.gohighlevel.com"
+
+
+async def check_merge_quota(location_id: str, plan: str) -> Dict[str, Any]:
+    """
+    Check if location has remaining merge quota.
+    Returns: {"allowed": bool, "used": int, "limit": int, "remaining": int}
+    """
+    features = get_plan_features(plan)
+
+    # Unlimited plans always allowed
+    if features.unlimited_merges:
+        return {"allowed": True, "used": 0, "limit": -1, "remaining": -1}
+
+    # Count completed merges for this location
+    supabase = get_supabase()
+    result = supabase.table("merges").select("id", count="exact").eq(
+        "location_id", location_id
+    ).eq("status", "completed").execute()
+
+    used = result.count or 0
+    limit = features.free_merges
+    remaining = max(0, limit - used)
+
+    return {
+        "allowed": used < limit,
+        "used": used,
+        "limit": limit,
+        "remaining": remaining
+    }
