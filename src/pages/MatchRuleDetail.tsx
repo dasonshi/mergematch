@@ -15,11 +15,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Edit, Search, Play, Loader2, ChevronDown, ChevronUp, RotateCcw, X, Trash2, ArrowRight, CalendarClock, Lock, AlertCircle, RefreshCw, Clock, Zap } from "lucide-react";
+import { ArrowLeft, Edit, Search, Play, Loader2, ChevronDown, ChevronUp, RotateCcw, X, Trash2, ArrowRight, CalendarClock, Lock, AlertCircle, RefreshCw } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
-import { api, MatchPair, JobExecution } from "@/lib/api";
+import { api, MatchPair } from "@/lib/api";
 import { computeStrategySelections, computeMasterId, StrategyId } from "@/lib/merge-strategies";
 import { ResponsiveTable, ResponsiveTableContent } from "@/components/ui/responsive-table";
 import { ConfidenceBadge } from "@/components/ui/confidence-badge";
@@ -86,14 +86,6 @@ export default function MatchRuleDetail() {
     gcTime: 0, // No cache - always fresh
   });
 
-  // Fetch recent job executions for this rule
-  const { data: jobsData, isLoading: jobsLoading, refetch: refetchJobs } = useQuery({
-    queryKey: ["jobs", id, locationId],
-    queryFn: () => api.getJobs(id, undefined, 5),
-    enabled: !!locationId && !!id,
-    gcTime: 0, // No cache - always fresh
-  });
-
   // Scan mutation (defined before useEffect that uses it)
   const scanMutation = useMutation({
     mutationFn: () => api.scanRule(id!),
@@ -107,7 +99,7 @@ export default function MatchRuleDetail() {
       queryClient.invalidateQueries({ queryKey: ["matches"] });
       queryClient.invalidateQueries({ queryKey: ["matches", "pending"] });
       queryClient.invalidateQueries({ queryKey: ["matches", id] });
-      queryClient.invalidateQueries({ queryKey: ["jobs", id] });
+      queryClient.invalidateQueries({ queryKey: ["rule", id] }); // Update last_scan_at
     },
     onError: (error: Error) => {
       toast({
@@ -115,32 +107,6 @@ export default function MatchRuleDetail() {
         description: error.message,
         variant: "destructive",
       });
-    },
-  });
-
-  // Run rule with job tracking mutation
-  const runRuleMutation = useMutation({
-    mutationFn: () => api.runRuleManually(id!),
-    onSuccess: (data) => {
-      toast({
-        title: "Scan Complete",
-        description: `Found ${data.matches_found} matches from ${data.records_scanned} records.`,
-      });
-      // Invalidate all related queries
-      queryClient.invalidateQueries({ queryKey: ["matches"] });
-      queryClient.invalidateQueries({ queryKey: ["matches", "pending"] });
-      queryClient.invalidateQueries({ queryKey: ["matches", id] });
-      queryClient.invalidateQueries({ queryKey: ["jobs", id] });
-      queryClient.invalidateQueries({ queryKey: ["rule", id] });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Scan Failed",
-        description: error.message,
-        variant: "destructive",
-      });
-      // Still refresh jobs to show the failed job
-      queryClient.invalidateQueries({ queryKey: ["jobs", id] });
     },
   });
 
@@ -727,83 +693,6 @@ export default function MatchRuleDetail() {
             )}
           </>
         )}
-      </Card>
-
-      {/* Recent Scans Section */}
-      <Card className="overflow-hidden">
-        <div className="flex items-center justify-between gap-4 p-4 border-b bg-muted/30">
-          <div className="flex items-center gap-2 font-semibold">
-            <Clock className="h-4 w-4" />
-            Recent Scans
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => runRuleMutation.mutate()}
-            disabled={runRuleMutation.isPending || scanMutation.isPending}
-          >
-            {runRuleMutation.isPending ? (
-              <>
-                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-                Running...
-              </>
-            ) : (
-              <>
-                <Zap className="mr-1.5 h-4 w-4" />
-                Run Now
-              </>
-            )}
-          </Button>
-        </div>
-        <CardContent className="p-0">
-          {jobsLoading ? (
-            <div className="flex items-center justify-center h-20">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : !jobsData?.data || jobsData.data.length === 0 ? (
-            <div className="p-8 text-center">
-              <p className="text-muted-foreground text-sm">No scan history yet. Click "Run Now" to start a scan.</p>
-            </div>
-          ) : (
-            <div className="divide-y">
-              {jobsData.data.map((job: JobExecution) => (
-                <div key={job.id} className="flex items-center justify-between p-4 hover:bg-muted/30 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-2 h-2 rounded-full ${
-                      job.status === 'completed' ? 'bg-green-500' :
-                      job.status === 'failed' ? 'bg-red-500' :
-                      'bg-yellow-500 animate-pulse'
-                    }`} />
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">
-                          {job.trigger_type === 'scheduled' ? 'Scheduled Scan' : 'Manual Scan'}
-                        </span>
-                        <Badge variant={job.status === 'completed' ? 'default' : job.status === 'failed' ? 'destructive' : 'secondary'} className="text-xs">
-                          {job.status}
-                        </Badge>
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {new Date(job.started_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} at {new Date(job.started_at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-right text-sm">
-                    {job.status === 'completed' ? (
-                      <div className="text-muted-foreground">
-                        <span className="font-medium text-foreground">{job.matches_found}</span> matches from <span className="font-medium text-foreground">{job.records_scanned?.toLocaleString()}</span> records
-                      </div>
-                    ) : job.status === 'failed' ? (
-                      <span className="text-destructive text-xs">{job.error_message || 'Scan failed'}</span>
-                    ) : (
-                      <span className="text-muted-foreground">In progress...</span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
       </Card>
 
       {/* Merge History Section */}

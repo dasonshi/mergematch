@@ -87,6 +87,10 @@ npm run build && npx vercel --prod
 
 This ensures users get fixes quickly and backend auto-deploys stay in sync.
 
+## MCP Tools
+
+**Only use `mcp__supabase-mergematch__*` tools for database operations. Never use `mcp__supabase-peaceful__*`.**
+
 ## Code Conventions
 
 ### Backend (Python/FastAPI)
