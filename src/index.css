@@ -147,8 +147,7 @@
   }
 
   #root {
-    height: 100dvh;
-    overflow: hidden;
+    height: 100%;
   }
 
   body {
