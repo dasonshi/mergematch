@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Star, AlertTriangle, Loader2, Save, ChevronDown, ChevronUp, Plus, Trash2, ArrowRight } from "lucide-react";
+import { ArrowLeft, Star, AlertTriangle, Loader2, Save, ChevronDown, ChevronUp, Plus, Trash2, ArrowRight, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +20,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
+import { useWarningPreferences } from "@/hooks/use-warning-preferences";
 import { api, FieldPreservationMapping, ObjectField } from "@/lib/api";
 import { computeStrategySelections, StrategyId } from "@/lib/merge-strategies";
 import { LockedFeatureOverlay, UpgradeBadge } from "@/components/ui/upgrade-badge";
@@ -84,6 +85,7 @@ export default function MatchReview() {
   const { locationId, isLoading: authLoading, plan } = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { preferences: warningPrefs } = useWarningPreferences();
 
   // Tier check for field preservation
   const hasFieldPreservation = plan === "pro" || plan === "agency";
@@ -301,7 +303,8 @@ export default function MatchReview() {
   }, [fieldPreservationMappings, masterId, recordA, recordB, preservableFields, getFieldLabel, formatDisplayValue]);
 
   const handleMerge = () => {
-    if (!acknowledgedWarning) {
+    // Only require acknowledgment if warning is enabled
+    if (warningPrefs.showIndividualMergeWarning && !acknowledgedWarning) {
       setShowWarningError(true);
       return;
     }
@@ -329,7 +332,7 @@ export default function MatchReview() {
           <div className="flex items-center gap-2">
             {getFieldLabel(field)}
             {isRuleField && (
-              <Badge variant="outline" className="text-xs px-1.5 py-0 border-blue-300 text-blue-600">
+              <Badge variant="outline" className="text-xs px-1.5 py-0 border-primary-subtle-border text-primary-subtle-foreground bg-primary-subtle">
                 Rule
               </Badge>
             )}
@@ -417,13 +420,8 @@ export default function MatchReview() {
           </h1>
         </div>
         <Badge
-          variant="outline"
-          className={cn(
-            "text-base px-4 py-1.5 w-fit font-semibold",
-            confidence >= 80 ? "bg-green-100 text-green-700 border-green-200" :
-            confidence >= 60 ? "bg-amber-100 text-amber-700 border-amber-200" :
-            "bg-red-100 text-red-700 border-red-200"
-          )}
+          variant={confidence >= 80 ? "success-subtle" : confidence >= 60 ? "warning-subtle" : "destructive-subtle"}
+          className="text-base px-4 py-1.5 w-fit font-semibold"
         >
           {confidence}% confidence
         </Badge>
@@ -553,6 +551,49 @@ export default function MatchReview() {
                     )}
                   </>
                 )}
+
+                {/* Field Preservation Targets - show when mappings are configured */}
+                {fieldPreservationMappings.some(m => m.source && m.target) && (
+                  <>
+                    <TableRow className="bg-primary/10">
+                      <TableCell colSpan={4} className="py-2 text-xs font-semibold uppercase tracking-wide text-primary">
+                        <div className="flex items-center gap-2">
+                          <Save className="h-3.5 w-3.5" />
+                          Values to Preserve
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                    {fieldPreservationMappings.filter(m => m.source && m.target).map((mapping, idx) => {
+                      const sourceField = preservableFields.find(f => f.id === mapping.source);
+                      const targetField = preservableFields.find(f => f.id === mapping.target);
+                      const loserRecord = masterId === "a" ? recordB : recordA;
+                      const valueToPreserve = formatDisplayValue(loserRecord[mapping.source]);
+
+                      return (
+                        <TableRow key={`preserve-${idx}`} className="bg-primary/5">
+                          <TableCell className="font-medium text-muted-foreground">
+                            <div className="flex items-center gap-2">
+                              {targetField?.name || mapping.target}
+                              <Badge variant="outline" className="text-xs px-1.5 py-0 border-primary/50 text-primary">
+                                Preserve
+                              </Badge>
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              ← from {sourceField?.name || mapping.source}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground italic">(not shown)</TableCell>
+                          <TableCell className="text-muted-foreground italic">(not shown)</TableCell>
+                          <TableCell className="bg-primary/10 font-medium">
+                            <span className={cn(!valueToPreserve && "text-muted-foreground italic")}>
+                              {valueToPreserve || "(empty)"}
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </>
+                )}
               </TableBody>
             </Table>
           </div>
@@ -563,7 +604,7 @@ export default function MatchReview() {
             <span className="italic">(empty)</span> = No value
             <span><Star className="h-3 w-3 inline text-yellow-500 fill-yellow-500" /> = Master record</span>
             {ruleFields.length > 0 && (
-              <span><Badge variant="outline" className="text-xs px-1.5 py-0 border-blue-300 text-blue-600">Rule</Badge> = Used in match logic</span>
+              <span><Badge variant="outline" className="text-xs px-1.5 py-0 border-primary-subtle-border text-primary-subtle-foreground bg-primary-subtle">Rule</Badge> = Used in match logic</span>
             )}
           </div>
         </CardContent>
@@ -748,46 +789,67 @@ export default function MatchReview() {
       </Card>
 
       {/* Merge Warning */}
-      <Card className="border-warning/30 bg-warning/5">
-        <CardContent className="pt-6">
-          <div className="flex gap-3">
-            <AlertTriangle className="h-5 w-5 text-warning flex-shrink-0 mt-0.5" />
-            <div className="space-y-3">
-              <div>
-                <h3 className="font-semibold text-foreground">Merge Warning</h3>
-                <p className="text-sm text-muted-foreground mt-1">
-                  "{duplicateName}" will be <span className="font-semibold text-destructive">DELETED</span>.
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  A snapshot will be saved for 30-day rollback.
-                </p>
-              </div>
-              <div className={cn(
-                "flex items-center gap-2 p-2 -m-2 rounded-md transition-colors",
-                showWarningError && !acknowledgedWarning && "bg-destructive/10 ring-2 ring-destructive"
-              )}>
-                <Checkbox
-                  id="acknowledge-warning"
-                  checked={acknowledgedWarning}
-                  onCheckedChange={(checked) => {
-                    setAcknowledgedWarning(checked as boolean);
-                    if (checked) setShowWarningError(false);
-                  }}
-                />
-                <label
-                  htmlFor="acknowledge-warning"
-                  className={cn(
-                    "text-sm cursor-pointer",
-                    showWarningError && !acknowledgedWarning ? "text-destructive font-medium" : "text-muted-foreground"
-                  )}
-                >
-                  I understand this action cannot be undone
-                </label>
+      {warningPrefs.showIndividualMergeWarning ? (
+        <Card className="border-warning/30 bg-warning/5">
+          <CardContent className="pt-6">
+            <div className="flex gap-3">
+              <AlertTriangle className="h-5 w-5 text-warning flex-shrink-0 mt-0.5" />
+              <div className="space-y-3">
+                <div>
+                  <h3 className="font-semibold text-foreground">Merge Warning</h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    "{duplicateName}" will be <span className="font-semibold text-destructive">DELETED</span>.
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    A snapshot will be saved for 30-day rollback.
+                  </p>
+                </div>
+                <div className={cn(
+                  "flex items-center gap-2 p-2 -m-2 rounded-md transition-colors",
+                  showWarningError && !acknowledgedWarning && "bg-destructive/10 ring-2 ring-destructive"
+                )}>
+                  <Checkbox
+                    id="acknowledge-warning"
+                    checked={acknowledgedWarning}
+                    onCheckedChange={(checked) => {
+                      setAcknowledgedWarning(checked as boolean);
+                      if (checked) setShowWarningError(false);
+                    }}
+                  />
+                  <label
+                    htmlFor="acknowledge-warning"
+                    className={cn(
+                      "text-sm cursor-pointer",
+                      showWarningError && !acknowledgedWarning ? "text-destructive font-medium" : "text-muted-foreground"
+                    )}
+                  >
+                    I understand this action cannot be undone
+                  </label>
+                </div>
+                <div className="pt-1 border-t border-warning/20">
+                  <Link
+                    to="/settings"
+                    className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+                  >
+                    <Settings className="h-3 w-3" />
+                    Manage warning preferences in Settings
+                  </Link>
+                </div>
               </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="flex items-center justify-between text-sm text-muted-foreground bg-muted/30 px-4 py-3 rounded-md">
+          <span>
+            <AlertTriangle className="h-4 w-4 inline mr-2 text-warning" />
+            "{duplicateName}" will be deleted. A snapshot will be saved for rollback.
+          </span>
+          <Link to="/settings" className="underline hover:text-foreground">
+            Re-enable warning
+          </Link>
+        </div>
+      )}
 
       {/* Footer Actions */}
       <div className="flex justify-between items-center pt-6">

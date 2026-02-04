@@ -12,9 +12,14 @@ const badgeVariants = cva(
         secondary: "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",
         destructive: "border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80",
         outline: "text-foreground border-border",
-        success: "border-transparent bg-emerald-600/90 text-white hover:bg-emerald-600",
-        warning: "border-transparent bg-amber-500/90 text-amber-950 hover:bg-amber-500",
+        success: "border-transparent bg-success text-success-foreground hover:bg-success/90",
+        warning: "border-transparent bg-warning text-warning-foreground hover:bg-warning/90",
         muted: "border-transparent bg-muted text-muted-foreground",
+        // Subtle variants for softer backgrounds (used in confidence badges, status indicators)
+        "success-subtle": "border-success-subtle-border bg-success-subtle text-success-subtle-foreground",
+        "warning-subtle": "border-warning-subtle-border bg-warning-subtle text-warning-subtle-foreground",
+        "destructive-subtle": "border-destructive-subtle-border bg-destructive-subtle text-destructive-subtle-foreground",
+        "primary-subtle": "border-primary-subtle-border bg-primary-subtle text-primary-subtle-foreground",
       },
     },
     defaultVariants: {

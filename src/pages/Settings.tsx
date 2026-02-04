@@ -26,7 +26,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { useState } from "react";
+import { useWarningPreferences } from "@/hooks/use-warning-preferences";
 import { useLocation } from "@/contexts/LocationContext";
 
 export default function Settings() {
@@ -48,18 +48,10 @@ export default function Settings() {
   // Format trial end date
   const trialEndDate = trialEndsAt ? new Date(trialEndsAt).toLocaleDateString() : null;
 
-  const [preferences, setPreferences] = useState({
-    showIndividualMergeWarning: true,
-    showBulkMergeWarning: true,
-    showRestoreWarning: true,
-  });
+  const { preferences, setPreference, resetPreferences } = useWarningPreferences();
 
   const handleResetWarnings = () => {
-    setPreferences({
-      showIndividualMergeWarning: true,
-      showBulkMergeWarning: true,
-      showRestoreWarning: true,
-    });
+    resetPreferences();
     toast({
       title: "Warnings reset",
       description: "All warning preferences have been restored to defaults.",
@@ -233,11 +225,11 @@ export default function Settings() {
             <Label className="text-base font-semibold">Merge Warnings</Label>
             <div className="space-y-3">
               <div className="flex items-center space-x-2">
-                <Checkbox 
-                  id="individual-warning" 
+                <Checkbox
+                  id="individual-warning"
                   checked={preferences.showIndividualMergeWarning}
-                  onCheckedChange={(checked) => 
-                    setPreferences(prev => ({ ...prev, showIndividualMergeWarning: checked as boolean }))
+                  onCheckedChange={(checked) =>
+                    setPreference('showIndividualMergeWarning', checked as boolean)
                   }
                 />
                 <label htmlFor="individual-warning" className="text-sm cursor-pointer">
@@ -245,11 +237,11 @@ export default function Settings() {
                 </label>
               </div>
               <div className="flex items-center space-x-2">
-                <Checkbox 
-                  id="bulk-warning" 
+                <Checkbox
+                  id="bulk-warning"
                   checked={preferences.showBulkMergeWarning}
-                  onCheckedChange={(checked) => 
-                    setPreferences(prev => ({ ...prev, showBulkMergeWarning: checked as boolean }))
+                  onCheckedChange={(checked) =>
+                    setPreference('showBulkMergeWarning', checked as boolean)
                   }
                 />
                 <label htmlFor="bulk-warning" className="text-sm cursor-pointer">
@@ -257,11 +249,11 @@ export default function Settings() {
                 </label>
               </div>
               <div className="flex items-center space-x-2">
-                <Checkbox 
-                  id="restore-warning" 
+                <Checkbox
+                  id="restore-warning"
                   checked={preferences.showRestoreWarning}
-                  onCheckedChange={(checked) => 
-                    setPreferences(prev => ({ ...prev, showRestoreWarning: checked as boolean }))
+                  onCheckedChange={(checked) =>
+                    setPreference('showRestoreWarning', checked as boolean)
                   }
                 />
                 <label htmlFor="restore-warning" className="text-sm cursor-pointer">

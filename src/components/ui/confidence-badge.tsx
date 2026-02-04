@@ -16,19 +16,14 @@ interface ConfidenceBadgeProps {
 export function ConfidenceBadge({ score, className }: ConfidenceBadgeProps) {
   const confidence = Math.round(score * 100);
 
+  const variant = confidence >= 90
+    ? "success-subtle"
+    : confidence >= 80
+      ? "warning-subtle"
+      : "destructive-subtle";
+
   return (
-    <Badge
-      variant="outline"
-      className={cn(
-        "font-semibold",
-        confidence >= 90
-          ? "bg-green-100 text-green-700 border-green-200"
-          : confidence >= 80
-            ? "bg-amber-100 text-amber-700 border-amber-200"
-            : "bg-red-100 text-red-700 border-red-200",
-        className
-      )}
-    >
+    <Badge variant={variant} className={cn("font-semibold", className)}>
       {confidence}%
     </Badge>
   );

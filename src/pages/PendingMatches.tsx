@@ -360,13 +360,13 @@ export default function PendingMatches() {
             <span className="font-medium text-foreground">{stats.total}</span>
             <span>total</span>
             <span className="text-muted-foreground/50">•</span>
-            <span className="text-green-600 font-medium">{stats.highConfidence}</span>
+            <span className="text-success font-medium">{stats.highConfidence}</span>
             <span>high</span>
             <span className="text-muted-foreground/50">•</span>
-            <span className="text-amber-600 font-medium">{stats.mediumConfidence}</span>
+            <span className="text-warning font-medium">{stats.mediumConfidence}</span>
             <span>med</span>
             <span className="text-muted-foreground/50">•</span>
-            <span className="text-red-600 font-medium">{stats.lowConfidence}</span>
+            <span className="text-destructive font-medium">{stats.lowConfidence}</span>
             <span>low</span>
           </div>
         </div>
@@ -380,17 +380,17 @@ export default function PendingMatches() {
           >
             {isValidating ? (
               <>
-                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
                 Validating...
               </>
             ) : bulkMergeProgress.inProgress ? (
               <>
-                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
                 {bulkMergeProgress.current}/{bulkMergeProgress.total}
               </>
             ) : (
               <>
-                <Play className="mr-1.5 h-3.5 w-3.5" />
+                <Play className="mr-1.5 h-4 w-4" />
                 Merge All
               </>
             )}
@@ -401,7 +401,7 @@ export default function PendingMatches() {
               size="sm"
               onClick={() => { abortMergeRef.current = true; }}
             >
-              <X className="h-3.5 w-3.5" />
+              <X className="h-4 w-4" />
             </Button>
           )}
         </div>
@@ -410,9 +410,9 @@ export default function PendingMatches() {
       {/* Mobile Stats Row */}
       <div className="flex sm:hidden flex-wrap items-center gap-2 text-xs">
         <Badge variant="secondary">{stats.total} total</Badge>
-        <Badge variant="outline" className="text-green-600 border-green-200">{stats.highConfidence} high</Badge>
-        <Badge variant="outline" className="text-amber-600 border-amber-200">{stats.mediumConfidence} med</Badge>
-        <Badge variant="outline" className="text-red-600 border-red-200">{stats.lowConfidence} low</Badge>
+        <Badge variant="success-subtle">{stats.highConfidence} high</Badge>
+        <Badge variant="warning-subtle">{stats.mediumConfidence} med</Badge>
+        <Badge variant="destructive-subtle">{stats.lowConfidence} low</Badge>
       </div>
 
       {/* Filters */}

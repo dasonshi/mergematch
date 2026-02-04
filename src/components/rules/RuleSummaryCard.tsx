@@ -137,7 +137,7 @@ export function RuleSummaryCard({
   const overwriteBlanks = mergeSettings?.overwrite_blanks;
 
   return (
-    <Card className="shadow-md">
+    <Card>
       <CardContent className="pt-6">
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
           {/* Row 1: Object, Strategy, Status */}

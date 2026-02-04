@@ -22,7 +22,7 @@ import { useToast } from "@/hooks/use-toast";
 import { api, MatchPair } from "@/lib/api";
 import { computeStrategySelections, computeMasterId, StrategyId } from "@/lib/merge-strategies";
 import { ResponsiveTable, ResponsiveTableContent } from "@/components/ui/responsive-table";
-import { cn } from "@/lib/utils";
+import { ConfidenceBadge } from "@/components/ui/confidence-badge";
 import { MergeHistoryCard, RuleSummaryCard, getRecordName, getMatchFieldSubheading } from "@/components/rules";
 
 export default function MatchRuleDetail() {
@@ -455,17 +455,17 @@ export default function MatchRuleDetail() {
           >
             {isValidating ? (
               <>
-                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
                 Validating...
               </>
             ) : bulkMergeProgress.inProgress ? (
               <>
-                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
                 {bulkMergeProgress.current}/{bulkMergeProgress.total}
               </>
             ) : (
               <>
-                <Play className="mr-1.5 h-3.5 w-3.5" />
+                <Play className="mr-1.5 h-4 w-4" />
                 Merge All
               </>
             )}
@@ -476,7 +476,7 @@ export default function MatchRuleDetail() {
               size="sm"
               onClick={() => { abortMergeRef.current = true; }}
             >
-              <X className="h-3.5 w-3.5" />
+              <X className="h-4 w-4" />
             </Button>
           )}
           <Button
@@ -486,9 +486,9 @@ export default function MatchRuleDetail() {
             disabled={scanMutation.isPending}
           >
             {scanMutation.isPending ? (
-              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
             ) : (
-              <Search className="mr-1.5 h-3.5 w-3.5" />
+              <Search className="mr-1.5 h-4 w-4" />
             )}
             {scanMutation.isPending ? "Scanning..." : "Scan Now"}
           </Button>
@@ -501,19 +501,19 @@ export default function MatchRuleDetail() {
             {plan === 'free' ? (
               <span className="flex items-center">
                 <Lock className="mr-1.5 h-3 w-3" />
-                <CalendarClock className="mr-1.5 h-3.5 w-3.5" />
+                <CalendarClock className="mr-1.5 h-4 w-4" />
                 Schedule
               </span>
             ) : (
               <Link to={`/match-rules/${id}/edit`}>
-                <CalendarClock className="mr-1.5 h-3.5 w-3.5" />
+                <CalendarClock className="mr-1.5 h-4 w-4" />
                 Schedule
               </Link>
             )}
           </Button>
           <Button variant="outline" size="sm" asChild>
             <Link to={`/match-rules/${id}/edit`}>
-              <Edit className="mr-1.5 h-3.5 w-3.5" />
+              <Edit className="mr-1.5 h-4 w-4" />
               Edit
             </Link>
           </Button>
@@ -523,7 +523,7 @@ export default function MatchRuleDetail() {
             className="text-destructive hover:bg-destructive hover:text-destructive-foreground"
             onClick={() => setShowDeleteDialog(true)}
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 className="h-4 w-4" />
           </Button>
         </div>
       </div>
@@ -566,7 +566,7 @@ export default function MatchRuleDetail() {
       />
 
       {/* Pending Matches Section */}
-      <Card className="shadow-md overflow-hidden">
+      <Card className="overflow-hidden">
         {/* Header with expand toggle and search */}
         <div className="flex items-center justify-between gap-4 p-4 border-b bg-muted/30">
           <button
@@ -578,7 +578,7 @@ export default function MatchRuleDetail() {
           </button>
           {matchesExpanded && pendingMatches.length > 0 && (
             <div className="relative w-48">
-              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Search..."
                 value={matchSearchQuery}
@@ -623,7 +623,6 @@ export default function MatchRuleDetail() {
                         {filteredPendingMatches.map((match: MatchPair) => {
                           const recordA = match.record_a_data || {};
                           const recordB = match.record_b_data || {};
-                          const confidence = Math.round((match.confidence_score || 0) * 100);
                           const matchFields = rule.match_fields || [];
                           const subheadingA = getMatchFieldSubheading(recordA, matchFields);
                           const subheadingB = getMatchFieldSubheading(recordB, matchFields);
@@ -651,17 +650,7 @@ export default function MatchRuleDetail() {
                                 )}
                               </td>
                               <td className="py-3 px-4 text-center">
-                                <Badge
-                                  variant="outline"
-                                  className={cn(
-                                    "font-semibold",
-                                    confidence >= 90 ? "bg-green-100 text-green-700 border-green-200" :
-                                    confidence >= 80 ? "bg-amber-100 text-amber-700 border-amber-200" :
-                                    "bg-red-100 text-red-700 border-red-200"
-                                  )}
-                                >
-                                  {confidence}%
-                                </Badge>
+                                <ConfidenceBadge score={match.confidence_score || 0} />
                               </td>
                               <td className="py-3 px-4 text-right">
                                 <Button size="sm" asChild>
@@ -685,7 +674,7 @@ export default function MatchRuleDetail() {
                   <Button variant="outline" size="sm" asChild>
                     <Link to={`/match-rules/${id}/matches`}>
                       View All
-                      <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+                      <ArrowRight className="ml-1.5 h-4 w-4" />
                     </Link>
                   </Button>
                 </div>
@@ -736,7 +725,7 @@ export default function MatchRuleDetail() {
               </p>
               {validMatchIds.length > 0 ? (
                 <p>
-                  <span className="font-semibold text-green-600">{validMatchIds.length}</span> valid match(es)
+                  <span className="font-semibold text-success">{validMatchIds.length}</span> valid match(es)
                   can still be merged.
                 </p>
               ) : (

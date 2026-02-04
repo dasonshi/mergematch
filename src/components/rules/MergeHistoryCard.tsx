@@ -29,7 +29,7 @@ export function MergeHistoryCard({
   isRollbackPending,
 }: MergeHistoryCardProps) {
   return (
-    <Card className="shadow-md overflow-hidden">
+    <Card className="overflow-hidden">
       <div className="flex items-center gap-2 p-4 border-b bg-muted/30">
         <span className="font-semibold">Merge History</span>
         <Badge variant="secondary">
@@ -85,7 +85,7 @@ export function MergeHistoryCard({
                               onClick={() => onRollback(item.id)}
                               disabled={isRollbackPending}
                             >
-                              <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                              <RotateCcw className="h-4 w-4 mr-1" />
                               Restore
                             </Button>
                           )}
@@ -104,7 +104,7 @@ export function MergeHistoryCard({
             <Button variant="outline" size="sm" asChild>
               <Link to="/history">
                 View Full History
-                <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+                <ArrowRight className="ml-1.5 h-4 w-4" />
               </Link>
             </Button>
           </div>

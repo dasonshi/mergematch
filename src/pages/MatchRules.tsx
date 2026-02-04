@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { DataTable, DataTableColumn } from "@/components/ui/data-table";
 import { NoRulesEmpty } from "@/components/ui/empty-state";
 import { RuleActionButtons } from "@/components/rule-action-buttons";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -214,35 +215,29 @@ export default function MatchRules() {
 
   return (
     <div className="space-y-6">
-      {/* Header Row */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        {/* Left side: Title */}
-        <h1 className="text-xl font-bold tracking-tight text-foreground">
-          Match Rules
-        </h1>
-
-        {/* Right side: Search + New Rule */}
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search rules..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 w-[200px]"
-            />
-          </div>
-
-          {/* New Rule Button */}
-          <Button asChild>
-            <Link to="/match-rules/new">
-              <Plus className="mr-1.5 h-4 w-4" />
-              New Rule
-            </Link>
-          </Button>
+      <PageHeader
+        title="Match Rules"
+        description="Create and manage duplicate detection rules"
+      >
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search rules..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9 w-[200px]"
+          />
         </div>
-      </div>
+
+        {/* New Rule Button */}
+        <Button asChild>
+          <Link to="/match-rules/new">
+            <Plus className="mr-1.5 h-4 w-4" />
+            New Rule
+          </Link>
+        </Button>
+      </PageHeader>
 
       <Card className="overflow-hidden">
         <CardContent className="p-0">

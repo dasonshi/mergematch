@@ -21,9 +21,10 @@ const chartConfig = {
   },
 };
 
+// Colors using CSS variable values for charts (recharts requires hex/rgb)
 const COLORS = {
-  completed: "#22c55e",
-  rolled_back: "#f59e0b",
+  completed: "hsl(142, 76%, 36%)", // matches --success
+  rolled_back: "hsl(38, 92%, 50%)", // matches --warning
 };
 
 export default function StatsSummary() {
@@ -167,22 +168,22 @@ export default function StatsSummary() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Total Merged</p>
-                <p className="text-3xl font-bold text-emerald-500">{stats.summary.completed}</p>
+                <p className="text-3xl font-bold text-success">{stats.summary.completed}</p>
               </div>
-              <div className="rounded-lg bg-emerald-500/10 p-2.5">
-                <CheckCircle className="h-6 w-6 text-emerald-500" />
+              <div className="rounded-lg bg-success/10 p-2.5">
+                <CheckCircle className="h-6 w-6 text-success" />
               </div>
             </div>
             <div className="mt-3 flex items-center text-sm">
               {trend > 0 ? (
                 <>
-                  <TrendingUp className="h-4 w-4 text-emerald-500 mr-1" />
-                  <span className="text-emerald-500">+{trend.toFixed(0)}%</span>
+                  <TrendingUp className="h-4 w-4 text-success mr-1" />
+                  <span className="text-success">+{trend.toFixed(0)}%</span>
                 </>
               ) : trend < 0 ? (
                 <>
-                  <TrendingDown className="h-4 w-4 text-red-500 mr-1" />
-                  <span className="text-red-500">{trend.toFixed(0)}%</span>
+                  <TrendingDown className="h-4 w-4 text-destructive mr-1" />
+                  <span className="text-destructive">{trend.toFixed(0)}%</span>
                 </>
               ) : (
                 <>
@@ -217,10 +218,10 @@ export default function StatsSummary() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Restored</p>
-                <p className="text-3xl font-bold text-amber-500">{stats.summary.rolled_back}</p>
+                <p className="text-3xl font-bold text-warning">{stats.summary.rolled_back}</p>
               </div>
-              <div className="rounded-lg bg-amber-500/10 p-2.5">
-                <RotateCcw className="h-6 w-6 text-amber-500" />
+              <div className="rounded-lg bg-warning/10 p-2.5">
+                <RotateCcw className="h-6 w-6 text-warning" />
               </div>
             </div>
             <div className="mt-3 flex items-center text-sm text-muted-foreground">

@@ -39,6 +39,7 @@ import { useToast } from "@/hooks/use-toast";
 
 import { api } from "@/lib/api";
 import { MergeActionButtons } from "@/components/merge-action-buttons";
+import { PageHeader } from "@/components/ui/page-header";
 
 // Build CRM contact URL
 const getCrmContactUrl = (locationId: string, contactId: string) => {
@@ -326,7 +327,7 @@ export default function History() {
               className="text-primary hover:text-primary/80"
               title="View contact"
             >
-              <ExternalLink className="h-3.5 w-3.5" />
+              <ExternalLink className="h-4 w-4" />
             </a>
           )}
         </div>
@@ -350,7 +351,7 @@ export default function History() {
               className="text-primary hover:text-primary/80"
               title="View restored contact"
             >
-              <ExternalLink className="h-3.5 w-3.5" />
+              <ExternalLink className="h-4 w-4" />
             </a>
           )}
         </div>
@@ -407,56 +408,50 @@ export default function History() {
 
   return (
     <div className="space-y-6">
-      {/* Header Row */}
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        {/* Left side: Title */}
-        <h1 className="text-xl font-bold tracking-tight text-foreground">
-          Merge History
-        </h1>
-
-        {/* Right side: Filters + Export */}
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search..."
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              className="pl-9 w-[180px]"
-            />
-          </div>
-
-          {/* Status Filter */}
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[130px]">
-              <SelectValue placeholder="All Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="completed">{getMergeStatusLabel("completed")}</SelectItem>
-              <SelectItem value="rolled_back">{getMergeStatusLabel("rolled_back")}</SelectItem>
-              <SelectItem value="failed">{getMergeStatusLabel("failed")}</SelectItem>
-            </SelectContent>
-          </Select>
-
-          {/* Date Range */}
-          <DateRangePicker
-            dateRange={dateRange}
-            onDateRangeChange={setDateRange}
-            className="w-[220px]"
+      <PageHeader
+        title="Merge History"
+        description="View and manage all completed merges"
+      >
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            className="pl-9 w-[180px]"
           />
-
-          {/* Export */}
-          <Button variant="outline" size="sm" onClick={handleExport} disabled={total === 0 || isExporting}>
-            {isExporting ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Download className="h-3.5 w-3.5" />
-            )}
-          </Button>
         </div>
-      </div>
+
+        {/* Status Filter */}
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-[130px]">
+            <SelectValue placeholder="All Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="completed">{getMergeStatusLabel("completed")}</SelectItem>
+            <SelectItem value="rolled_back">{getMergeStatusLabel("rolled_back")}</SelectItem>
+            <SelectItem value="failed">{getMergeStatusLabel("failed")}</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {/* Date Range */}
+        <DateRangePicker
+          dateRange={dateRange}
+          onDateRangeChange={setDateRange}
+          className="w-[220px]"
+        />
+
+        {/* Export */}
+        <Button variant="outline" size="sm" onClick={handleExport} disabled={total === 0 || isExporting}>
+          {isExporting ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Download className="h-4 w-4" />
+          )}
+        </Button>
+      </PageHeader>
 
       {/* Selection Bar */}
       {(selectedIds.size > 0 || selectAllMatching) && (
@@ -482,12 +477,12 @@ export default function History() {
           >
             {bulkRestoreProgress.inProgress ? (
               <>
-                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
                 {bulkRestoreProgress.current}/{bulkRestoreProgress.total}
               </>
             ) : (
               <>
-                <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                <RotateCcw className="mr-1.5 h-4 w-4" />
                 Restore Selected
               </>
             )}
@@ -498,7 +493,7 @@ export default function History() {
               size="sm"
               onClick={() => { abortRestoreRef.current = true; }}
             >
-              <X className="h-3.5 w-3.5" />
+              <X className="h-4 w-4" />
             </Button>
           )}
           {!bulkRestoreProgress.inProgress && (

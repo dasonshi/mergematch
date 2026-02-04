@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Star, ExternalLink, Loader2, RotateCcw, Check, X, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowLeft, Star, ExternalLink, Loader2, RotateCcw, Check, X, ChevronDown, ChevronUp, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { ResponsiveTable, ResponsiveTableContent } from "@/components/ui/responsive-table";
 import { MergeStatusBadge, getMergeStatusLabel } from "@/components/ui/merge-status-badge";
 import { cn } from "@/lib/utils";
@@ -167,7 +168,7 @@ export default function MergeDetail() {
           <div className="flex items-center gap-2">
             {getFieldLabel(field)}
             {isRuleField && (
-              <Badge variant="outline" className="text-xs px-1.5 py-0 border-blue-300 text-blue-600">
+              <Badge variant="outline" className="text-xs px-1.5 py-0 border-primary-subtle-border text-primary-subtle-foreground bg-primary-subtle">
                 Rule
               </Badge>
             )}
@@ -430,6 +431,49 @@ export default function MergeDetail() {
                     )}
                   </>
                 )}
+
+                {/* Field Preservation Values - show if rule had preservation mappings */}
+                {rule?.merge_settings?.field_preservation?.mappings && rule.merge_settings.field_preservation.mappings.length > 0 && (
+                  <>
+                    <tr className="bg-primary/10">
+                      <td colSpan={4} className="py-2 px-4 text-xs font-semibold uppercase tracking-wide text-primary">
+                        <div className="flex items-center gap-2">
+                          <Save className="h-3.5 w-3.5" />
+                          Preserved Values
+                        </div>
+                      </td>
+                    </tr>
+                    {rule.merge_settings.field_preservation.mappings.map((mapping, idx) => {
+                      const preservedValue = duplicateSnapshot?.[mapping.sourceField];
+                      return (
+                        <tr key={`preserve-${idx}`} className="bg-primary/5 border-b last:border-0">
+                          <td className="py-3 px-4 font-medium text-muted-foreground">
+                            <div className="flex items-center gap-2">
+                              {getFieldLabel(mapping.targetField)}
+                              <Badge variant="outline" className="text-xs px-1.5 py-0 border-primary/50 text-primary">
+                                Preserve
+                              </Badge>
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              ← from {getFieldLabel(mapping.sourceField)}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-muted-foreground italic">(source field)</td>
+                          <td className="py-3 px-4">
+                            <span className={cn((!preservedValue || preservedValue === "") && "text-muted-foreground italic")}>
+                              {getDisplayValue(preservedValue)}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 bg-primary/10 font-medium">
+                            <span className={cn((!preservedValue || preservedValue === "") && "text-muted-foreground italic")}>
+                              {getDisplayValue(preservedValue)}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </>
+                )}
               </tbody>
             </ResponsiveTableContent>
           </ResponsiveTable>
@@ -440,7 +484,7 @@ export default function MergeDetail() {
             <span className="italic">(empty)</span> = No value in record
             <span><Star className="h-3 w-3 inline text-yellow-500 fill-yellow-500" /> = Master record (kept)</span>
             {ruleFields.length > 0 && (
-              <span><Badge variant="outline" className="text-xs px-1.5 py-0 border-blue-300 text-blue-600">Rule</Badge> = Used in match/preserve logic</span>
+              <span><Badge variant="outline" className="text-xs px-1.5 py-0 border-primary-subtle-border text-primary-subtle-foreground bg-primary-subtle">Rule</Badge> = Used in match/preserve logic</span>
             )}
           </div>
         </CardContent>

@@ -652,7 +652,7 @@ export default function MatchRuleForm() {
               className="space-y-6"
             >
               {/* Rule Name */}
-              <Card className="shadow-md">
+              <Card>
                 <CardHeader className="bg-muted/30 border-b">
                   <CardTitle className="text-lg font-bold">Rule Name</CardTitle>
                 </CardHeader>
@@ -683,7 +683,7 @@ export default function MatchRuleForm() {
               </Card>
 
               {/* Object Type */}
-              <Card className="shadow-md">
+              <Card>
                 <CardHeader className="bg-muted/30 border-b">
                   <CardTitle className="text-lg font-bold flex items-center gap-2">
                     Object Type
@@ -810,7 +810,7 @@ export default function MatchRuleForm() {
               exit="exit"
               transition={{ duration: 0.2 }}
             >
-              <Card className="shadow-md">
+              <Card>
                 <CardHeader className="bg-muted/30 border-b">
                   <div className="flex items-start justify-between">
                     <div>
@@ -826,7 +826,7 @@ export default function MatchRuleForm() {
                       className="text-xs text-muted-foreground hover:text-foreground gap-1.5 shrink-0"
                       onClick={() => setFeedbackOpen(true)}
                     >
-                      <HelpCircle className="h-3.5 w-3.5" />
+                      <HelpCircle className="h-4 w-4" />
                       Need help?
                     </Button>
                   </div>
@@ -906,7 +906,7 @@ export default function MatchRuleForm() {
                           <div className="flex-1 min-w-0">
                             {field.name && isFixedAlgorithmField(field.name) ? (
                               <div className="flex items-center gap-2 h-10 px-3 rounded-md border bg-muted/50 text-sm">
-                                <Lock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                <Lock className="h-4 w-4 text-muted-foreground shrink-0" />
                                 <span className="text-muted-foreground">{FIXED_ALGORITHM_FIELDS[field.name].label}</span>
                               </div>
                             ) : (
@@ -1084,7 +1084,7 @@ export default function MatchRuleForm() {
               className="space-y-6"
             >
               {/* Merge Strategy */}
-              <Card className="shadow-md">
+              <Card>
                 <CardHeader className="bg-muted/30 border-b">
                   <CardTitle className="text-lg font-bold">Merge Strategy</CardTitle>
                   <p className="text-sm text-muted-foreground">
@@ -1311,7 +1311,7 @@ export default function MatchRuleForm() {
 
               {/* Related Records - Only show for contacts */}
               {objectType === "contacts" && (
-                <Card className="shadow-md">
+                <Card>
                   <CardHeader className="bg-muted/30 border-b">
                     <CardTitle className="text-lg font-bold">Related Records</CardTitle>
                     <p className="text-sm text-muted-foreground">
@@ -1459,7 +1459,7 @@ export default function MatchRuleForm() {
               )}
 
               {/* Schedule */}
-              <Card className="shadow-md">
+              <Card>
                 <CardHeader className="bg-muted/30 border-b">
                   <CardTitle className="text-lg font-bold">Schedule</CardTitle>
                   <p className="text-sm text-muted-foreground">
@@ -1604,7 +1604,7 @@ export default function MatchRuleForm() {
               exit="exit"
               transition={{ duration: 0.2 }}
             >
-              <Card className="shadow-md">
+              <Card>
                 <CardHeader className="bg-muted/30 border-b">
                   <CardTitle className="text-lg font-bold flex items-center gap-2">
                     <Check className="h-5 w-5 text-primary" />

@@ -271,8 +271,8 @@ export default function Dashboard() {
 
   // Build object counts dynamically for future custom objects
   const objectCounts: { name: string; count: number; icon: React.ReactNode }[] = [
-    { name: "Contacts", count: contactsCount, icon: <Users className="h-3.5 w-3.5" /> },
-    { name: "Companies", count: companiesCount, icon: <Building2 className="h-3.5 w-3.5" /> },
+    { name: "Contacts", count: contactsCount, icon: <Users className="h-4 w-4" /> },
+    { name: "Companies", count: companiesCount, icon: <Building2 className="h-4 w-4" /> },
   ];
 
   // Count pending matches per rule
@@ -577,13 +577,13 @@ export default function Dashboard() {
               <CardContent className="p-4">
                 <div className="flex items-center justify-between flex-wrap gap-4">
                   <div className="flex items-center gap-3">
-                    <div className="rounded-lg bg-emerald-500/10 p-2.5">
-                      <TrendingUp className="h-5 w-5 text-emerald-500" />
+                    <div className="rounded-lg bg-success/10 p-2.5">
+                      <TrendingUp className="h-5 w-5 text-success" />
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-semibold">Your Stats</p>
-                        <ArrowRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                       </div>
                       <p className="text-xs text-muted-foreground">Click to view detailed analytics</p>
                     </div>
@@ -720,19 +720,29 @@ export default function Dashboard() {
                 </Link>
               </Button>
               <Button variant="link" size="sm" asChild>
-                <Link to="/match-rules">View All <ArrowRight className="ml-1 h-3.5 w-3.5" /></Link>
+                <Link to="/match-rules">View All <ArrowRight className="ml-1 h-4 w-4" /></Link>
               </Button>
             </div>
           </CardHeader>
           <CardContent className="p-0">
             <DataTable
-              data={rules}
+              data={rules.slice(0, 5)}
               columns={rulesColumns}
               keyField="id"
               loading={rulesLoading}
               emptyState={<NoRulesEmpty />}
               minWidth="700px"
             />
+            {rules.length > 5 && (
+              <div className="p-4 border-t text-center">
+                <Button variant="outline" asChild>
+                  <Link to="/match-rules">
+                    View all {rules.length} rules
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Link>
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -748,7 +758,7 @@ export default function Dashboard() {
                 <Badge variant="secondary">{pendingTotalCount}</Badge>
               </div>
               <Button variant="link" asChild>
-                <Link to="/pending-matches">View All <ArrowRight className="ml-1 h-3.5 w-3.5" /></Link>
+                <Link to="/pending-matches">View All <ArrowRight className="ml-1 h-4 w-4" /></Link>
               </Button>
             </CardHeader>
             <CardContent className="p-0">
