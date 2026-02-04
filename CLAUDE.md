@@ -67,6 +67,26 @@ npm run build && npx vercel --prod
 | Backend | Render | https://mergematch.onrender.com |
 | Database | Supabase | (via MCP) |
 
+### Deploy Process
+
+**Frontend:**
+```bash
+npm run build && npx vercel --prod
+```
+
+**Backend:** Auto-deploys on push to `main` branch (Render).
+
+### After Every Change
+
+**Bug fixes and completed features should be deployed immediately:**
+
+1. Build and verify: `npm run build`
+2. Deploy to production: `npx vercel --prod`
+3. Commit changes: `git add <files> && git commit -m "message"`
+4. Push to remote: `git push origin main`
+
+This ensures users get fixes quickly and backend auto-deploys stay in sync.
+
 ## Code Conventions
 
 ### Backend (Python/FastAPI)
