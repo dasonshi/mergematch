@@ -113,16 +113,20 @@ export default function MatchRuleDetail() {
     },
   });
 
-  // Auto-trigger merge all dialog from URL param
+  // Auto-trigger merge all dialog from URL param (Pro+ only)
   useEffect(() => {
     const matches = matchesData?.data || [];
     if (searchParams.get('action') === 'merge-all' && matches.length > 0 && !matchesLoading) {
-      setShowMergeAllDialog(true);
       // Clear the action param from URL
       searchParams.delete('action');
       setSearchParams(searchParams, { replace: true });
+      if (canAutoMerge) {
+        setShowMergeAllDialog(true);
+      } else {
+        openUpgradeModal("auto_merge");
+      }
     }
-  }, [searchParams, matchesData, matchesLoading, setSearchParams]);
+  }, [searchParams, matchesData, matchesLoading, setSearchParams, canAutoMerge, openUpgradeModal]);
 
   // Auto-trigger initial scan when coming from rule creation
   useEffect(() => {

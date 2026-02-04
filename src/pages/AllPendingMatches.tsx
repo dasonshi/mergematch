@@ -443,13 +443,19 @@ export default function AllPendingMatches() {
           <div className="flex-1" />
           <Button
             size="sm"
-            onClick={() => setShowMergeSelectedDialog(true)}
-            disabled={bulkMergeProgress.inProgress}
+            variant={canAutoMerge ? "default" : "secondary"}
+            onClick={canAutoMerge ? () => setShowMergeSelectedDialog(true) : () => openUpgradeModal("auto_merge")}
+            disabled={canAutoMerge && bulkMergeProgress.inProgress}
           >
             {bulkMergeProgress.inProgress ? (
               <>
                 <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
                 {bulkMergeProgress.current}/{bulkMergeProgress.total}
+              </>
+            ) : !canAutoMerge ? (
+              <>
+                <Crown className="mr-1.5 h-4 w-4" />
+                Merge Selected
               </>
             ) : (
               <>

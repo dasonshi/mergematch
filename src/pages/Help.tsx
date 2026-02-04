@@ -57,9 +57,10 @@ const documentationSections = [
     title: "Scheduling & Automation",
     content: (
       <div className="space-y-3">
-        <p>Starter plans and above include scheduled duplicate scans so you can keep your data clean without manual effort.</p>
+        <p>Pro plans and above include scheduled duplicate scans and bulk merge so you can keep your data clean without manual effort.</p>
         <ul className="list-disc pl-5 space-y-1.5">
-          <li><strong>Scan frequency</strong> — choose hourly, daily, or weekly scans per rule. Daily scans run at your preferred time; weekly scans run on the day you select.</li>
+          <li><strong>Scan frequency</strong> (Pro+) — choose hourly, daily, or weekly scans per rule. Daily scans run at your preferred time; weekly scans run on the day you select.</li>
+          <li><strong>Bulk merge</strong> (Pro+) — merge all pending matches at once using your rule's configured merge strategy. Snapshots are saved for rollback.</li>
           <li><strong>Auto-merge</strong> (Pro+) — automatically merge matches above your confidence threshold (default 95%). Lower-confidence matches are queued for manual review.</li>
           <li><strong>Webhook-triggered scans</strong> (Pro+) — trigger a scan via webhook whenever a new contact is created or updated, so duplicates are caught in near real-time.</li>
           <li><strong>Notifications</strong> — receive an email summary after each scheduled scan with the number of duplicates found and merged.</li>
@@ -109,8 +110,8 @@ const documentationSections = [
         <p>MergeMatch is billed through the Marketplace. Plans are per-location and can be changed at any time.</p>
         <ul className="list-disc pl-5 space-y-1.5">
           <li><strong>Free</strong> — up to 50 manual merges/month, Contacts only, exact matching, 1 match rule.</li>
-          <li><strong>Starter</strong> — unlimited merges, Contacts &amp; Companies, exact + fuzzy matching, scheduled scans, up to 5 match rules.</li>
-          <li><strong>Pro</strong> — everything in Starter plus Opportunities, auto-merge, webhook-triggered scans, cross-field matching, unlimited rules.</li>
+          <li><strong>Starter</strong> — unlimited merges, Contacts &amp; Companies, exact + fuzzy matching, up to 5 match rules.</li>
+          <li><strong>Pro</strong> — everything in Starter plus scheduled scans, bulk merge, auto-merge, Opportunities, webhook-triggered scans, cross-field matching, unlimited rules.</li>
           <li><strong>Agency</strong> — everything in Pro plus Custom Objects, white-labeling, unlimited locations, priority support.</li>
         </ul>
         <p>To manage your subscription, visit your account in the Marketplace.</p>
@@ -226,8 +227,8 @@ export default function Help() {
                 <div>
                   <p className="font-medium">Set Up Automation</p>
                   <p className="text-sm text-muted-foreground mt-0.5">
-                    <span className="text-xs font-medium bg-muted px-1.5 py-0.5 rounded">Starter+</span>{" "}
-                    Enable scheduled scans and auto-merge for hands-free deduplication. Choose your scan frequency and confidence threshold — MergeMatch handles the rest.
+                    <span className="text-xs font-medium bg-muted px-1.5 py-0.5 rounded">Pro+</span>{" "}
+                    Enable scheduled scans, bulk merge, and auto-merge for hands-free deduplication. Choose your scan frequency and confidence threshold — MergeMatch handles the rest.
                   </p>
                 </div>
               </li>
