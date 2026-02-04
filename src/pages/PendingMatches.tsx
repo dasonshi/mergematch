@@ -255,9 +255,14 @@ export default function PendingMatches() {
         const subheading = getMatchFieldSubheading(recordA, matchFields);
         return (
           <div>
-            <div className="font-medium">
+            <a
+              href={`https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${item.record_a_id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium hover:text-primary hover:underline"
+            >
               {getRecordName(recordA)}
-            </div>
+            </a>
             {subheading && (
               <div className="text-xs text-muted-foreground">
                 {subheading}
@@ -274,9 +279,14 @@ export default function PendingMatches() {
         const subheading = getMatchFieldSubheading(recordB, matchFields);
         return (
           <div>
-            <div className="font-medium">
+            <a
+              href={`https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${item.record_b_id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium hover:text-primary hover:underline"
+            >
               {getRecordName(recordB)}
-            </div>
+            </a>
             {subheading && (
               <div className="text-xs text-muted-foreground">
                 {subheading}

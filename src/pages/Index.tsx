@@ -417,7 +417,14 @@ export default function Dashboard() {
         const recordA = item.record_a_data || {};
         return (
           <div>
-            <div className="font-medium">{getRecordName(recordA)}</div>
+            <a
+              href={`https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${item.record_a_id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium hover:text-primary hover:underline"
+            >
+              {getRecordName(recordA)}
+            </a>
             {typeof recordA.email === 'string' && (
               <div className="text-xs text-muted-foreground">{recordA.email}</div>
             )}
@@ -431,7 +438,14 @@ export default function Dashboard() {
         const recordB = item.record_b_data || {};
         return (
           <div>
-            <div className="font-medium">{getRecordName(recordB)}</div>
+            <a
+              href={`https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${item.record_b_id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium hover:text-primary hover:underline"
+            >
+              {getRecordName(recordB)}
+            </a>
             {typeof recordB.email === 'string' && (
               <div className="text-xs text-muted-foreground">{recordB.email}</div>
             )}
@@ -723,17 +737,12 @@ export default function Dashboard() {
         <Card className="overflow-hidden hover:shadow-md transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between pb-4">
             <CardTitle className="text-lg font-semibold">Match Rules</CardTitle>
-            <div className="flex items-center gap-2">
-              <Button size="sm" asChild>
-                <Link to="/match-rules/new">
-                  <Plus className="mr-1.5 h-4 w-4" />
-                  New Rule
-                </Link>
-              </Button>
-              <Button variant="link" size="sm" asChild>
-                <Link to="/match-rules">View All <ArrowRight className="ml-1 h-4 w-4" /></Link>
-              </Button>
-            </div>
+            <Button size="sm" asChild>
+              <Link to="/match-rules/new">
+                <Plus className="mr-1.5 h-4 w-4" />
+                New Rule
+              </Link>
+            </Button>
           </CardHeader>
           <CardContent className="p-0">
             <DataTable
@@ -768,9 +777,6 @@ export default function Dashboard() {
                 <CardTitle className="text-lg font-semibold">Pending Matches</CardTitle>
                 <Badge variant="secondary">{pendingTotalCount}</Badge>
               </div>
-              <Button variant="link" asChild>
-                <Link to="/pending-matches">View All <ArrowRight className="ml-1 h-4 w-4" /></Link>
-              </Button>
             </CardHeader>
             <CardContent className="p-0">
               <DataTable

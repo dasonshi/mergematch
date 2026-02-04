@@ -238,7 +238,14 @@ export default function AllPendingMatches() {
         const recordA = item.record_a_data || {};
         return (
           <div>
-            <div className="font-medium">{getRecordName(recordA)}</div>
+            <a
+              href={`https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${item.record_a_id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium hover:text-primary hover:underline"
+            >
+              {getRecordName(recordA)}
+            </a>
             {recordA.email && (
               <div className="text-xs text-muted-foreground">{recordA.email}</div>
             )}
@@ -252,7 +259,14 @@ export default function AllPendingMatches() {
         const recordB = item.record_b_data || {};
         return (
           <div>
-            <div className="font-medium">{getRecordName(recordB)}</div>
+            <a
+              href={`https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${item.record_b_id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium hover:text-primary hover:underline"
+            >
+              {getRecordName(recordB)}
+            </a>
             {recordB.email && (
               <div className="text-xs text-muted-foreground">{recordB.email}</div>
             )}

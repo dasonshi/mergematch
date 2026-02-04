@@ -665,9 +665,14 @@ export default function MatchRuleDetail() {
                           return (
                             <tr key={match.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
                               <td className="py-3 px-4">
-                                <div className="font-medium truncate max-w-[200px]">
+                                <a
+                                  href={`https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${match.record_a_id}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="font-medium truncate max-w-[200px] block hover:text-primary hover:underline"
+                                >
                                   {getRecordName(recordA)}
-                                </div>
+                                </a>
                                 {subheadingA && (
                                   <div className="text-xs text-muted-foreground truncate max-w-[200px]">
                                     {subheadingA}
@@ -675,9 +680,14 @@ export default function MatchRuleDetail() {
                                 )}
                               </td>
                               <td className="py-3 px-4">
-                                <div className="font-medium truncate max-w-[200px]">
+                                <a
+                                  href={`https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${match.record_b_id}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="font-medium truncate max-w-[200px] block hover:text-primary hover:underline"
+                                >
                                   {getRecordName(recordB)}
-                                </div>
+                                </a>
                                 {subheadingB && (
                                   <div className="text-xs text-muted-foreground truncate max-w-[200px]">
                                     {subheadingB}
