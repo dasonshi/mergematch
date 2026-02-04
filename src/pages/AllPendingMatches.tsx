@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Loader2, Search, X, Play, Filter, AlertCircle, RefreshCw } from "lucide-react";
+import { ArrowLeft, Loader2, Search, X, Play, Filter, AlertCircle, RefreshCw, Crown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,7 @@ import {
 import { DataTable, DataTableColumn } from "@/components/ui/data-table";
 import { ConfidenceBadge } from "@/components/ui/confidence-badge";
 import { useLocation } from "@/contexts/LocationContext";
+import { useUpgradeModal } from "@/components/ui/upgrade-modal";
 import { useToast } from "@/hooks/use-toast";
 import { api, MatchRule, MatchPair } from "@/lib/api";
 import { computeStrategySelections, computeMasterId, StrategyId } from "@/lib/merge-strategies";
@@ -33,8 +34,10 @@ import { getRecordName } from "@/components/rules/helpers";
 export default function AllPendingMatches() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { locationId, isLoading: authLoading } = useLocation();
+  const { locationId, isLoading: authLoading, plan } = useLocation();
+  const { openUpgradeModal } = useUpgradeModal();
   const queryClient = useQueryClient();
+  const canAutoMerge = plan === "pro" || plan === "agency";
 
   // Scroll to top on mount
   useEffect(() => {
@@ -386,13 +389,19 @@ export default function AllPendingMatches() {
             <>
               <Button
                 size="sm"
-                onClick={() => setShowMergeAllDialog(true)}
-                disabled={filteredMatches.length === 0 || bulkMergeProgress.inProgress}
+                variant={canAutoMerge ? "default" : "secondary"}
+                onClick={canAutoMerge ? () => setShowMergeAllDialog(true) : () => openUpgradeModal("auto_merge")}
+                disabled={canAutoMerge && (filteredMatches.length === 0 || bulkMergeProgress.inProgress)}
               >
                 {bulkMergeProgress.inProgress ? (
                   <>
                     <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
                     {bulkMergeProgress.current}/{bulkMergeProgress.total}
+                  </>
+                ) : !canAutoMerge ? (
+                  <>
+                    <Crown className="mr-1.5 h-4 w-4" />
+                    Merge All
                   </>
                 ) : (
                   <>

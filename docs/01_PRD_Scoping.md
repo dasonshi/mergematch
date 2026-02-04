@@ -81,7 +81,7 @@ MergeMatch uses a **freemium model** via GHL Marketplace internal billing. Users
 | **Scanning** | | | | |
 | Manual scan trigger | ✅ 1/day | ✅ Unlimited | ✅ Unlimited | ✅ Unlimited |
 | View matched duplicates | ✅ 10 preview | ✅ All | ✅ All | ✅ All |
-| Scheduled scans | 🔒 | ✅ Daily | ✅ Hourly | ✅ Hourly |
+| Scheduled scans | 🔒 | 🔒 | ✅ Hourly | ✅ Hourly |
 | Real-time webhook detection | 🔒 | 🔒 | ✅ | ✅ |
 | **Merging** | | | | |
 | Execute merge | ✅ 3 total | ✅ Unlimited | ✅ Unlimited | ✅ Unlimited |
@@ -2469,7 +2469,7 @@ class MergeExecutor:
 | Feature | Free | Starter | Pro | Agency |
 |---------|------|---------|-----|--------|
 | Manual scan trigger | ✅ 1/day | ✅ Unlimited | ✅ Unlimited | ✅ Unlimited |
-| Scheduled scans | ❌ | ✅ Daily | ✅ Hourly | ✅ Hourly |
+| Scheduled scans | ❌ | ❌ | ✅ Hourly | ✅ Hourly |
 | Auto-merge (≥95%) | ❌ | ❌ | ✅ | ✅ |
 | Webhook triggers | ❌ | ❌ | ✅ | ✅ |
 

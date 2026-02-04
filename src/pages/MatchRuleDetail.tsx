@@ -15,9 +15,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Edit, Search, Play, Loader2, ChevronDown, ChevronUp, X, Trash2, ArrowRight, AlertCircle, RefreshCw } from "lucide-react";
+import { ArrowLeft, Edit, Search, Play, Loader2, ChevronDown, ChevronUp, X, Trash2, ArrowRight, AlertCircle, RefreshCw, Crown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useLocation } from "@/contexts/LocationContext";
+import { useUpgradeModal } from "@/components/ui/upgrade-modal";
 import { useToast } from "@/hooks/use-toast";
 import { api, MatchPair } from "@/lib/api";
 import { computeStrategySelections, computeMasterId, StrategyId } from "@/lib/merge-strategies";
@@ -28,8 +29,10 @@ import { MergeHistoryCard, RuleSummaryCard, getRecordName, getMatchFieldSubheadi
 export default function MatchRuleDetail() {
   const { id } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { locationId, isLoading: authLoading, lastWebhookAt } = useLocation();
+  const { locationId, isLoading: authLoading, lastWebhookAt, plan } = useLocation();
+  const { openUpgradeModal } = useUpgradeModal();
   const { toast } = useToast();
+  const canAutoMerge = plan === "pro" || plan === "agency";
   const queryClient = useQueryClient();
   const [matchesExpanded, setMatchesExpanded] = useState(true);
   const [matchSearchQuery, setMatchSearchQuery] = useState("");
@@ -451,8 +454,9 @@ export default function MatchRuleDetail() {
         <div className="flex flex-wrap items-center gap-2">
           <Button
             size="sm"
-            onClick={handleMergeAllClick}
-            disabled={pendingMatches.length === 0 || bulkMergeProgress.inProgress || isValidating}
+            variant={canAutoMerge ? "default" : "secondary"}
+            onClick={canAutoMerge ? handleMergeAllClick : () => openUpgradeModal("auto_merge")}
+            disabled={canAutoMerge && (pendingMatches.length === 0 || bulkMergeProgress.inProgress || isValidating)}
           >
             {isValidating ? (
               <>
@@ -463,6 +467,11 @@ export default function MatchRuleDetail() {
               <>
                 <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
                 {bulkMergeProgress.current}/{bulkMergeProgress.total}
+              </>
+            ) : !canAutoMerge ? (
+              <>
+                <Crown className="mr-1.5 h-4 w-4" />
+                Merge All
               </>
             ) : (
               <>
