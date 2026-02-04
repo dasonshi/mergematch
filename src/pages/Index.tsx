@@ -775,11 +775,8 @@ export default function Dashboard() {
 
         {/* Recent Activity Table */}
         <Card className="overflow-hidden">
-          <CardHeader className="flex flex-row items-center justify-between pb-4">
+          <CardHeader className="pb-4">
             <CardTitle className="text-lg font-semibold">Recent Activity</CardTitle>
-            <Button variant="link" size="sm" asChild>
-              <Link to="/history">View All <ArrowRight className="ml-1 h-3.5 w-3.5" /></Link>
-            </Button>
           </CardHeader>
           <CardContent className="p-0">
             <DataTable
@@ -790,6 +787,16 @@ export default function Dashboard() {
               emptyState={<NoMergesEmpty />}
               minWidth="500px"
             />
+            {recentMerges.length > 0 && (
+              <div className="p-4 border-t text-center">
+                <Button variant="outline" asChild>
+                  <Link to="/history">
+                    View all merge history
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Link>
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
 

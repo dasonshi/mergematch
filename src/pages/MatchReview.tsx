@@ -240,7 +240,8 @@ export default function MatchReview() {
   };
 
   const [selections, setSelections] = useState<Record<string, string>>({});
-  const [hideWarning, setHideWarning] = useState(false);
+  const [acknowledgedWarning, setAcknowledgedWarning] = useState(false);
+  const [showWarningError, setShowWarningError] = useState(false);
   const [masterId, setMasterId] = useState<string>("a");
 
   // Initialize selections when match loads
@@ -300,6 +301,10 @@ export default function MatchReview() {
   }, [fieldPreservationMappings, masterId, recordA, recordB, preservableFields, getFieldLabel, formatDisplayValue]);
 
   const handleMerge = () => {
+    if (!acknowledgedWarning) {
+      setShowWarningError(true);
+      return;
+    }
     const actualMasterId = masterId === "a" ? recordAId : recordBId;
     const hasValidMappings = hasFieldPreservation && fieldPreservationMappings.some(m => m.source && m.target);
     mergeMutation.mutate({
@@ -757,14 +762,26 @@ export default function MatchReview() {
                   A snapshot will be saved for 30-day rollback.
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className={cn(
+                "flex items-center gap-2 p-2 -m-2 rounded-md transition-colors",
+                showWarningError && !acknowledgedWarning && "bg-destructive/10 ring-2 ring-destructive"
+              )}>
                 <Checkbox
-                  id="hide-warning"
-                  checked={hideWarning}
-                  onCheckedChange={(checked) => setHideWarning(checked as boolean)}
+                  id="acknowledge-warning"
+                  checked={acknowledgedWarning}
+                  onCheckedChange={(checked) => {
+                    setAcknowledgedWarning(checked as boolean);
+                    if (checked) setShowWarningError(false);
+                  }}
                 />
-                <label htmlFor="hide-warning" className="text-sm text-muted-foreground cursor-pointer">
-                  Do not show this warning again
+                <label
+                  htmlFor="acknowledge-warning"
+                  className={cn(
+                    "text-sm cursor-pointer",
+                    showWarningError && !acknowledgedWarning ? "text-destructive font-medium" : "text-muted-foreground"
+                  )}
+                >
+                  I understand this action cannot be undone
                 </label>
               </div>
             </div>
