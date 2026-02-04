@@ -368,7 +368,8 @@ async def check_merge_quota(location_id: str, plan: str) -> Dict[str, Any]:
     Check if location has remaining merge quota.
     Returns: {"allowed": bool, "used": int, "limit": int, "remaining": int}
     """
-    features = get_plan_features(plan)
+    # Normalize plan to lowercase (DB may store "Free" but PLAN_FEATURES uses "free")
+    features = get_plan_features(plan.lower() if plan else "free")
 
     # Unlimited plans always allowed
     if features.unlimited_merges:
