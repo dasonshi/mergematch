@@ -59,8 +59,6 @@ const TEXT_ACCEPTING_TYPES = new Set([
   'TEXT',
   'LARGE_TEXT',
   'TEXTAREA',
-  'PHONE',
-  'EMAIL',
 ]);
 
 // Target types that require specific formats (not compatible with arbitrary text)
@@ -77,6 +75,10 @@ const INCOMPATIBLE_TARGET_TYPES = new Set([
   'CHECKBOX_LIST',
   'RADIO',
   'TEXTBOX_LIST',
+  'EMAIL',
+  'PHONE',
+  'URL',
+  'DATE',
 ]);
 
 /**
@@ -86,18 +88,23 @@ function isTypeCompatible(sourceType: string, targetType: string): boolean {
   const normalizedTarget = targetType?.toUpperCase() || 'TEXT';
   const normalizedSource = sourceType?.toUpperCase() || 'TEXT';
 
-  // If target is explicitly incompatible, block it
+  // Same type is always compatible (email→email, phone→phone, date→date)
+  if (normalizedSource === normalizedTarget) {
+    return true;
+  }
+
+  // If target is explicitly incompatible, block it (unless same type, handled above)
   if (INCOMPATIBLE_TARGET_TYPES.has(normalizedTarget)) {
     return false;
   }
 
-  // DATE source can go to DATE target or text types
-  if (normalizedSource === 'DATE') {
-    return normalizedTarget === 'DATE' || TEXT_ACCEPTING_TYPES.has(normalizedTarget);
+  // TEXT sources can go to text-accepting types
+  if (normalizedSource === 'TEXT') {
+    return TEXT_ACCEPTING_TYPES.has(normalizedTarget);
   }
 
-  // TEXT, PHONE, EMAIL sources can go to text-accepting types
-  if (['TEXT', 'PHONE', 'EMAIL'].includes(normalizedSource)) {
+  // Specialized types (EMAIL, PHONE, URL, DATE) can only map to same type or text
+  if (['EMAIL', 'PHONE', 'URL', 'DATE'].includes(normalizedSource)) {
     return TEXT_ACCEPTING_TYPES.has(normalizedTarget);
   }
 
@@ -131,6 +138,18 @@ function getIncompatibilityReason(targetType: string): string {
   }
   if (normalized === 'TEXTBOX_LIST') {
     return 'requires list format';
+  }
+  if (normalized === 'EMAIL') {
+    return 'requires email address';
+  }
+  if (normalized === 'PHONE') {
+    return 'requires phone number';
+  }
+  if (normalized === 'URL') {
+    return 'requires URL';
+  }
+  if (normalized === 'DATE') {
+    return 'requires date value';
   }
   return 'incompatible type';
 }
@@ -184,12 +203,12 @@ const strategies = [
   { id: "manual", name: "Manual Review Required", description: "Require manual selection for every field", prebuilt: true },
 ];
 
-const frequencies = [
-  { id: "manual", name: "Manual only", tier: "free", available: true },
-  { id: "daily", name: "Daily", tier: "starter", available: false },
-  { id: "weekly", name: "Weekly", tier: "starter", available: false },
-  { id: "biweekly", name: "Every 2 weeks", tier: "starter", available: false },
-  { id: "monthly", name: "Monthly", tier: "starter", available: false },
+const frequencyOptions = [
+  { id: "manual", name: "Manual only", tier: "free" },
+  { id: "daily", name: "Daily", tier: "starter" },
+  { id: "weekly", name: "Weekly", tier: "starter" },
+  { id: "biweekly", name: "Every 2 weeks", tier: "starter" },
+  { id: "monthly", name: "Monthly", tier: "starter" },
 ];
 
 const daysOfWeek = [
@@ -383,6 +402,12 @@ export default function MatchRuleForm() {
       isCustom: !obj.standard,
     };
   });
+
+  // Build frequencies with tier requirements and availability
+  const frequencies = frequencyOptions.map(f => ({
+    ...f,
+    available: hasAccess(plan, f.tier),
+  }));
 
   // Create mutation
   const createMutation = useMutation({

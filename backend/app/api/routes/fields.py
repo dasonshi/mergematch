@@ -11,7 +11,7 @@ router = APIRouter()
 # Standard fields for each object type (fallback if API fails)
 STANDARD_FIELDS = {
     "contacts": [
-        {"id": "email", "name": "Email", "fieldKey": "contact.email", "dataType": "TEXT", "isCustom": False},
+        {"id": "email", "name": "Email", "fieldKey": "contact.email", "dataType": "EMAIL", "isCustom": False},
         {"id": "phone", "name": "Phone", "fieldKey": "contact.phone", "dataType": "PHONE", "isCustom": False},
         {"id": "firstName", "name": "First Name", "fieldKey": "contact.firstName", "dataType": "TEXT", "isCustom": False},
         {"id": "lastName", "name": "Last Name", "fieldKey": "contact.lastName", "dataType": "TEXT", "isCustom": False},
@@ -22,14 +22,14 @@ STANDARD_FIELDS = {
         {"id": "state", "name": "State", "fieldKey": "contact.state", "dataType": "SINGLE_OPTIONS", "isCustom": False},
         {"id": "postalCode", "name": "Postal Code", "fieldKey": "contact.postalCode", "dataType": "TEXT", "isCustom": False},
         {"id": "country", "name": "Country", "fieldKey": "contact.country", "dataType": "SINGLE_OPTIONS", "isCustom": False},
-        {"id": "website", "name": "Website", "fieldKey": "contact.website", "dataType": "TEXT", "isCustom": False},
+        {"id": "website", "name": "Website", "fieldKey": "contact.website", "dataType": "URL", "isCustom": False},
         {"id": "dateOfBirth", "name": "Date of Birth", "fieldKey": "contact.dateOfBirth", "dataType": "DATE", "isCustom": False},
     ],
     "companies": [
         {"id": "name", "name": "Company Name", "fieldKey": "business.name", "dataType": "TEXT", "isCustom": False},
-        {"id": "email", "name": "Email", "fieldKey": "business.email", "dataType": "TEXT", "isCustom": False},
+        {"id": "email", "name": "Email", "fieldKey": "business.email", "dataType": "EMAIL", "isCustom": False},
         {"id": "phone", "name": "Phone", "fieldKey": "business.phone", "dataType": "PHONE", "isCustom": False},
-        {"id": "website", "name": "Website", "fieldKey": "business.website", "dataType": "TEXT", "isCustom": False},
+        {"id": "website", "name": "Website", "fieldKey": "business.website", "dataType": "URL", "isCustom": False},
         {"id": "address", "name": "Address", "fieldKey": "business.address", "dataType": "TEXT", "isCustom": False},
         {"id": "city", "name": "City", "fieldKey": "business.city", "dataType": "TEXT", "isCustom": False},
         {"id": "state", "name": "State", "fieldKey": "business.state", "dataType": "SINGLE_OPTIONS", "isCustom": False},
