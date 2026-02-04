@@ -330,7 +330,7 @@ async def execute_merge(
                 # Only preserve if there's a non-empty value
                 if value_to_preserve:
                     custom_fields.append({
-                        "key": target_field,
+                        "id": target_field,  # GHL API expects 'id' for custom field identifier
                         "field_value": value_to_preserve
                     })
                     logger.info(f"Preserving {source_field} value '{value_to_preserve}' from duplicate to custom field '{target_field}'")
