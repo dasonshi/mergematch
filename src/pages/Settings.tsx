@@ -6,7 +6,6 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   RefreshCw,
   Trash2,
@@ -14,15 +13,7 @@ import {
   Rocket,
   ExternalLink,
   Lightbulb,
-  Plus,
-  X,
-  ArrowRight,
-  Loader2,
-  Save,
 } from "lucide-react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, MergeStrategySettings, FieldPreservationMapping, CustomField } from "@/lib/api";
-// Note: Email notifications removed - using in-app notifications only
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,32 +28,6 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
 import { useLocation } from "@/contexts/LocationContext";
-import { LockedFeatureOverlay } from "@/components/ui/upgrade-badge";
-import { isTypeCompatible, getIncompatibilityReason } from "@/lib/field-compatibility";
-
-// All standard contact fields that can be preserved
-// Organized by category for better UX
-const STANDARD_CONTACT_FIELDS = [
-  // Core identity
-  { value: 'firstName', label: 'First Name', dataType: 'TEXT' },
-  { value: 'lastName', label: 'Last Name', dataType: 'TEXT' },
-  { value: 'name', label: 'Full Name', dataType: 'TEXT' },
-  { value: 'email', label: 'Email', dataType: 'EMAIL' },
-  { value: 'phone', label: 'Phone', dataType: 'PHONE' },
-  // Address
-  { value: 'address1', label: 'Address', dataType: 'TEXT' },
-  { value: 'city', label: 'City', dataType: 'TEXT' },
-  { value: 'state', label: 'State', dataType: 'TEXT' },
-  { value: 'postalCode', label: 'Postal Code', dataType: 'TEXT' },
-  { value: 'country', label: 'Country', dataType: 'TEXT' },
-  // Business
-  { value: 'companyName', label: 'Company Name', dataType: 'TEXT' },
-  { value: 'website', label: 'Website', dataType: 'TEXT' },
-  // Other
-  { value: 'timezone', label: 'Timezone', dataType: 'TEXT' },
-  { value: 'source', label: 'Source', dataType: 'TEXT' },
-  { value: 'dateOfBirth', label: 'Date of Birth', dataType: 'DATE' },
-];
 
 export default function Settings() {
   const { toast } = useToast();

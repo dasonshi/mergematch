@@ -119,7 +119,12 @@ export default function MatchReview() {
   const [fieldPreservationMappings, setFieldPreservationMappings] = useState<FieldPreservationMapping[]>([]);
   const [mappingsInitialized, setMappingsInitialized] = useState(false);
 
-  // Initialize field preservation mappings from rule (once)
+  // Reset mappings initialization when navigating to different match
+  useEffect(() => {
+    setMappingsInitialized(false);
+  }, [matchId]);
+
+  // Initialize field preservation mappings from rule (once per match)
   useEffect(() => {
     if (rule?.merge_settings?.field_preservation?.mappings && !mappingsInitialized) {
       setFieldPreservationMappings(rule.merge_settings.field_preservation.mappings);
@@ -584,17 +589,9 @@ export default function MatchReview() {
                 const sourceField = preservableFields.find(f => f.id === mapping.source);
                 const sourceType = sourceField?.dataType || 'TEXT';
 
-                // Filter targets by compatibility
-                const allTargetFields = preservableFields.filter(f => f.id !== mapping.source);
-                const standardFields = allTargetFields.filter(f => !f.isCustom);
-                const customFields = allTargetFields.filter(f => f.isCustom);
+                // Only custom fields can be targets (standard fields can't receive values via customFields API)
+                const customFields = preservableFields.filter(f => f.id !== mapping.source && f.isCustom);
 
-                const compatibleStandard = standardFields.filter(f =>
-                  isTypeCompatible(sourceType, f.dataType || 'TEXT')
-                );
-                const incompatibleStandard = standardFields.filter(f =>
-                  !isTypeCompatible(sourceType, f.dataType || 'TEXT')
-                );
                 const compatibleCustom = customFields.filter(f =>
                   isTypeCompatible(sourceType, f.dataType || 'TEXT')
                 );
@@ -657,49 +654,36 @@ export default function MatchReview() {
                       }}
                     >
                       <SelectTrigger className="flex-1 bg-background">
-                        <SelectValue placeholder="Target field..." />
+                        <SelectValue placeholder="Target custom field..." />
                       </SelectTrigger>
                       <SelectContent>
-                        {/* Standard Fields - Compatible */}
-                        {compatibleStandard.map((opt) => (
+                        {/* Custom Fields - Compatible */}
+                        {compatibleCustom.map((opt) => (
                           <SelectItem key={opt.id} value={opt.id}>
                             {opt.name}
                           </SelectItem>
                         ))}
 
-                        {/* Custom Fields - Compatible */}
-                        {compatibleCustom.length > 0 && (
-                          <>
-                            <SelectSeparator />
-                            <SelectGroup>
-                              <SelectLabel>Custom Fields</SelectLabel>
-                              {compatibleCustom.map((opt) => (
-                                <SelectItem key={opt.id} value={opt.id}>
-                                  {opt.name}
-                                </SelectItem>
-                              ))}
-                            </SelectGroup>
-                          </>
-                        )}
-
-                        {/* Incompatible Fields */}
-                        {(incompatibleStandard.length > 0 || incompatibleCustom.length > 0) && (
+                        {/* Incompatible Custom Fields */}
+                        {incompatibleCustom.length > 0 && (
                           <>
                             <SelectSeparator />
                             <SelectItem value="_sep_" disabled className="text-muted-foreground text-xs">
                               ── Incompatible types ──
                             </SelectItem>
-                            {incompatibleStandard.map((opt) => (
-                              <SelectItem key={opt.id} value={opt.id} disabled className="text-muted-foreground">
-                                {opt.name} - {getIncompatibilityReason(opt.dataType)}
-                              </SelectItem>
-                            ))}
                             {incompatibleCustom.map((opt) => (
                               <SelectItem key={opt.id} value={opt.id} disabled className="text-muted-foreground">
                                 {opt.name} ({opt.dataType}) - {getIncompatibilityReason(opt.dataType)}
                               </SelectItem>
                             ))}
                           </>
+                        )}
+
+                        {/* Info about targets */}
+                        {compatibleCustom.length === 0 && incompatibleCustom.length === 0 && (
+                          <SelectItem value="_none_" disabled className="text-muted-foreground text-xs italic">
+                            No custom fields available
+                          </SelectItem>
                         )}
                       </SelectContent>
                     </Select>
