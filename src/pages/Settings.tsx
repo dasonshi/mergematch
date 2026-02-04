@@ -50,6 +50,17 @@ export default function Settings() {
 
   const { preferences, setPreference, resetPreferences } = useWarningPreferences();
 
+  const handlePreferenceChange = <K extends keyof typeof preferences>(
+    key: K,
+    value: boolean
+  ) => {
+    setPreference(key, value);
+    toast({
+      title: "Settings saved",
+      description: "Your preference has been updated.",
+    });
+  };
+
   const handleResetWarnings = () => {
     resetPreferences();
     toast({
@@ -229,7 +240,7 @@ export default function Settings() {
                   id="individual-warning"
                   checked={preferences.showIndividualMergeWarning}
                   onCheckedChange={(checked) =>
-                    setPreference('showIndividualMergeWarning', checked as boolean)
+                    handlePreferenceChange('showIndividualMergeWarning', checked as boolean)
                   }
                 />
                 <label htmlFor="individual-warning" className="text-sm cursor-pointer">
@@ -241,7 +252,7 @@ export default function Settings() {
                   id="bulk-warning"
                   checked={preferences.showBulkMergeWarning}
                   onCheckedChange={(checked) =>
-                    setPreference('showBulkMergeWarning', checked as boolean)
+                    handlePreferenceChange('showBulkMergeWarning', checked as boolean)
                   }
                 />
                 <label htmlFor="bulk-warning" className="text-sm cursor-pointer">
@@ -253,7 +264,7 @@ export default function Settings() {
                   id="restore-warning"
                   checked={preferences.showRestoreWarning}
                   onCheckedChange={(checked) =>
-                    setPreference('showRestoreWarning', checked as boolean)
+                    handlePreferenceChange('showRestoreWarning', checked as boolean)
                   }
                 />
                 <label htmlFor="restore-warning" className="text-sm cursor-pointer">
