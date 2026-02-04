@@ -54,6 +54,10 @@ export function RestoreConfirmationModal({
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-muted-foreground">•</span>
+                    <span>Conversations remain on master (cannot be transferred)</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-muted-foreground">•</span>
                     <span>Original timestamps cannot be recovered</span>
                   </li>
                 </ul>

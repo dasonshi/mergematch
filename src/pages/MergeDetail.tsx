@@ -4,8 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Star, ExternalLink, Loader2, RotateCcw, Check, X, ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { ResponsiveTable, ResponsiveTableContent } from "@/components/ui/responsive-table";
+import { MergeStatusBadge, getMergeStatusLabel } from "@/components/ui/merge-status-badge";
 import { cn } from "@/lib/utils";
 import { useLocation } from "@/contexts/LocationContext";
 import { api } from "@/lib/api";
@@ -149,18 +149,7 @@ export default function MergeDetail() {
     return FIELD_LABELS[field] || field.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "completed":
-        return <Badge className="bg-green-600 hover:bg-green-700">Merged</Badge>;
-      case "rolled_back":
-        return <Badge variant="outline" className="border-amber-500 text-amber-600">Restored</Badge>;
-      case "failed":
-        return <Badge variant="destructive">Failed</Badge>;
-      default:
-        return <Badge variant="outline">{status}</Badge>;
-    }
-  };
+  const getStatusBadge = (status: string) => <MergeStatusBadge status={status} />;
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();

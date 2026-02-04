@@ -263,6 +263,11 @@ export default function MatchReview() {
     return String(value);
   };
 
+  // Helper to get field label
+  const getFieldLabel = (field: string) => {
+    return fieldLabels[field] || field.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
+  };
+
   const getResultValue = (field: string): string => {
     const source = selections[field];
     const value = source === "a" ? recordA[field] : recordB[field];
@@ -299,11 +304,6 @@ export default function MatchReview() {
       preserveAlternates: hasValidMappings,
       fieldPreservationMappings: hasValidMappings ? fieldPreservationMappings.filter(m => m.source && m.target) : undefined,
     });
-  };
-
-  // Helper to get field label
-  const getFieldLabel = (field: string) => {
-    return fieldLabels[field] || field.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
   };
 
   // Render a field row

@@ -306,6 +306,26 @@ class GHLClient:
         logger.info(f"Reassigned {reassigned}/{len(opportunities)} opportunities from {from_contact_id} to {to_contact_id}")
         return reassigned
 
+    # ==================== APPOINTMENTS ====================
+
+    async def get_contact_appointments(self, contact_id: str) -> List[Dict[str, Any]]:
+        """Get all appointments for a contact."""
+        response = await self._client.get(f"/contacts/{contact_id}/appointments")
+        if response.status_code >= 400:
+            logger.warning(f"[GHL] Get contact appointments failed: {response.status_code}")
+            return []
+        data = response.json()
+        return data.get("events", [])
+
+    async def update_appointment(self, appointment_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Update an appointment (e.g., reassign contactId)."""
+        response = await self._client.put(f"/calendars/events/appointments/{appointment_id}", json=data)
+        if response.status_code >= 400:
+            error_detail = response.text
+            logger.error(f"[GHL] Update appointment failed: {response.status_code} - {error_detail}")
+            raise Exception(f"GHL API error ({response.status_code}): {error_detail}")
+        return response.json()
+
     # ==================== CUSTOM OBJECTS ====================
 
     async def get_custom_object_schemas(self) -> List[Dict[str, Any]]:

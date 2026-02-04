@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ResponsiveTable, ResponsiveTableContent } from "@/components/ui/responsive-table";
-import { cn } from "@/lib/utils";
+import { MergeStatusBadge } from "@/components/ui/merge-status-badge";
 
 interface Merge {
   id: string;
@@ -62,17 +62,7 @@ export function MergeHistoryCard({
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2">
-                          <Badge
-                            variant={item.status === 'completed' ? 'default' : item.status === 'failed' ? 'destructive' : 'outline'}
-                            className={cn(
-                              item.status === 'completed' && 'bg-green-600 hover:bg-green-700',
-                              item.status === 'rolled_back' && 'border-amber-500 text-amber-600'
-                            )}
-                          >
-                            {item.status === 'completed' ? 'Merged' :
-                             item.status === 'rolled_back' ? 'Restored' :
-                             item.status === 'failed' ? 'Failed' : item.status}
-                          </Badge>
+                          <MergeStatusBadge status={item.status} />
                           {item.status === 'failed' && item.error_message && (
                             <span className="text-xs text-destructive/80 max-w-[150px] truncate" title={item.error_message}>
                               {item.error_message}

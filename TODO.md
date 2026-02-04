@@ -102,6 +102,8 @@ Plans:
 
 ## Future Enhancements
 
+- [ ] Jobs API - Scheduled/recurring scan jobs (backend stub exists at `backend/app/api/routes/jobs.py`)
+- [ ] Custom Objects support in rule builder (backend already supports, frontend needs UI)
 - [ ] Bulk operations improvements
 - [ ] Audit log for all actions
 - [ ] Export merge history to CSV

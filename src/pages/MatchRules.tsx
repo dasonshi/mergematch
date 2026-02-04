@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { useState, useMemo } from "react";
-import { Plus, Loader2, Trash2, Search } from "lucide-react";
+import { Plus, Loader2, Search } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, MatchRule, MatchPair } from "@/lib/api";
@@ -12,6 +12,7 @@ import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 import { DataTable, DataTableColumn } from "@/components/ui/data-table";
 import { NoRulesEmpty } from "@/components/ui/empty-state";
+import { RuleActionButtons } from "@/components/rule-action-buttons";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -92,19 +93,24 @@ export default function MatchRules() {
     },
   });
 
-  const rules = rulesData?.data ?? [];
   const pendingMatches = matchesData?.data ?? [];
 
-  // Filter rules by search
+  // Sort rules by creation date (newest first) and filter by search
   const filteredRules = useMemo(() => {
-    if (!searchQuery) return rules;
+    const data = rulesData?.data ?? [];
+    const sorted = [...data].sort((a, b) => {
+      const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return dateB - dateA; // Newest first
+    });
+    if (!searchQuery) return sorted;
     const query = searchQuery.toLowerCase();
-    return rules.filter((rule: MatchRule) =>
+    return sorted.filter((rule: MatchRule) =>
       rule.name.toLowerCase().includes(query) ||
       rule.source_object?.toLowerCase().includes(query) ||
       rule.merge_strategy?.toLowerCase().includes(query)
     );
-  }, [rules, searchQuery]);
+  }, [rulesData?.data, searchQuery]);
 
   // Count pending matches per rule
   const pendingByRule = pendingMatches.reduce((acc: Record<string, number>, match: MatchPair) => {
@@ -197,27 +203,11 @@ export default function MatchRules() {
       header: "Actions",
       align: "right",
       accessor: (rule) => (
-        <div className="flex items-center justify-end gap-2">
-          {pendingByRule[rule.id] > 0 && (
-            <Button size="sm" asChild>
-              <Link to={`/match-rules/${rule.id}?action=merge-all`}>Merge All</Link>
-            </Button>
-          )}
-          <Button variant="outline" size="sm" asChild>
-            <Link to={`/match-rules/${rule.id}`}>View</Link>
-          </Button>
-          <Button variant="outline" size="sm" asChild>
-            <Link to={`/match-rules/${rule.id}/edit`}>Edit</Link>
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-destructive hover:text-destructive hover:bg-destructive/10"
-            onClick={() => setRuleToDelete(rule)}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
+        <RuleActionButtons
+          rule={rule}
+          pendingCount={pendingByRule[rule.id] || 0}
+          onDelete={() => setRuleToDelete(rule)}
+        />
       ),
     },
   ];

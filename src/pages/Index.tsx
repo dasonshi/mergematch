@@ -4,27 +4,23 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { RefreshCw, ArrowRight, Plus, Check, ClipboardList, FolderOpen, Building2, Users, Loader2, RotateCcw, Eye, MoreHorizontal, TrendingUp, GitMerge, Trash2, AlertCircle } from "lucide-react";
+import { RefreshCw, ArrowRight, Plus, Check, ClipboardList, FolderOpen, Building2, Users, Loader2, TrendingUp, GitMerge, AlertCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, MatchRule, Merge, MatchPair } from "@/lib/api";
-import { computeStrategySelections, computeMasterId, StrategyId } from "@/lib/merge-strategies";
-import { cn } from "@/lib/utils";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 import { DataTable, DataTableColumn } from "@/components/ui/data-table";
+import { ConfidenceBadge } from "@/components/ui/confidence-badge";
+import { MergeStatusBadge } from "@/components/ui/merge-status-badge";
 import { NoRulesEmpty, NoMergesEmpty } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { AnimatedCounter } from "@/components/ui/animated-counter";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatsRow } from "@/components/ui/achievement-badge";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { getRecordName } from "@/components/rules/helpers";
+import { RuleActionButtons } from "@/components/rule-action-buttons";
+import { MergeActionButtons } from "@/components/merge-action-buttons";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,9 +41,6 @@ export default function Dashboard() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [cooldownRemaining, setCooldownRemaining] = useState(0);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
-
-  // Merge state for pending matches table
-  const [mergingIds, setMergingIds] = useState<Set<string>>(new Set());
 
   // Fetch sync status from backend
   const { data: syncStatus, refetch: refetchSyncStatus } = useQuery({
@@ -246,55 +239,6 @@ export default function Dashboard() {
     },
   });
 
-  // Quick merge mutation for pending matches
-  const quickMergeMutation = useMutation({
-    mutationFn: async ({ match, rule }: { match: MatchPair; rule: MatchRule }) => {
-      const strategy = (rule?.merge_strategy || "standard") as StrategyId;
-      const overwriteBlanks = rule?.merge_settings?.overwrite_blanks ?? false;
-      const recordA = match.record_a_data || {};
-      const recordB = match.record_b_data || {};
-      const fields = ["firstName", "lastName", "email", "phone", "tags", "address1", "city", "state", "postalCode"];
-      const selections = computeStrategySelections({
-        strategy,
-        recordA,
-        recordB,
-        fields,
-        overwriteBlanks,
-      });
-      const masterId = computeMasterId(strategy, recordA, recordB, fields, match.record_a_id, match.record_b_id);
-      return api.executeMerge(match.id, masterId, selections);
-    },
-    onMutate: ({ match }) => {
-      setMergingIds(prev => new Set(prev).add(match.id));
-    },
-    onSuccess: (_, { match }) => {
-      toast({
-        title: "Merge Successful",
-        description: "The contacts have been merged.",
-      });
-      setMergingIds(prev => {
-        const next = new Set(prev);
-        next.delete(match.id);
-        return next;
-      });
-      queryClient.invalidateQueries({ queryKey: ["matches"] });
-      queryClient.invalidateQueries({ queryKey: ["merges"] });
-      queryClient.invalidateQueries({ queryKey: ["merge-stats"] });
-    },
-    onError: (error: Error, { match }) => {
-      toast({
-        title: "Merge Failed",
-        description: error.message,
-        variant: "destructive",
-      });
-      setMergingIds(prev => {
-        const next = new Set(prev);
-        next.delete(match.id);
-        return next;
-      });
-    },
-  });
-
   // Combined loading flag so all stat cards transition together
   const statsLoading = contactsLoading || companiesLoading || matchesLoading || mergeStatsLoading;
 
@@ -453,47 +397,14 @@ export default function Dashboard() {
       header: "Actions",
       align: "right",
       accessor: (rule) => (
-        <div className="flex items-center justify-end gap-1">
-          {pendingByRule[rule.id] > 0 && (
-            <Button size="sm" asChild>
-              <Link to={`/match-rules/${rule.id}?action=merge-all`}>Merge All</Link>
-            </Button>
-          )}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem asChild>
-                <Link to={`/match-rules/${rule.id}`}>View Details</Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link to={`/match-rules/${rule.id}/edit`}>Edit Rule</Link>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                onClick={() => setRuleToDelete(rule)}
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                Delete Rule
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+        <RuleActionButtons
+          rule={rule}
+          pendingCount={pendingByRule[rule.id] || 0}
+          onDelete={() => setRuleToDelete(rule)}
+        />
       ),
     },
   ];
-
-  // Helper to get record display name
-  const getRecordName = (record: Record<string, unknown>): string => {
-    if (record.firstName && record.lastName) {
-      return `${record.firstName} ${record.lastName}`;
-    }
-    return record.firstName || record.name || record.email || "—";
-  };
 
   // Create a map of rule IDs to rules for quick lookup
   const rulesMap = new Map(rules.map((r: MatchRule) => [r.id, r]));
@@ -545,44 +456,16 @@ export default function Dashboard() {
     },
     {
       header: "Confidence",
-      accessor: (item) => {
-        const confidence = Math.round((item.confidence_score || 0) * 100);
-        return (
-          <Badge
-            variant="outline"
-            className={cn(
-              "font-semibold",
-              confidence >= 90 ? "bg-green-100 text-green-700 border-green-200" :
-              confidence >= 80 ? "bg-amber-100 text-amber-700 border-amber-200" :
-              "bg-red-100 text-red-700 border-red-200"
-            )}
-          >
-            {confidence}%
-          </Badge>
-        );
-      },
+      accessor: (item) => <ConfidenceBadge score={item.confidence_score || 0} />,
     },
     {
       header: "Actions",
       align: "right",
-      accessor: (item) => {
-        const rule = rulesMap.get(item.rule_id);
-        const isMerging = mergingIds.has(item.id);
-        return (
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" size="sm" asChild>
-              <Link to={`/match-rules/${item.rule_id}/review/${item.id}`}>Review</Link>
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => rule && quickMergeMutation.mutate({ match: item, rule })}
-              disabled={isMerging || !rule}
-            >
-              {isMerging ? <Loader2 className="h-3 w-3 animate-spin" /> : "Merge"}
-            </Button>
-          </div>
-        );
-      },
+      accessor: (item) => (
+        <Button size="sm" asChild>
+          <Link to={`/match-rules/${item.rule_id}/review/${item.id}`}>Merge</Link>
+        </Button>
+      ),
     },
   ];
 
@@ -604,48 +487,17 @@ export default function Dashboard() {
     },
     {
       header: "Status",
-      accessor: (merge) => (
-        <Badge
-          variant={
-            merge.status === 'completed' ? 'success' :
-            merge.status === 'failed' ? 'destructive' :
-            merge.status === 'rolled_back' ? 'warning' : 'secondary'
-          }
-        >
-          {merge.status === 'completed' ? 'Merged' :
-           merge.status === 'rolled_back' ? 'Restored' :
-           merge.status === 'failed' ? 'Failed' : merge.status}
-        </Badge>
-      ),
+      accessor: (merge) => <MergeStatusBadge status={merge.status} />,
     },
     {
       header: "Actions",
       align: "right",
       accessor: (merge) => (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem asChild>
-              <Link to={`/history/${merge.id}`}>
-                <Eye className="h-4 w-4 mr-2" />
-                View Details
-              </Link>
-            </DropdownMenuItem>
-            {merge.status === 'completed' && (
-              <DropdownMenuItem
-                onClick={() => rollbackMutation.mutate(merge.id)}
-                disabled={rollbackMutation.isPending}
-              >
-                <RotateCcw className="h-4 w-4 mr-2" />
-                Restore
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <MergeActionButtons
+          merge={merge}
+          onRestore={() => rollbackMutation.mutate(merge.id)}
+          restorePending={rollbackMutation.isPending}
+        />
       ),
     },
   ];
@@ -925,7 +777,7 @@ export default function Dashboard() {
         <Card className="overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between pb-4">
             <CardTitle className="text-lg font-semibold">Recent Activity</CardTitle>
-            <Button variant="link" asChild>
+            <Button variant="link" size="sm" asChild>
               <Link to="/history">View All <ArrowRight className="ml-1 h-3.5 w-3.5" /></Link>
             </Button>
           </CardHeader>

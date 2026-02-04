@@ -1,13 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DateRange } from "react-day-picker";
-import { Eye, RotateCcw, Loader2, ExternalLink, Search, X, Filter, ChevronDown, MoreHorizontal, Download, ChevronLeft, ChevronRight } from "lucide-react";
-import { PageHeader } from "@/components/ui/page-header";
+import { RotateCcw, Loader2, ExternalLink, Search, Filter, Download, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { MergeStatusBadge, getMergeStatusLabel } from "@/components/ui/merge-status-badge";
 import {
   Select,
   SelectContent,
@@ -16,17 +15,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -34,18 +22,26 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { DataTable, DataTableColumn } from "@/components/ui/data-table";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
-import { HistoryStats } from "@/components/ui/history-stats";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 
 import { api } from "@/lib/api";
+import { MergeActionButtons } from "@/components/merge-action-buttons";
 
 // Build CRM contact URL
 const getCrmContactUrl = (locationId: string, contactId: string) => {
-  // TODO: Make base URL configurable for whitelabel
   return `https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${contactId}`;
 };
 
@@ -69,14 +65,18 @@ export default function History() {
   const queryClient = useQueryClient();
   const [restoreItem, setRestoreItem] = useState<MergeItem | null>(null);
 
-  // Filter panel state
-  const [filtersOpen, setFiltersOpen] = useState(true);
-
   // Filter state
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
+
+  // Selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectAllMatching, setSelectAllMatching] = useState(false);
+  const [showBulkRestoreDialog, setShowBulkRestoreDialog] = useState(false);
+  const [bulkRestoreProgress, setBulkRestoreProgress] = useState({ current: 0, total: 0, inProgress: false });
+  const abortRestoreRef = useRef(false);
 
   // Pagination state
   const [page, setPage] = useState(1);
@@ -95,9 +95,11 @@ export default function History() {
   const dateFromStr = dateRange?.from?.toISOString()?.split("T")[0];
   const dateToStr = dateRange?.to?.toISOString()?.split("T")[0];
 
-  // Reset to page 1 when any filter or page size changes
+  // Reset to page 1 and clear selection when filters change
   useEffect(() => {
     setPage(1);
+    setSelectedIds(new Set());
+    setSelectAllMatching(false);
   }, [statusFilter, debouncedSearch, dateFromStr, dateToStr, pageSize]);
 
   const offset = (page - 1) * pageSize;
@@ -117,18 +119,15 @@ export default function History() {
     enabled: !!locationId,
   });
 
-  // Dedicated stats from server (not computed from page slice)
-  const { data: mergeStatsData } = useQuery({
-    queryKey: ["merge-stats", locationId],
-    queryFn: () => api.getMergeStats(),
-    enabled: !!locationId,
-  });
-
   const merges = mergesData?.data || [];
   const total = mergesData?.total || 0;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const startRecord = total > 0 ? offset + 1 : 0;
   const endRecord = Math.min(offset + merges.length, total);
+
+  // Count restorable items (only completed status can be restored)
+  const restorableOnPage = merges.filter((m: MergeItem) => m.status === "completed").length;
+  const restorableTotal = statusFilter === "completed" ? total : restorableOnPage; // Approximate
 
   // Rollback mutation
   const rollbackMutation = useMutation({
@@ -154,8 +153,80 @@ export default function History() {
     },
   });
 
+  // Bulk restore handler
+  const handleBulkRestore = async () => {
+    setShowBulkRestoreDialog(false);
+
+    let idsToRestore: string[] = [];
+
+    if (selectAllMatching) {
+      // Fetch all matching IDs from server
+      try {
+        const allData = await api.getMerges(
+          10000,
+          "completed", // Only completed can be restored
+          undefined,
+          0,
+          debouncedSearch || undefined,
+          dateFromStr,
+          dateToStr,
+        );
+        idsToRestore = allData.data.map((m: MergeItem) => m.id);
+      } catch {
+        toast({
+          title: "Failed to fetch records",
+          description: "Could not retrieve all matching records.",
+          variant: "destructive",
+        });
+        return;
+      }
+    } else {
+      idsToRestore = Array.from(selectedIds);
+    }
+
+    if (idsToRestore.length === 0) return;
+
+    abortRestoreRef.current = false;
+    setBulkRestoreProgress({ current: 0, total: idsToRestore.length, inProgress: true });
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < idsToRestore.length; i++) {
+      if (abortRestoreRef.current) {
+        toast({
+          title: "Restore Aborted",
+          description: `Stopped after ${i} of ${idsToRestore.length}. ${successCount} succeeded, ${failCount} failed.`,
+        });
+        break;
+      }
+
+      try {
+        await api.rollbackMerge(idsToRestore[i]);
+        successCount++;
+      } catch {
+        failCount++;
+      }
+      setBulkRestoreProgress({ current: i + 1, total: idsToRestore.length, inProgress: true });
+    }
+
+    setBulkRestoreProgress({ current: 0, total: 0, inProgress: false });
+    setSelectedIds(new Set());
+    setSelectAllMatching(false);
+    queryClient.invalidateQueries({ queryKey: ["merges"] });
+    queryClient.invalidateQueries({ queryKey: ["merge-stats"] });
+    queryClient.invalidateQueries({ queryKey: ["matches"] });
+
+    if (!abortRestoreRef.current) {
+      toast({
+        title: "Bulk Restore Complete",
+        description: `Successfully restored ${successCount} records.${failCount > 0 ? ` ${failCount} failed.` : ''}`,
+        variant: failCount > 0 ? "destructive" : "default",
+      });
+    }
+  };
+
   const hasActiveFilters = searchInput || statusFilter !== "all" || dateRange?.from || dateRange?.to;
-  const activeFilterCount = [searchInput, statusFilter !== "all", dateRange?.from || dateRange?.to].filter(Boolean).length;
 
   const clearFilters = () => {
     setSearchInput("");
@@ -164,10 +235,14 @@ export default function History() {
     setDateRange(undefined);
   };
 
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+    setSelectAllMatching(false);
+  };
+
   const handleExport = async () => {
     setIsExporting(true);
     try {
-      // Fetch ALL matching records with current filters (not just current page)
       const allData = await api.getMerges(
         10000,
         statusFilter !== "all" ? statusFilter : undefined,
@@ -237,27 +312,13 @@ export default function History() {
   // Define table columns
   const columns: DataTableColumn<MergeItem>[] = [
     {
-      header: "Rule",
-      accessor: (item) =>
-        item.rule_id ? (
-          <Link
-            to={`/match-rules/${item.rule_id}`}
-            className="text-primary hover:underline font-medium"
-          >
-            {item.rule_name || "Unknown"}
-          </Link>
-        ) : (
-          <span className="text-muted-foreground">-</span>
-        ),
-    },
-    {
       header: "Master Record",
       accessor: (item) => (
         <div className="flex items-center gap-2">
           <span className="font-medium">
-            {item.master_record_name || `${item.master_record_id?.slice(0, 12)}...`}
+            {item.master_record_name || `${item.master_record_id?.slice(0, 8)}...`}
           </span>
-          {item.status === "completed" && locationId && (
+          {(item.status === "completed" || item.status === "rolled_back") && locationId && (
             <a
               href={getCrmContactUrl(locationId, item.master_record_id)}
               target="_blank"
@@ -275,8 +336,12 @@ export default function History() {
       header: "Duplicate",
       hideOnMobile: true,
       accessor: (item) => (
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <span className="font-mono text-sm">&larr; {item.duplicate_record_id?.slice(0, 12)}...</span>
+        <div className="flex items-center gap-2">
+          <span className="text-muted-foreground">
+            {item.status === "rolled_back" && item.restored_record_id
+              ? `${item.restored_record_id.slice(0, 8)}...`
+              : `${item.duplicate_record_id?.slice(0, 8)}...`}
+          </span>
           {item.status === "rolled_back" && item.restored_record_id && locationId && (
             <a
               href={getCrmContactUrl(locationId, item.restored_record_id)}
@@ -293,19 +358,22 @@ export default function History() {
     },
     {
       header: "Status",
-      accessor: (item) => (
-        <Badge
-          variant={
-            item.status === "completed" ? "success" :
-            item.status === "rolled_back" ? "warning" :
-            item.status === "failed" ? "destructive" : "secondary"
-          }
-        >
-          {item.status === "completed" ? "Merged" :
-           item.status === "rolled_back" ? "Restored" :
-           item.status === "failed" ? "Failed" : item.status}
-        </Badge>
-      ),
+      accessor: (item) => <MergeStatusBadge status={item.status} />,
+    },
+    {
+      header: "Rule",
+      hideOnMobile: true,
+      accessor: (item) =>
+        item.rule_id ? (
+          <Link
+            to={`/match-rules/${item.rule_id}`}
+            className="text-primary hover:underline"
+          >
+            {item.rule_name || "Unknown"}
+          </Link>
+        ) : (
+          <span className="text-muted-foreground">-</span>
+        ),
     },
     {
       header: "When",
@@ -318,30 +386,16 @@ export default function History() {
       header: "Actions",
       align: "right" as const,
       accessor: (item) => (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem asChild>
-              <Link to={`/history/${item.id}`}>
-                <Eye className="h-4 w-4 mr-2" />
-                View Details
-              </Link>
-            </DropdownMenuItem>
-            {item.status === "completed" && (
-              <DropdownMenuItem onClick={() => setRestoreItem(item)}>
-                <RotateCcw className="h-4 w-4 mr-2" />
-                Restore
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <MergeActionButtons
+          merge={item}
+          onRestore={() => setRestoreItem(item)}
+        />
       ),
     },
   ];
+
+  // Selection display count
+  const displaySelectedCount = selectAllMatching ? total : selectedIds.size;
 
   if (authLoading || isLoading) {
     return (
@@ -353,99 +407,107 @@ export default function History() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <PageHeader title="Merge History" />
-        <Button variant="outline" size="sm" onClick={handleExport} disabled={total === 0 || isExporting}>
-          {isExporting ? (
-            <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Exporting...
-            </>
-          ) : (
-            <>
-              <Download className="h-4 w-4 mr-2" />
-              Export CSV
-            </>
-          )}
-        </Button>
+      {/* Header Row */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        {/* Left side: Title */}
+        <h1 className="text-xl font-bold tracking-tight text-foreground">
+          Merge History
+        </h1>
+
+        {/* Right side: Filters + Export */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="pl-9 w-[180px]"
+            />
+          </div>
+
+          {/* Status Filter */}
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[130px]">
+              <SelectValue placeholder="All Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="completed">{getMergeStatusLabel("completed")}</SelectItem>
+              <SelectItem value="rolled_back">{getMergeStatusLabel("rolled_back")}</SelectItem>
+              <SelectItem value="failed">{getMergeStatusLabel("failed")}</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Date Range */}
+          <DateRangePicker
+            dateRange={dateRange}
+            onDateRangeChange={setDateRange}
+            className="w-[220px]"
+          />
+
+          {/* Export */}
+          <Button variant="outline" size="sm" onClick={handleExport} disabled={total === 0 || isExporting}>
+            {isExporting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Download className="h-3.5 w-3.5" />
+            )}
+          </Button>
+        </div>
       </div>
 
-      {/* Stats Dashboard — powered by dedicated stats endpoint */}
-      <HistoryStats
-        totalMerges={mergeStatsData?.total ?? 0}
-        completedMerges={mergeStatsData?.completed ?? 0}
-        rollbackCount={mergeStatsData?.rolled_back ?? 0}
-      />
-
-      {/* Collapsible Filters */}
-      <Card>
-        <Collapsible open={filtersOpen} onOpenChange={setFiltersOpen}>
-          <div className="flex items-center justify-between p-4 border-b">
-            <CollapsibleTrigger asChild>
-              <Button variant="ghost" size="sm" className="gap-2">
-                <Filter className="h-4 w-4" />
-                Filters
-                {activeFilterCount > 0 && (
-                  <Badge variant="secondary" className="ml-1">{activeFilterCount}</Badge>
-                )}
-                <ChevronDown className={`h-4 w-4 transition-transform ${filtersOpen ? 'rotate-180' : ''}`} />
-              </Button>
-            </CollapsibleTrigger>
-            {hasActiveFilters && (
-              <Button variant="ghost" size="sm" onClick={clearFilters}>
-                <X className="h-4 w-4 mr-1" />
-                Clear all
-              </Button>
+      {/* Selection Bar */}
+      {(selectedIds.size > 0 || selectAllMatching) && (
+        <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
+          <span className="text-sm font-medium">
+            {displaySelectedCount.toLocaleString()} selected
+          </span>
+          {!selectAllMatching && selectedIds.size < total && statusFilter === "completed" && (
+            <Button
+              variant="link"
+              size="sm"
+              className="text-primary p-0 h-auto"
+              onClick={() => setSelectAllMatching(true)}
+            >
+              Select all {total.toLocaleString()} matching
+            </Button>
+          )}
+          <div className="flex-1" />
+          <Button
+            size="sm"
+            onClick={() => setShowBulkRestoreDialog(true)}
+            disabled={bulkRestoreProgress.inProgress}
+          >
+            {bulkRestoreProgress.inProgress ? (
+              <>
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                {bulkRestoreProgress.current}/{bulkRestoreProgress.total}
+              </>
+            ) : (
+              <>
+                <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                Restore Selected
+              </>
             )}
-          </div>
-          <CollapsibleContent>
-            <CardContent className="pt-4">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
-                {/* Search */}
-                <div className="flex-1 space-y-2">
-                  <Label htmlFor="search" className="text-sm font-medium">Search</Label>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      id="search"
-                      placeholder="Search by name..."
-                      value={searchInput}
-                      onChange={(e) => setSearchInput(e.target.value)}
-                      className="pl-9"
-                    />
-                  </div>
-                </div>
-
-                {/* Status Filter */}
-                <div className="w-full lg:w-40 space-y-2">
-                  <Label className="text-sm font-medium">Status</Label>
-                  <Select value={statusFilter} onValueChange={setStatusFilter}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="All statuses" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All</SelectItem>
-                      <SelectItem value="completed">Merged</SelectItem>
-                      <SelectItem value="rolled_back">Restored</SelectItem>
-                      <SelectItem value="failed">Failed</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Date Range Picker */}
-                <div className="w-full lg:w-auto space-y-2">
-                  <Label className="text-sm font-medium">Date Range</Label>
-                  <DateRangePicker
-                    dateRange={dateRange}
-                    onDateRangeChange={setDateRange}
-                    className="w-full lg:w-[280px]"
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </CollapsibleContent>
-        </Collapsible>
-      </Card>
+          </Button>
+          {bulkRestoreProgress.inProgress && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => { abortRestoreRef.current = true; }}
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          {!bulkRestoreProgress.inProgress && (
+            <Button variant="ghost" size="sm" onClick={clearSelection}>
+              Clear
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* History Table */}
       <Card className="overflow-hidden">
@@ -455,6 +517,10 @@ export default function History() {
             columns={columns}
             keyField="id"
             minWidth="750px"
+            selectable
+            selectedIds={selectedIds}
+            onSelectionChange={setSelectedIds}
+            isRowSelectable={(item) => item.status === "completed"}
             emptyState={
               <div className="p-12 text-center">
                 {hasActiveFilters ? (
@@ -560,6 +626,27 @@ export default function History() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Bulk Restore Dialog */}
+      <AlertDialog open={showBulkRestoreDialog} onOpenChange={setShowBulkRestoreDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Restore Selected Merges?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will restore <span className="font-semibold">{displaySelectedCount.toLocaleString()}</span> merged records,
+              recreating the deleted duplicate contacts.
+              <br /><br />
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBulkRestore}>
+              Restore All ({displaySelectedCount.toLocaleString()})
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -33,7 +33,6 @@ export default function MatchRuleDetail() {
   const queryClient = useQueryClient();
   const [matchesExpanded, setMatchesExpanded] = useState(true);
   const [matchSearchQuery, setMatchSearchQuery] = useState("");
-  const [mergingIds, setMergingIds] = useState<Set<string>>(new Set());
   const [showMergeAllDialog, setShowMergeAllDialog] = useState(false);
   const [bulkMergeProgress, setBulkMergeProgress] = useState({ current: 0, total: 0, inProgress: false });
   const abortMergeRef = useRef(false);
@@ -131,54 +130,6 @@ export default function MatchRuleDetail() {
       scanMutation.mutate();
     }
   }, [searchParams, rule, scanMutation.isPending, setSearchParams]);
-
-  // Quick merge mutation (strategy-aware)
-  const quickMergeMutation = useMutation({
-    mutationFn: async (match: MatchPair) => {
-      const strategy = (rule?.merge_strategy || "standard") as StrategyId;
-      const overwriteBlanks = rule?.merge_settings?.overwrite_blanks ?? false;
-      const recordA = match.record_a_data || {};
-      const recordB = match.record_b_data || {};
-      const fields = ["firstName", "lastName", "email", "phone", "tags", "address1", "city", "state", "postalCode"];
-      const selections = computeStrategySelections({
-        strategy,
-        recordA,
-        recordB,
-        fields,
-        overwriteBlanks,
-      });
-      const masterId = computeMasterId(strategy, recordA, recordB, fields, match.record_a_id, match.record_b_id);
-      return api.executeMerge(match.id, masterId, selections);
-    },
-    onMutate: (match) => {
-      setMergingIds(prev => new Set(prev).add(match.id));
-    },
-    onSuccess: (_, match) => {
-      toast({
-        title: "Merge Successful",
-        description: "The contacts have been merged.",
-      });
-      setMergingIds(prev => {
-        const next = new Set(prev);
-        next.delete(match.id);
-        return next;
-      });
-      queryClient.invalidateQueries({ queryKey: ["matches"] });
-      queryClient.invalidateQueries({ queryKey: ["merges"] });
-    },
-    onError: (error: Error, match) => {
-      toast({
-        title: "Merge Failed",
-        description: error.message,
-        variant: "destructive",
-      });
-      setMergingIds(prev => {
-        const next = new Set(prev);
-        next.delete(match.id);
-        return next;
-      });
-    },
-  });
 
   // Toggle rule status mutation
   const toggleMutation = useMutation({
@@ -673,7 +624,6 @@ export default function MatchRuleDetail() {
                           const recordA = match.record_a_data || {};
                           const recordB = match.record_b_data || {};
                           const confidence = Math.round((match.confidence_score || 0) * 100);
-                          const isMerging = mergingIds.has(match.id);
                           const matchFields = rule.match_fields || [];
                           const subheadingA = getMatchFieldSubheading(recordA, matchFields);
                           const subheadingB = getMatchFieldSubheading(recordB, matchFields);
@@ -714,18 +664,9 @@ export default function MatchRuleDetail() {
                                 </Badge>
                               </td>
                               <td className="py-3 px-4 text-right">
-                                <div className="flex justify-end gap-2">
-                                  <Button variant="outline" size="sm" asChild>
-                                    <Link to={`/match-rules/${id}/review/${match.id}`}>Review</Link>
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    onClick={() => quickMergeMutation.mutate(match)}
-                                    disabled={isMerging}
-                                  >
-                                    {isMerging ? <Loader2 className="h-3 w-3 animate-spin" /> : "Merge"}
-                                  </Button>
-                                </div>
+                                <Button size="sm" asChild>
+                                  <Link to={`/match-rules/${id}/review/${match.id}`}>Merge</Link>
+                                </Button>
                               </td>
                             </tr>
                           );

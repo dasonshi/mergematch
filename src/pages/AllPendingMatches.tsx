@@ -22,21 +22,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { DataTable, DataTableColumn } from "@/components/ui/data-table";
+import { ConfidenceBadge } from "@/components/ui/confidence-badge";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 import { api, MatchRule, MatchPair } from "@/lib/api";
 import { computeStrategySelections, computeMasterId, StrategyId } from "@/lib/merge-strategies";
-import { cn } from "@/lib/utils";
-
-// Get the record's display name
-const getRecordName = (record: Record<string, unknown>): string => {
-  if (record.firstName && record.lastName) {
-    return `${record.firstName} ${record.lastName}`;
-  }
-  return record.firstName || record.name || record.email || "—";
-};
+import { getRecordName } from "@/components/rules/helpers";
 
 export default function AllPendingMatches() {
   const navigate = useNavigate();
@@ -59,7 +51,6 @@ export default function AllPendingMatches() {
   const [showMergeSelectedDialog, setShowMergeSelectedDialog] = useState(false);
 
   // Merge state
-  const [mergingIds, setMergingIds] = useState<Set<string>>(new Set());
   const [showMergeAllDialog, setShowMergeAllDialog] = useState(false);
   const [bulkMergeProgress, setBulkMergeProgress] = useState({ current: 0, total: 0, inProgress: false });
   const abortMergeRef = useRef(false);
@@ -161,58 +152,6 @@ export default function AllPendingMatches() {
     setSelectedIds(new Set());
     setSelectAllMatching(false);
   };
-
-  // Quick merge mutation
-  const quickMergeMutation = useMutation({
-    mutationFn: async (match: MatchPair) => {
-      const rule = rulesMap.get(match.rule_id);
-      if (!rule) throw new Error("Rule not found");
-
-      const strategy = (rule.merge_strategy || "standard") as StrategyId;
-      const overwriteBlanks = rule.merge_settings?.overwrite_blanks ?? false;
-      const recordA = match.record_a_data || {};
-      const recordB = match.record_b_data || {};
-      const fields = ["firstName", "lastName", "email", "phone", "tags", "address1", "city", "state", "postalCode"];
-      const selections = computeStrategySelections({
-        strategy,
-        recordA,
-        recordB,
-        fields,
-        overwriteBlanks,
-      });
-      const masterId = computeMasterId(strategy, recordA, recordB, fields, match.record_a_id, match.record_b_id);
-      return api.executeMerge(match.id, masterId, selections);
-    },
-    onMutate: (match) => {
-      setMergingIds(prev => new Set(prev).add(match.id));
-    },
-    onSuccess: (_, match) => {
-      toast({
-        title: "Merge Successful",
-        description: "The contacts have been merged.",
-      });
-      setMergingIds(prev => {
-        const next = new Set(prev);
-        next.delete(match.id);
-        return next;
-      });
-      queryClient.invalidateQueries({ queryKey: ["matches"] });
-      queryClient.invalidateQueries({ queryKey: ["merges"] });
-      queryClient.invalidateQueries({ queryKey: ["merge-stats"] });
-    },
-    onError: (error: Error, match) => {
-      toast({
-        title: "Merge Failed",
-        description: error.message,
-        variant: "destructive",
-      });
-      setMergingIds(prev => {
-        const next = new Set(prev);
-        next.delete(match.id);
-        return next;
-      });
-    },
-  });
 
   // Bulk merge handler (for both "Merge All" and "Merge Selected")
   const handleBulkMerge = async (matchesToMerge: MatchPair[]) => {
@@ -338,22 +277,7 @@ export default function AllPendingMatches() {
     },
     {
       header: "Confidence",
-      accessor: (item) => {
-        const confidence = Math.round((item.confidence_score || 0) * 100);
-        return (
-          <Badge
-            variant="outline"
-            className={cn(
-              "font-semibold",
-              confidence >= 90 ? "bg-green-100 text-green-700 border-green-200" :
-              confidence >= 80 ? "bg-amber-100 text-amber-700 border-amber-200" :
-              "bg-red-100 text-red-700 border-red-200"
-            )}
-          >
-            {confidence}%
-          </Badge>
-        );
-      },
+      accessor: (item) => <ConfidenceBadge score={item.confidence_score || 0} />,
     },
     {
       header: "Found",
@@ -367,23 +291,11 @@ export default function AllPendingMatches() {
     {
       header: "Actions",
       align: "right" as const,
-      accessor: (item) => {
-        const isMerging = mergingIds.has(item.id);
-        return (
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" size="sm" asChild>
-              <Link to={`/match-rules/${item.rule_id}/review/${item.id}`}>Review</Link>
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => quickMergeMutation.mutate(item)}
-              disabled={isMerging}
-            >
-              {isMerging ? <Loader2 className="h-3 w-3 animate-spin" /> : "Merge"}
-            </Button>
-          </div>
-        );
-      },
+      accessor: (item) => (
+        <Button size="sm" asChild>
+          <Link to={`/match-rules/${item.rule_id}/review/${item.id}`}>Merge</Link>
+        </Button>
+      ),
     },
   ];
 

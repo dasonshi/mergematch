@@ -236,6 +236,35 @@ async def process_scheduled_scans(
     }
 
 
+@router.post("/cleanup-expired-snapshots")
+async def cleanup_expired_snapshots(
+    x_cron_secret: Optional[str] = Header(None, alias="X-Cron-Secret")
+):
+    """
+    Delete expired snapshots to free up storage.
+    Called by Render Cron Job daily.
+
+    Snapshots expire 30 days after the merge was completed.
+    """
+    verify_cron_secret(x_cron_secret)
+
+    logger.info("Starting expired snapshot cleanup")
+    supabase = get_supabase()
+
+    now = datetime.utcnow().isoformat()
+
+    # Delete all snapshots where expires_at is in the past
+    result = supabase.table("snapshots").delete().lt("expires_at", now).execute()
+
+    deleted_count = len(result.data) if result.data else 0
+    logger.info(f"Cleaned up {deleted_count} expired snapshots")
+
+    return {
+        "deleted_count": deleted_count,
+        "timestamp": now,
+    }
+
+
 @router.get("/health")
 async def cron_health(
     x_cron_secret: Optional[str] = Header(None, alias="X-Cron-Secret")

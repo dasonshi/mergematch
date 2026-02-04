@@ -1,78 +1,89 @@
 # MergeMatch
 
 > Duplicate detection & merge platform for GoHighLevel
->
 > **Domain**: [mergematch.app](https://mergematch.app)
+
+## Knowledge Base
+
+**BEFORE making changes, read the relevant docs:**
+
+```
+.claude/knowledge/
+├── README.md                 # START HERE - index and critical invariants
+├── api/endpoints.md          # All API routes
+├── matching/operator-logic.md # How AND/OR conditions work
+├── matching/algorithms.md    # Match algorithms (exact, fuzzy, phone, etc.)
+├── matching/scoring.md       # Confidence calculation
+├── integration/frontend-backend.md # Type alignment checklist
+└── data-structures/          # Database schema docs
+```
+
+**Quick lookup:**
+| Task | Read First |
+|------|------------|
+| Matching logic changes | `matching/operator-logic.md`, `matching/algorithms.md` |
+| API changes | `api/endpoints.md` |
+| Type changes | `integration/frontend-backend.md` |
+| Database changes | `data-structures/database-schema.md` |
+| **Resume testing** | `testing/test-plan.md` |
+
+## Critical Invariants
+
+1. **Multi-tenancy**: All tables have `tenant_id` + `location_id`. Always filter.
+2. **Threshold format**: Backend stores 0.0-1.0, frontend displays 0-100%.
+3. **Type sync**: Database → Backend Pydantic → Frontend TypeScript must match.
+4. **Auth**: All routes use JWT via `get_current_user_flexible`.
 
 ## Directory Structure
 
 | Path | Contents |
 |------|----------|
-| `docs/01_PRD_Scoping.md` | Product requirements, pricing, features, phases |
-| `docs/02_Gap_Specifications.md` | Technical specs, security, UI copy |
-| `docs/03_Technical_Design.md` | Architecture, database schema |
-| `docs/04_Implementation_Guide.md` | Step-by-step build guide |
-| `ghl-docs/out-md/` | GoHighLevel API documentation (scraped) |
+| `.claude/knowledge/` | Technical reference docs (read first!) |
+| `docs/` | Product requirements and design specs |
+| `backend/` | FastAPI backend |
+| `src/` | React/TypeScript frontend |
+| `ghl-docs/` | GoHighLevel API reference |
 
-## Code Conventions
+## Quick Commands
 
-### Backend (Python/FastAPI)
-- Async everywhere (`async def`)
-- Pydantic for validation
-- SQLAlchemy 2.0 async ORM
-- Alembic for migrations
-- Ruff for linting
-- Pytest for testing
+```bash
+# Backend
+cd backend && uvicorn app.main:app --reload
 
-### Frontend (Vite/React/TypeScript)
-- Vite for build tooling
-- React Router for routing
-- TanStack Query for data fetching
-- Tailwind CSS + shadcn/ui for styling
+# Frontend
+npm run dev
 
-### Database
-- All tables have `tenant_id` for multi-tenancy
-- RLS policies on all tables
-- Soft deletes where applicable
-- Timestamps: `created_at`, `updated_at`
+# Build & Deploy Frontend
+npm run build && npx vercel --prod
+
+# Backend auto-deploys on push to main
+```
 
 ## Deployment
 
 | Service | Platform | URL |
 |---------|----------|-----|
 | Frontend | Vercel | https://merge-match.vercel.app |
-| Backend | Render | (auto-deploys from main branch) |
-| Database | Supabase | (connected via MCP) |
+| Backend | Render | https://mergematch.onrender.com |
+| Database | Supabase | (via MCP) |
 
-**Deploy frontend:** `npm run build && npx vercel --prod`
-**Deploy backend:** Push to main branch (Render auto-deploys)
+## Code Conventions
 
-## Development Commands
+### Backend (Python/FastAPI)
+- Async everywhere (`async def`)
+- Pydantic for validation
+- Supabase client for DB (not SQLAlchemy)
 
-```bash
-# Backend
-cd backend
-pip install -r requirements.txt
-uvicorn app.main:app --reload
+### Frontend (Vite/React/TypeScript)
+- TanStack Query for data fetching
+- Tailwind CSS + shadcn/ui for styling
+- Types in `src/lib/api.ts`
 
-# Frontend (from repo root)
-npm install
-npm run dev
-
-# Build & Deploy
-npm run build
-npx vercel --prod
-```
-
-## Current Phase
-
-**Active Development** - Core features implemented, in review/polish phase
+### Database
+- All tables have `tenant_id` for multi-tenancy
+- RLS policies enabled
+- Soft deletes where applicable
 
 ## Task Tracking
 
-See **[TODO.md](./TODO.md)** for:
-- Services to implement (email notifications)
-- Pages to review (with descriptions)
-- Backend APIs to review
-- Database schema review
-- Future enhancements
+See **[TODO.md](./TODO.md)** for current tasks and future enhancements.
