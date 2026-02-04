@@ -101,10 +101,10 @@ const strategies = [
 
 const frequencyOptions = [
   { id: "manual", name: "Manual only", tier: "free" },
-  { id: "daily", name: "Daily", tier: "starter" },
-  { id: "weekly", name: "Weekly", tier: "starter" },
-  { id: "biweekly", name: "Every 2 weeks", tier: "starter" },
-  { id: "monthly", name: "Monthly", tier: "starter" },
+  { id: "daily", name: "Daily", tier: "pro" },
+  { id: "weekly", name: "Weekly", tier: "pro" },
+  { id: "biweekly", name: "Every 2 weeks", tier: "pro" },
+  { id: "monthly", name: "Monthly", tier: "pro" },
 ];
 
 const daysOfWeek = [
@@ -1502,7 +1502,7 @@ export default function MatchRuleForm() {
                         } else {
                           toast({
                             title: "Upgrade Required",
-                            description: "Scheduled scans require Starter plan or higher.",
+                            description: "Scheduled scans require Pro plan or higher.",
                           });
                         }
                       }}
@@ -1609,7 +1609,7 @@ export default function MatchRuleForm() {
                   {frequency !== "manual" && (
                     <p className="text-sm text-muted-foreground flex items-center gap-1">
                       <Info className="h-4 w-4 text-warning" />
-                      Scheduled scans require Starter plan or higher.
+                      Scheduled scans require Pro plan or higher.
                     </p>
                   )}
                 </CardContent>
