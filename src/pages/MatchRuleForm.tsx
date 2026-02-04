@@ -1248,13 +1248,16 @@ export default function MatchRuleForm() {
                                 </p>
 
                                 {fieldPreservationMappings.map((mapping, idx) => {
+                                  // Filter out synthetic fields (like emailDomain) that aren't real GHL fields
+                                  const preservableFields = fieldOptions.filter(f => f.id !== 'emailDomain');
+
                                   // Get source field's data type for compatibility check
-                                  const sourceField = fieldOptions.find(f => f.id === mapping.source);
+                                  const sourceField = preservableFields.find(f => f.id === mapping.source);
                                   const sourceType = sourceField?.dataType || 'TEXT';
 
                                   // Filter ALL fields (standard + custom) by compatibility
                                   // Exclude the source field itself from targets
-                                  const allTargetFields = fieldOptions.filter(f => f.id !== mapping.source);
+                                  const allTargetFields = preservableFields.filter(f => f.id !== mapping.source);
                                   const standardFields = allTargetFields.filter(f => !f.isCustom);
                                   const customFields = allTargetFields.filter(f => f.isCustom);
 
@@ -1279,9 +1282,9 @@ export default function MatchRuleForm() {
                                         const updated = [...fieldPreservationMappings];
                                         updated[idx] = { ...updated[idx], source: val };
                                         // Clear target if now incompatible or same as source
-                                        const newSourceField = fieldOptions.find(f => f.id === val);
+                                        const newSourceField = preservableFields.find(f => f.id === val);
                                         const newSourceType = newSourceField?.dataType || 'TEXT';
-                                        const currentTarget = fieldOptions.find(f => f.id === mapping.target);
+                                        const currentTarget = preservableFields.find(f => f.id === mapping.target);
                                         if (currentTarget && (mapping.target === val || !isTypeCompatible(newSourceType, currentTarget.dataType || 'TEXT'))) {
                                           updated[idx].target = '';
                                         }
@@ -1292,17 +1295,17 @@ export default function MatchRuleForm() {
                                         <SelectValue placeholder="Source field..." />
                                       </SelectTrigger>
                                       <SelectContent>
-                                        {fieldOptions.filter(f => !f.isCustom).map((opt) => (
+                                        {preservableFields.filter(f => !f.isCustom).map((opt) => (
                                           <SelectItem key={opt.id} value={opt.id}>
                                             {opt.name}
                                           </SelectItem>
                                         ))}
-                                        {fieldOptions.some(f => f.isCustom) && (
+                                        {preservableFields.some(f => f.isCustom) && (
                                           <>
                                             <SelectSeparator />
                                             <SelectGroup>
                                               <SelectLabel>Custom Fields</SelectLabel>
-                                              {fieldOptions.filter(f => f.isCustom).map((opt) => (
+                                              {preservableFields.filter(f => f.isCustom).map((opt) => (
                                                 <SelectItem key={opt.id} value={opt.id}>
                                                   {opt.name}
                                                 </SelectItem>
