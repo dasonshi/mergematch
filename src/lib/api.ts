@@ -284,7 +284,13 @@ class ApiClient {
     return this.fetch<Merge & { master_snapshot?: Record<string, unknown>; duplicate_snapshot?: Record<string, unknown>; field_selections?: Record<string, string>; rolled_back_at?: string; restored_record_id?: string; ghl_location_id?: string }>(`/v1/merges/${id}`);
   }
 
-  async executeMerge(matchId: string, masterRecordId: string, fieldSelections: Record<string, string>, preserveAlternates = false) {
+  async executeMerge(
+    matchId: string,
+    masterRecordId: string,
+    fieldSelections: Record<string, string>,
+    preserveAlternates = false,
+    fieldPreservationMappings?: FieldPreservationMapping[]
+  ) {
     return this.fetch<Merge>('/v1/merges/', {
       method: 'POST',
       body: {
@@ -292,6 +298,7 @@ class ApiClient {
         master_record_id: masterRecordId,
         field_selections: fieldSelections,
         preserve_alternates: preserveAlternates,
+        ...(fieldPreservationMappings && { field_preservation_mappings: fieldPreservationMappings }),
       },
     });
   }

@@ -214,6 +214,7 @@ async def execute_merge(
     tenant_id: str,
     internal_location_id: str,
     preserve_alternates: bool = False,
+    field_preservation_mappings: Optional[List[Dict[str, str]]] = None,
 ) -> Dict[str, Any]:
     """
     Execute a merge operation:
@@ -300,10 +301,18 @@ async def execute_merge(
 
     # Apply field preservation if enabled
     if preserve_alternates:
-        preservation = rule_merge_settings.get("field_preservation", {})
+        # Use per-merge mappings if provided, otherwise fall back to rule settings
+        if field_preservation_mappings:
+            mappings = field_preservation_mappings
+            logger.info(f"Using per-merge field preservation mappings: {mappings}")
+        else:
+            preservation = rule_merge_settings.get("field_preservation", {})
+            if preservation.get("enabled"):
+                mappings = preservation.get("mappings", [])
+            else:
+                mappings = []
 
-        if preservation.get("enabled"):
-            mappings = preservation.get("mappings", [])
+        if mappings:
             custom_fields = merged_fields.get("customFields", [])
             if not isinstance(custom_fields, list):
                 custom_fields = []

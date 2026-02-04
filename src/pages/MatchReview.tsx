@@ -1,17 +1,29 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Star, AlertTriangle, Loader2, Save, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowLeft, Star, AlertTriangle, Loader2, Save, ChevronDown, ChevronUp, Plus, Trash2, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
-import { api } from "@/lib/api";
+import { api, FieldPreservationMapping, ObjectField } from "@/lib/api";
 import { computeStrategySelections, StrategyId } from "@/lib/merge-strategies";
+import { LockedFeatureOverlay, UpgradeBadge } from "@/components/ui/upgrade-badge";
+import { isTypeCompatible, getIncompatibilityReason } from "@/lib/field-compatibility";
 
 // Standard fields always shown
 const STANDARD_FIELDS = [
@@ -69,9 +81,12 @@ const getRuleFields = (rule?: { match_fields?: Array<{ field: string }>; merge_s
 export default function MatchReview() {
   const { id: ruleId, matchId } = useParams();
   const navigate = useNavigate();
-  const { locationId, isLoading: authLoading } = useLocation();
+  const { locationId, isLoading: authLoading, plan } = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Tier check for field preservation
+  const hasFieldPreservation = plan === "pro" || plan === "agency";
 
   // Fetch match details
   const { data: match, isLoading: matchLoading } = useQuery({
@@ -87,14 +102,47 @@ export default function MatchReview() {
     enabled: !!locationId && !!ruleId,
   });
 
-  // Check if field preservation is enabled in the rule's merge_settings
-  const preservationEnabled = rule?.merge_settings?.field_preservation?.enabled
-    && (rule?.merge_settings?.field_preservation?.mappings?.length || 0) > 0;
+  // Fetch available fields for field preservation dropdowns
+  const { data: fieldOptions = [] } = useQuery<ObjectField[]>({
+    queryKey: ["fields", "contacts", locationId],
+    queryFn: () => api.getObjectFields("contacts"),
+    enabled: !!locationId && hasFieldPreservation,
+  });
+
+  // Filter out synthetic fields (like emailDomain) that aren't real GHL fields
+  const preservableFields = useMemo(() =>
+    fieldOptions.filter(f => f.id !== 'emailDomain'),
+    [fieldOptions]
+  );
+
+  // State for editable field preservation mappings
+  const [fieldPreservationMappings, setFieldPreservationMappings] = useState<FieldPreservationMapping[]>([]);
+  const [mappingsInitialized, setMappingsInitialized] = useState(false);
+
+  // Initialize field preservation mappings from rule (once)
+  useEffect(() => {
+    if (rule?.merge_settings?.field_preservation?.mappings && !mappingsInitialized) {
+      setFieldPreservationMappings(rule.merge_settings.field_preservation.mappings);
+      setMappingsInitialized(true);
+    }
+  }, [rule, mappingsInitialized]);
 
   // Merge mutation
   const mergeMutation = useMutation({
-    mutationFn: async (data: { matchId: string; masterId: string; selections: Record<string, string>; preserveAlternates: boolean }) => {
-      return api.executeMerge(data.matchId, data.masterId, data.selections, data.preserveAlternates);
+    mutationFn: async (data: {
+      matchId: string;
+      masterId: string;
+      selections: Record<string, string>;
+      preserveAlternates: boolean;
+      fieldPreservationMappings?: FieldPreservationMapping[];
+    }) => {
+      return api.executeMerge(
+        data.matchId,
+        data.masterId,
+        data.selections,
+        data.preserveAlternates,
+        data.fieldPreservationMappings
+      );
     },
     onSuccess: () => {
       toast({
@@ -189,7 +237,6 @@ export default function MatchReview() {
   const [selections, setSelections] = useState<Record<string, string>>({});
   const [hideWarning, setHideWarning] = useState(false);
   const [masterId, setMasterId] = useState<string>("a");
-  const [preserveAlternates, setPreserveAlternates] = useState(false);
 
   // Initialize selections when match loads
   if (match && Object.keys(selections).length === 0) {
@@ -223,13 +270,34 @@ export default function MatchReview() {
     return formatted || "(empty)";
   };
 
+  // Compute preservation preview based on current mappings and master selection
+  const preservationPreview = useMemo(() => {
+    if (fieldPreservationMappings.length === 0) return [];
+
+    const loserRecord = masterId === "a" ? recordB : recordA;
+
+    return fieldPreservationMappings
+      .filter(m => m.source && m.target) // only complete mappings
+      .map(mapping => {
+        const sourceField = preservableFields.find(f => f.id === mapping.source);
+        const targetField = preservableFields.find(f => f.id === mapping.target);
+        return {
+          sourceLabel: sourceField?.name || getFieldLabel(mapping.source),
+          targetLabel: targetField?.name || getFieldLabel(mapping.target),
+          value: formatDisplayValue(loserRecord[mapping.source]),
+        };
+      });
+  }, [fieldPreservationMappings, masterId, recordA, recordB, preservableFields, getFieldLabel, formatDisplayValue]);
+
   const handleMerge = () => {
     const actualMasterId = masterId === "a" ? recordAId : recordBId;
+    const hasValidMappings = hasFieldPreservation && fieldPreservationMappings.some(m => m.source && m.target);
     mergeMutation.mutate({
       matchId: matchId!,
       masterId: actualMasterId,
       selections,
-      preserveAlternates: preservationEnabled && preserveAlternates,
+      preserveAlternates: hasValidMappings,
+      fieldPreservationMappings: hasValidMappings ? fieldPreservationMappings.filter(m => m.source && m.target) : undefined,
     });
   };
 
@@ -491,34 +559,204 @@ export default function MatchReview() {
         </CardContent>
       </Card>
 
-      {/* Field Preservation Option (only show if configured in settings) */}
-      {preservationEnabled && (
-        <Card className="border-primary/30 bg-primary/5">
-          <CardContent className="pt-6">
-            <div className="flex gap-3">
-              <Save className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
-              <div className="space-y-3">
-                <div>
-                  <h3 className="font-semibold text-foreground">Preserve Alternate Values</h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Save non-selected email/phone values to custom fields.
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="preserve-alternates"
-                    checked={preserveAlternates}
-                    onCheckedChange={(checked) => setPreserveAlternates(checked as boolean)}
-                  />
-                  <label htmlFor="preserve-alternates" className="text-sm cursor-pointer">
-                    Save alternate values to custom fields
-                  </label>
-                </div>
-              </div>
+      {/* Field Preservation Configuration */}
+      <Card className="border-primary/30">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Save className="h-5 w-5 text-primary" />
+              <CardTitle className="text-base font-semibold">Field Preservation</CardTitle>
             </div>
-          </CardContent>
-        </Card>
-      )}
+            {!hasFieldPreservation && (
+              <UpgradeBadge tier="pro" feature="field_preservation" />
+            )}
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Save values from the duplicate record to custom fields on the master.
+          </p>
+        </CardHeader>
+        <CardContent className="pt-2">
+          {hasFieldPreservation ? (
+            <div className="space-y-4">
+              {/* Mapping list */}
+              {fieldPreservationMappings.map((mapping, idx) => {
+                // Get source field's data type for compatibility check
+                const sourceField = preservableFields.find(f => f.id === mapping.source);
+                const sourceType = sourceField?.dataType || 'TEXT';
+
+                // Filter targets by compatibility
+                const allTargetFields = preservableFields.filter(f => f.id !== mapping.source);
+                const standardFields = allTargetFields.filter(f => !f.isCustom);
+                const customFields = allTargetFields.filter(f => f.isCustom);
+
+                const compatibleStandard = standardFields.filter(f =>
+                  isTypeCompatible(sourceType, f.dataType || 'TEXT')
+                );
+                const incompatibleStandard = standardFields.filter(f =>
+                  !isTypeCompatible(sourceType, f.dataType || 'TEXT')
+                );
+                const compatibleCustom = customFields.filter(f =>
+                  isTypeCompatible(sourceType, f.dataType || 'TEXT')
+                );
+                const incompatibleCustom = customFields.filter(f =>
+                  !isTypeCompatible(sourceType, f.dataType || 'TEXT')
+                );
+
+                return (
+                  <div key={idx} className="flex items-center gap-2">
+                    {/* Source Select */}
+                    <Select
+                      value={mapping.source}
+                      onValueChange={(val) => {
+                        const updated = [...fieldPreservationMappings];
+                        updated[idx] = { ...updated[idx], source: val };
+                        // Clear target if now incompatible or same as source
+                        const newSourceField = preservableFields.find(f => f.id === val);
+                        const newSourceType = newSourceField?.dataType || 'TEXT';
+                        const currentTarget = preservableFields.find(f => f.id === mapping.target);
+                        if (currentTarget && (mapping.target === val || !isTypeCompatible(newSourceType, currentTarget.dataType || 'TEXT'))) {
+                          updated[idx].target = '';
+                        }
+                        setFieldPreservationMappings(updated);
+                      }}
+                    >
+                      <SelectTrigger className="flex-1 bg-background">
+                        <SelectValue placeholder="Source field..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {preservableFields.filter(f => !f.isCustom).map((opt) => (
+                          <SelectItem key={opt.id} value={opt.id}>
+                            {opt.name}
+                          </SelectItem>
+                        ))}
+                        {preservableFields.some(f => f.isCustom) && (
+                          <>
+                            <SelectSeparator />
+                            <SelectGroup>
+                              <SelectLabel>Custom Fields</SelectLabel>
+                              {preservableFields.filter(f => f.isCustom).map((opt) => (
+                                <SelectItem key={opt.id} value={opt.id}>
+                                  {opt.name}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          </>
+                        )}
+                      </SelectContent>
+                    </Select>
+
+                    <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+
+                    {/* Target Select */}
+                    <Select
+                      value={mapping.target}
+                      onValueChange={(val) => {
+                        const updated = [...fieldPreservationMappings];
+                        updated[idx] = { ...updated[idx], target: val };
+                        setFieldPreservationMappings(updated);
+                      }}
+                    >
+                      <SelectTrigger className="flex-1 bg-background">
+                        <SelectValue placeholder="Target field..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {/* Standard Fields - Compatible */}
+                        {compatibleStandard.map((opt) => (
+                          <SelectItem key={opt.id} value={opt.id}>
+                            {opt.name}
+                          </SelectItem>
+                        ))}
+
+                        {/* Custom Fields - Compatible */}
+                        {compatibleCustom.length > 0 && (
+                          <>
+                            <SelectSeparator />
+                            <SelectGroup>
+                              <SelectLabel>Custom Fields</SelectLabel>
+                              {compatibleCustom.map((opt) => (
+                                <SelectItem key={opt.id} value={opt.id}>
+                                  {opt.name}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          </>
+                        )}
+
+                        {/* Incompatible Fields */}
+                        {(incompatibleStandard.length > 0 || incompatibleCustom.length > 0) && (
+                          <>
+                            <SelectSeparator />
+                            <SelectItem value="_sep_" disabled className="text-muted-foreground text-xs">
+                              ── Incompatible types ──
+                            </SelectItem>
+                            {incompatibleStandard.map((opt) => (
+                              <SelectItem key={opt.id} value={opt.id} disabled className="text-muted-foreground">
+                                {opt.name} - {getIncompatibilityReason(opt.dataType)}
+                              </SelectItem>
+                            ))}
+                            {incompatibleCustom.map((opt) => (
+                              <SelectItem key={opt.id} value={opt.id} disabled className="text-muted-foreground">
+                                {opt.name} ({opt.dataType}) - {getIncompatibilityReason(opt.dataType)}
+                              </SelectItem>
+                            ))}
+                          </>
+                        )}
+                      </SelectContent>
+                    </Select>
+
+                    {/* Remove button */}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="shrink-0"
+                      onClick={() => {
+                        setFieldPreservationMappings(fieldPreservationMappings.filter((_, i) => i !== idx));
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  </div>
+                );
+              })}
+
+              {/* Add mapping button */}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setFieldPreservationMappings([...fieldPreservationMappings, { source: "", target: "" }])}
+              >
+                <Plus className="mr-1 h-4 w-4" />
+                Add field mapping
+              </Button>
+
+              {/* Preview of what will be preserved */}
+              {preservationPreview.length > 0 && (
+                <div className="mt-4 p-3 bg-muted/30 rounded-md">
+                  <p className="text-sm font-medium mb-2">Values to be preserved from duplicate:</p>
+                  <div className="space-y-1 text-sm">
+                    {preservationPreview.map((item, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <span className="text-muted-foreground">{item.sourceLabel}:</span>
+                        <span className="font-medium">{item.value || <span className="italic text-muted-foreground">(empty)</span>}</span>
+                        <span className="text-muted-foreground">→</span>
+                        <span>{item.targetLabel}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <LockedFeatureOverlay tier="pro" feature="field_preservation">
+              <div className="h-24 flex items-center justify-center text-muted-foreground">
+                Configure which values to preserve from duplicate records
+              </div>
+            </LockedFeatureOverlay>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Merge Warning */}
       <Card className="border-warning/30 bg-warning/5">

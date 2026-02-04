@@ -17,11 +17,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+class FieldPreservationMapping(BaseModel):
+    source: str
+    target: str
+
+
 class MergeRequest(BaseModel):
     match_id: str
     master_record_id: str
     field_selections: Dict[str, str] = {}  # field -> "a" or "b"; empty = auto-compute from strategy
     preserve_alternates: bool = False  # Save alternate values to custom fields
+    field_preservation_mappings: Optional[List[FieldPreservationMapping]] = None  # Per-merge override of rule mappings
 
 
 @router.get("/stats")
@@ -205,6 +211,11 @@ async def execute_merge_route(
 ):
     """Execute a merge operation."""
     try:
+        # Convert field_preservation_mappings to list of dicts if provided
+        mappings_dicts = None
+        if body.field_preservation_mappings:
+            mappings_dicts = [{"source": m.source, "target": m.target} for m in body.field_preservation_mappings]
+
         result = await execute_merge(
             match_id=body.match_id,
             master_record_id=body.master_record_id,
@@ -214,6 +225,7 @@ async def execute_merge_route(
             tenant_id=ctx.tenant_id,
             internal_location_id=ctx.location_id,
             preserve_alternates=body.preserve_alternates,
+            field_preservation_mappings=mappings_dicts,
         )
         return result
     except ValueError as e:

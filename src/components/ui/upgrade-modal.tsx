@@ -23,7 +23,8 @@ export type FeatureKey =
   | "scheduled_scans"
   | "auto_merge"
   | "white_label"
-  | "unlimited_merges";
+  | "unlimited_merges"
+  | "field_preservation";
 
 interface PlanConfig {
   name: string;
@@ -108,10 +109,11 @@ const FEATURE_TIER_MAP: Record<FeatureKey, "free" | "starter" | "pro" | "agency"
   custom_objects: "pro",
   company_matching: "starter",
   opportunities_matching: "pro",
-  scheduled_scans: "pro",
+  scheduled_scans: "starter",
   auto_merge: "pro",
   white_label: "agency",
   unlimited_merges: "starter",
+  field_preservation: "pro",
 };
 
 interface UpgradeModalProps {

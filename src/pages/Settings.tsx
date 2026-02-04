@@ -37,12 +37,31 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
 import { useLocation } from "@/contexts/LocationContext";
+import { LockedFeatureOverlay } from "@/components/ui/upgrade-badge";
+import { isTypeCompatible, getIncompatibilityReason } from "@/lib/field-compatibility";
 
-// Source fields that can be preserved
-const PRESERVABLE_FIELDS = [
-  { value: 'email', label: 'Email' },
-  { value: 'phone', label: 'Phone' },
-  { value: 'address1', label: 'Address' },
+// All standard contact fields that can be preserved
+// Organized by category for better UX
+const STANDARD_CONTACT_FIELDS = [
+  // Core identity
+  { value: 'firstName', label: 'First Name', dataType: 'TEXT' },
+  { value: 'lastName', label: 'Last Name', dataType: 'TEXT' },
+  { value: 'name', label: 'Full Name', dataType: 'TEXT' },
+  { value: 'email', label: 'Email', dataType: 'EMAIL' },
+  { value: 'phone', label: 'Phone', dataType: 'PHONE' },
+  // Address
+  { value: 'address1', label: 'Address', dataType: 'TEXT' },
+  { value: 'city', label: 'City', dataType: 'TEXT' },
+  { value: 'state', label: 'State', dataType: 'TEXT' },
+  { value: 'postalCode', label: 'Postal Code', dataType: 'TEXT' },
+  { value: 'country', label: 'Country', dataType: 'TEXT' },
+  // Business
+  { value: 'companyName', label: 'Company Name', dataType: 'TEXT' },
+  { value: 'website', label: 'Website', dataType: 'TEXT' },
+  // Other
+  { value: 'timezone', label: 'Timezone', dataType: 'TEXT' },
+  { value: 'source', label: 'Source', dataType: 'TEXT' },
+  { value: 'dateOfBirth', label: 'Date of Birth', dataType: 'DATE' },
 ];
 
 export default function Settings() {
@@ -423,7 +442,7 @@ export default function Settings() {
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
-          ) : (
+          ) : isProPlan ? (
             <>
               {/* Enable Field Preservation */}
               <div className="flex items-center space-x-2">
@@ -455,17 +474,39 @@ export default function Settings() {
                       </p>
                     ) : (
                       <div className="space-y-2">
-                        {fieldPreservation.mappings.map((mapping, index) => (
+                        {fieldPreservation.mappings.map((mapping, index) => {
+                          // Get the source field's data type for compatibility check
+                          const sourceField = STANDARD_CONTACT_FIELDS.find(f => f.value === mapping.source);
+                          const sourceType = sourceField?.dataType || 'TEXT';
+
+                          // Filter compatible target fields
+                          const compatibleTargets = customFields.filter((f: CustomField) =>
+                            isTypeCompatible(sourceType, f.dataType || 'TEXT')
+                          );
+                          const incompatibleTargets = customFields.filter((f: CustomField) =>
+                            !isTypeCompatible(sourceType, f.dataType || 'TEXT')
+                          );
+
+                          return (
                           <div key={index} className="flex items-center gap-2">
                             <Select
                               value={mapping.source}
-                              onValueChange={(value) => handleUpdateMapping(index, 'source', value)}
+                              onValueChange={(value) => {
+                                handleUpdateMapping(index, 'source', value);
+                                // Clear target if it's now incompatible
+                                const newSourceField = STANDARD_CONTACT_FIELDS.find(f => f.value === value);
+                                const newSourceType = newSourceField?.dataType || 'TEXT';
+                                const currentTarget = customFields.find((f: CustomField) => f.name === mapping.target);
+                                if (currentTarget && !isTypeCompatible(newSourceType, currentTarget.dataType || 'TEXT')) {
+                                  handleUpdateMapping(index, 'target', '');
+                                }
+                              }}
                             >
-                              <SelectTrigger className="w-[140px]">
+                              <SelectTrigger className="w-[160px]">
                                 <SelectValue placeholder="Source field" />
                               </SelectTrigger>
                               <SelectContent>
-                                {PRESERVABLE_FIELDS.map(f => (
+                                {STANDARD_CONTACT_FIELDS.map(f => (
                                   <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
                                 ))}
                               </SelectContent>
@@ -481,8 +522,21 @@ export default function Settings() {
                                 <SelectValue placeholder="Target custom field" />
                               </SelectTrigger>
                               <SelectContent>
-                                {customFields.map((f: CustomField) => (
-                                  <SelectItem key={f.id} value={f.name}>{f.name}</SelectItem>
+                                {compatibleTargets.map((f: CustomField) => (
+                                  <SelectItem key={f.id} value={f.name}>
+                                    {f.name}
+                                    <span className="text-muted-foreground text-xs ml-1">({f.dataType})</span>
+                                  </SelectItem>
+                                ))}
+                                {incompatibleTargets.length > 0 && compatibleTargets.length > 0 && (
+                                  <SelectItem value="" disabled className="text-muted-foreground text-xs">
+                                    ── Incompatible types ──
+                                  </SelectItem>
+                                )}
+                                {incompatibleTargets.map((f: CustomField) => (
+                                  <SelectItem key={f.id} value={f.name} disabled className="text-muted-foreground">
+                                    {f.name} ({f.dataType}) - {getIncompatibilityReason(f.dataType)}
+                                  </SelectItem>
                                 ))}
                                 {customFields.length === 0 && (
                                   <SelectItem value="" disabled>No custom fields found</SelectItem>
@@ -498,7 +552,8 @@ export default function Settings() {
                               <X className="h-4 w-4" />
                             </Button>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
 
@@ -567,6 +622,15 @@ export default function Settings() {
                 </Button>
               </div>
             </>
+          ) : (
+            <LockedFeatureOverlay tier="pro" feature="field_preservation">
+              <div className="space-y-4 py-4">
+                <p className="text-sm text-muted-foreground">
+                  Field preservation lets you save alternate contact values to custom fields during merges.
+                </p>
+                <div className="h-16" />
+              </div>
+            </LockedFeatureOverlay>
           )}
         </CardContent>
       </Card>
