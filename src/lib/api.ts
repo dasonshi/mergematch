@@ -294,6 +294,10 @@ class ApiClient {
     return this.fetch<DetailedMergeStats>(`/v1/merges/stats/detailed?days=${days}`);
   }
 
+  async getMergeQuota() {
+    return this.fetch<MergeQuota>('/v1/merges/quota');
+  }
+
   async getMerges(limit = 50, status?: string, ruleId?: string, offset = 0, search?: string, dateFrom?: string, dateTo?: string) {
     const params = new URLSearchParams({ limit: limit.toString(), offset: offset.toString() });
     if (status && status !== 'all') params.append('status', status);
@@ -656,6 +660,13 @@ export interface DetailedMergeStats {
     rolled_back: number;
   }>;
   success_rate: number;
+}
+
+export interface MergeQuota {
+  allowed: boolean;
+  used: number;
+  limit: number;
+  remaining: number;
 }
 
 export const api = new ApiClient();

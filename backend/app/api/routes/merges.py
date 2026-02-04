@@ -8,7 +8,7 @@ import logging
 
 from app.db.supabase import get_supabase
 from app.services.merge_service import execute_merge, rollback_merge
-from app.services.billing_service import check_merge_quota
+from app.services.billing_service import check_merge_quota, get_plan_features
 from app.core.security import AuthenticatedUser
 from app.core.deps import get_user, get_auth_context, AuthContext
 from app.core.rate_limit import limiter, RATE_LIMIT_MERGE
@@ -132,6 +132,17 @@ async def get_detailed_merge_stats(
             (stats["completed"] / stats["total"] * 100) if stats["total"] > 0 else 100, 1
         ),
     }
+
+
+@router.get("/quota")
+@limiter.limit("100/minute")
+async def get_merge_quota(
+    request: Request,
+    ctx: AuthContext = Depends(get_auth_context),
+):
+    """Get merge quota status for the current location."""
+    quota = await check_merge_quota(ctx.location_id, ctx.plan)
+    return quota
 
 
 @router.get("/")

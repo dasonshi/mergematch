@@ -24,6 +24,7 @@ import { useWarningPreferences } from "@/hooks/use-warning-preferences";
 import { api, FieldPreservationMapping, ObjectField } from "@/lib/api";
 import { computeStrategySelections, StrategyId } from "@/lib/merge-strategies";
 import { LockedFeatureOverlay, UpgradeBadge } from "@/components/ui/upgrade-badge";
+import { useUpgradeModal } from "@/components/ui/upgrade-modal";
 import { isTypeCompatible, getIncompatibilityReason } from "@/lib/field-compatibility";
 
 // Standard fields always shown
@@ -86,6 +87,7 @@ export default function MatchReview() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { preferences: warningPrefs } = useWarningPreferences();
+  const { openUpgradeModal } = useUpgradeModal();
 
   // Tier check for field preservation
   const hasFieldPreservation = plan === "pro" || plan === "agency";
@@ -102,6 +104,13 @@ export default function MatchReview() {
     queryKey: ["rule", ruleId, locationId],
     queryFn: () => api.getMatchRule(ruleId!),
     enabled: !!locationId && !!ruleId,
+  });
+
+  // Fetch merge quota for free tier limits
+  const { data: mergeQuota } = useQuery({
+    queryKey: ["mergeQuota", locationId],
+    queryFn: () => api.getMergeQuota(),
+    enabled: !!locationId,
   });
 
   // Fetch available fields for field preservation dropdowns
@@ -856,16 +865,30 @@ export default function MatchReview() {
         <Button variant="outline" asChild>
           <Link to={`/match-rules/${ruleId}`}>Cancel</Link>
         </Button>
-        <Button variant="success" onClick={handleMerge} disabled={mergeMutation.isPending}>
-          {mergeMutation.isPending ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Merging...
-            </>
-          ) : (
-            "Confirm Merge"
-          )}
-        </Button>
+        {mergeQuota && !mergeQuota.allowed ? (
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-muted-foreground">
+              Free plan limit reached ({mergeQuota.used}/{mergeQuota.limit} merges)
+            </span>
+            <Button
+              variant="success"
+              onClick={() => openUpgradeModal("unlimited_merges")}
+            >
+              Upgrade to Merge
+            </Button>
+          </div>
+        ) : (
+          <Button variant="success" onClick={handleMerge} disabled={mergeMutation.isPending}>
+            {mergeMutation.isPending ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Merging...
+              </>
+            ) : (
+              "Confirm Merge"
+            )}
+          </Button>
+        )}
       </div>
     </div>
   );
