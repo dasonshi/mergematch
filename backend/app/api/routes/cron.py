@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Header
 from datetime import datetime, timedelta
 from typing import Optional
 import logging
+import uuid
 
 from app.config import settings
 from app.db.supabase import get_supabase
@@ -184,6 +185,19 @@ async def process_scheduled_scans(
             })
             continue
 
+        # Create job execution record for this scheduled scan
+        job_id = str(uuid.uuid4())
+        job_data = {
+            "id": job_id,
+            "tenant_id": tenant_id,
+            "location_id": internal_location_id,
+            "rule_id": rule_id,
+            "status": "running",
+            "trigger_type": "scheduled",
+            "started_at": datetime.utcnow().isoformat(),
+        }
+        supabase.table("job_executions").insert(job_data).execute()
+
         # Run the scan
         try:
             result = await run_scan(
@@ -195,6 +209,16 @@ async def process_scheduled_scans(
                 limit=500,  # Higher limit for scheduled scans
             )
 
+            # Update job execution with results
+            supabase.table("job_executions").update({
+                "status": "completed",
+                "completed_at": datetime.utcnow().isoformat(),
+                "records_scanned": result.get("records_scanned", 0),
+                "matches_found": result.get("matches_found", 0),
+                "matches_stored": result.get("matches_stored", 0),
+                "auto_merged": result.get("auto_merged", 0),
+            }).eq("id", job_id).execute()
+
             # Update last_scan_at
             supabase.table("match_rules").update({
                 "last_scan_at": datetime.utcnow().isoformat()
@@ -203,6 +227,7 @@ async def process_scheduled_scans(
             processed.append({
                 "rule_id": rule_id,
                 "rule_name": rule_name,
+                "job_id": job_id,
                 "matches_found": result.get("matches_found", 0),
                 "records_scanned": result.get("records_scanned", 0),
             })
@@ -210,11 +235,20 @@ async def process_scheduled_scans(
             logger.info(f"Completed scheduled scan for rule '{rule_name}': {result}")
 
         except Exception as e:
+            # Update job execution with error
+            error_msg = str(e)[:500]
+            supabase.table("job_executions").update({
+                "status": "failed",
+                "completed_at": datetime.utcnow().isoformat(),
+                "error_message": error_msg,
+            }).eq("id", job_id).execute()
+
             logger.error(f"Scan failed for rule '{rule_name}': {e}")
             errors.append({
                 "rule_id": rule_id,
                 "rule_name": rule_name,
-                "error": str(e)
+                "job_id": job_id,
+                "error": error_msg
             })
 
     summary = {

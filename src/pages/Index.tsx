@@ -482,7 +482,18 @@ export default function Dashboard() {
     {
       header: "Record",
       accessor: (merge) => (
-        <span className="font-medium">{merge.master_record_name || 'Unknown'}</span>
+        merge.status !== 'failed' && locationId ? (
+          <a
+            href={`https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${merge.master_record_id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-foreground hover:text-primary hover:underline"
+          >
+            {merge.master_record_name || 'Unknown'}
+          </a>
+        ) : (
+          <span className="font-medium">{merge.master_record_name || 'Unknown'}</span>
+        )
       ),
     },
     {

@@ -377,12 +377,12 @@ export default function AllPendingMatches() {
               >
                 {bulkMergeProgress.inProgress ? (
                   <>
-                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
                     {bulkMergeProgress.current}/{bulkMergeProgress.total}
                   </>
                 ) : (
                   <>
-                    <Play className="mr-1.5 h-3.5 w-3.5" />
+                    <Play className="mr-1.5 h-4 w-4" />
                     Merge All
                   </>
                 )}
@@ -393,7 +393,7 @@ export default function AllPendingMatches() {
                   size="sm"
                   onClick={() => { abortMergeRef.current = true; }}
                 >
-                  <X className="h-3.5 w-3.5" />
+                  <X className="h-4 w-4" />
                 </Button>
               )}
             </>
@@ -425,12 +425,12 @@ export default function AllPendingMatches() {
           >
             {bulkMergeProgress.inProgress ? (
               <>
-                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
                 {bulkMergeProgress.current}/{bulkMergeProgress.total}
               </>
             ) : (
               <>
-                <Play className="mr-1.5 h-3.5 w-3.5" />
+                <Play className="mr-1.5 h-4 w-4" />
                 Merge Selected
               </>
             )}
@@ -441,7 +441,7 @@ export default function AllPendingMatches() {
               size="sm"
               onClick={() => { abortMergeRef.current = true; }}
             >
-              <X className="h-3.5 w-3.5" />
+              <X className="h-4 w-4" />
             </Button>
           )}
           {!bulkMergeProgress.inProgress && (

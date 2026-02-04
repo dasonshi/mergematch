@@ -8,7 +8,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
-from app.api.routes import auth, health, matches, rules, merges, webhooks, contacts, companies, fields, notifications, sync, cron, dedupe
+from app.api.routes import auth, health, matches, rules, merges, webhooks, contacts, companies, fields, notifications, sync, cron, dedupe, jobs
 from app.api.routes import settings as settings_routes
 from app.core.security import validate_security_config
 from app.core.rate_limit import limiter
@@ -114,8 +114,7 @@ app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 app.include_router(matches.router, prefix="/v1/matches", tags=["Matches"])
 app.include_router(rules.router, prefix="/v1/rules", tags=["Rules"])
 app.include_router(merges.router, prefix="/v1/merges", tags=["Merges"])
-# Jobs API is stub-only - disabled until implemented (see TODO.md)
-# app.include_router(jobs.router, prefix="/v1/jobs", tags=["Jobs"])
+app.include_router(jobs.router, prefix="/v1/jobs", tags=["Jobs"])
 app.include_router(webhooks.router, prefix="/webhooks", tags=["Webhooks"])
 app.include_router(contacts.router, prefix="/v1/contacts", tags=["Contacts"])
 app.include_router(companies.router, prefix="/v1/companies", tags=["Companies"])

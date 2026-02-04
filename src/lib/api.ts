@@ -229,6 +229,30 @@ class ApiClient {
     return this.fetch<{ id: string; is_active: boolean }>(`/v1/rules/${id}/toggle`, { method: 'PATCH' });
   }
 
+  async runRuleManually(id: string, limit?: number) {
+    const params = limit ? `?limit=${limit}` : '';
+    return this.fetch<{
+      job_id: string;
+      status: string;
+      matches_found: number;
+      records_scanned: number;
+      matches_stored: number;
+      auto_merged?: number;
+    }>(`/v1/rules/${id}/run${params}`, { method: 'POST' });
+  }
+
+  // Jobs
+  async getJobs(ruleId?: string, status?: string, limit = 20, offset = 0) {
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (ruleId) params.set('rule_id', ruleId);
+    if (status) params.set('status', status);
+    return this.fetch<{ data: JobExecution[]; total: number; limit: number; offset: number }>(`/v1/jobs/?${params}`);
+  }
+
+  async getJob(id: string) {
+    return this.fetch<JobExecution>(`/v1/jobs/${id}`);
+  }
+
   // Matches
   async getMatches(status?: string, ruleId?: string, limit?: number) {
     const params = new URLSearchParams();
@@ -454,6 +478,8 @@ export interface MatchRule {
   review_threshold: number;
   merge_strategy: string;
   schedule_frequency: string;
+  schedule_time?: string;  // HH:MM format (e.g., "06:00")
+  schedule_day?: string;   // Day of week (0-6) or day of month (1-28)
   is_active: boolean;
   last_scan_at?: string;
   last_merge_at?: string;
@@ -503,6 +529,24 @@ export interface Merge {
   duplicate_snapshot?: Record<string, unknown>;
   field_selections?: Record<string, string>;
   restored_record_id?: string;
+}
+
+export interface JobExecution {
+  id: string;
+  rule_id: string;
+  tenant_id?: string;
+  location_id?: string;
+  trigger_type: 'scheduled' | 'manual';
+  status: 'running' | 'completed' | 'failed';
+  started_at: string;
+  completed_at?: string;
+  records_scanned: number;
+  matches_found: number;
+  matches_stored: number;
+  auto_merged?: number;
+  error_message?: string;
+  created_at?: string;
+  match_rules?: { name: string };
 }
 
 export interface ObjectField {

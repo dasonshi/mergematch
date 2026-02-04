@@ -316,19 +316,19 @@ export default function History() {
       header: "Master Record",
       accessor: (item) => (
         <div className="flex items-center gap-2">
-          <span className="font-medium">
-            {item.master_record_name || `${item.master_record_id?.slice(0, 8)}...`}
-          </span>
-          {(item.status === "completed" || item.status === "rolled_back") && locationId && (
+          {(item.status === "completed" || item.status === "rolled_back") && locationId ? (
             <a
               href={getCrmContactUrl(locationId, item.master_record_id)}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-primary hover:text-primary/80"
-              title="View contact"
+              className="font-medium text-foreground hover:text-primary hover:underline"
             >
-              <ExternalLink className="h-4 w-4" />
+              {item.master_record_name || `${item.master_record_id?.slice(0, 8)}...`}
             </a>
+          ) : (
+            <span className="font-medium">
+              {item.master_record_name || `${item.master_record_id?.slice(0, 8)}...`}
+            </span>
           )}
         </div>
       ),

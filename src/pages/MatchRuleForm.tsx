@@ -370,6 +370,19 @@ export default function MatchRuleForm() {
       setStrategy(existingRule.merge_strategy || "standard");
       setFrequency(existingRule.schedule_frequency || "manual");
 
+      // Load schedule time and day fields
+      if (existingRule.schedule_time) {
+        setScheduleTime(existingRule.schedule_time);
+      }
+      if (existingRule.schedule_day) {
+        const freq = existingRule.schedule_frequency || "manual";
+        if (freq === "weekly" || freq === "biweekly") {
+          setScheduleDayOfWeek(existingRule.schedule_day);
+        } else if (freq === "monthly") {
+          setScheduleDayOfMonth(existingRule.schedule_day);
+        }
+      }
+
       // Load related records config from merge_settings
       const mergeSettings = existingRule.merge_settings;
       const relatedRecords = mergeSettings?.related_records;
@@ -538,6 +551,14 @@ export default function MatchRuleForm() {
       mergeSettings.related_records = relatedRecordsConfig;
     }
 
+    // Build schedule fields based on frequency
+    const scheduleTimeValue = frequency !== "manual" ? scheduleTime : undefined;
+    const scheduleDayValue = (frequency === "weekly" || frequency === "biweekly")
+      ? scheduleDayOfWeek
+      : frequency === "monthly"
+        ? scheduleDayOfMonth
+        : undefined;
+
     // Build the rule payload
     const rulePayload: Partial<MatchRule> = {
       name: ruleName,
@@ -551,6 +572,8 @@ export default function MatchRuleForm() {
       })),
       merge_strategy: strategy,
       schedule_frequency: frequency,
+      schedule_time: scheduleTimeValue,
+      schedule_day: scheduleDayValue,
       auto_merge_threshold: 95,
       review_threshold: 70,
       is_active: true,

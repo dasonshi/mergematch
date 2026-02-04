@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ResponsiveTable, ResponsiveTableContent } from "@/components/ui/responsive-table";
 import { MergeStatusBadge } from "@/components/ui/merge-status-badge";
+import { useLocation } from "@/contexts/LocationContext";
 
 interface Merge {
   id: string;
@@ -28,6 +29,12 @@ export function MergeHistoryCard({
   onRollback,
   isRollbackPending,
 }: MergeHistoryCardProps) {
+  const { locationId } = useLocation();
+
+  const getCrmContactUrl = (contactId: string) => {
+    return `https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${contactId}`;
+  };
+
   return (
     <Card className="overflow-hidden">
       <div className="flex items-center gap-2 p-4 border-b bg-muted/30">
@@ -58,7 +65,18 @@ export function MergeHistoryCard({
                   {mergeHistory.map((item) => (
                     <tr key={item.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
                       <td className="py-3 px-4 font-medium">
-                        {item.master_record_name || item.master_record_id?.slice(0, 8) + "..."}
+                        {item.status !== 'failed' && locationId && item.master_record_id ? (
+                          <a
+                            href={getCrmContactUrl(item.master_record_id)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-foreground hover:text-primary hover:underline"
+                          >
+                            {item.master_record_name || item.master_record_id?.slice(0, 8) + "..."}
+                          </a>
+                        ) : (
+                          item.master_record_name || item.master_record_id?.slice(0, 8) + "..."
+                        )}
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2">

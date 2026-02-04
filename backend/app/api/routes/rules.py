@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query, Header, Request, Depends
 from pydantic import BaseModel, Field
 from typing import List, Optional
+from datetime import datetime
 import uuid
 import logging
 
@@ -68,6 +69,8 @@ class MatchRuleCreate(BaseModel):
     review_threshold: float = 70.0
     merge_strategy: str = Field("standard", max_length=50)
     schedule_frequency: str = Field("manual", max_length=50)
+    schedule_time: Optional[str] = None  # HH:MM format (e.g., "06:00")
+    schedule_day: Optional[str] = None   # Day of week (0-6) or day of month (1-28)
     is_active: bool = True
     merge_settings: Optional[MergeSettings] = None
 
@@ -118,6 +121,8 @@ async def create_rule(
         "review_threshold": review_threshold,
         "merge_strategy": rule.merge_strategy,
         "schedule_frequency": rule.schedule_frequency,
+        "schedule_time": rule.schedule_time,
+        "schedule_day": rule.schedule_day,
         "is_active": rule.is_active,
         "merge_settings": rule.merge_settings.model_dump() if rule.merge_settings else {},
     }
@@ -174,6 +179,8 @@ async def update_rule(
         "review_threshold": review_threshold,
         "merge_strategy": rule.merge_strategy,
         "schedule_frequency": rule.schedule_frequency,
+        "schedule_time": rule.schedule_time,
+        "schedule_day": rule.schedule_day,
         "is_active": rule.is_active,
         "merge_settings": rule.merge_settings.model_dump() if rule.merge_settings else {},
     }
@@ -262,4 +269,92 @@ async def scan_rule(
         return result
     except Exception as e:
         logger.error(f"Scan failed for rule {rule_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Scan failed. Please try again.")
+
+
+@router.post("/{rule_id}/run")
+async def run_rule_manually(
+    rule_id: str,
+    ctx: AuthContext = Depends(get_auth_context),
+    limit: int = Query(None, description="Max records to scan (defaults based on plan)"),
+):
+    """
+    Manually trigger a duplicate scan for this rule with job tracking.
+    Creates a job_execution record to track progress and results.
+    """
+    supabase = get_supabase()
+
+    # Verify rule exists and belongs to this location
+    rule_result = supabase.table("match_rules").select("id, name").eq(
+        "id", rule_id
+    ).eq("location_id", ctx.location_id).single().execute()
+
+    if not rule_result.data:
+        raise HTTPException(status_code=404, detail="Rule not found")
+
+    # Plan-based scan limits
+    plan_limits = {
+        "free": 1000,
+        "starter": 99999,
+        "pro": 99999,
+        "agency": 99999,
+    }
+    max_limit = plan_limits.get(ctx.plan, 1000)
+    actual_limit = min(limit, max_limit) if limit else max_limit
+
+    # Create job execution record
+    job_id = str(uuid.uuid4())
+    job_data = {
+        "id": job_id,
+        "tenant_id": ctx.tenant_id,
+        "location_id": ctx.location_id,
+        "rule_id": rule_id,
+        "status": "running",
+        "trigger_type": "manual",
+        "started_at": datetime.utcnow().isoformat(),
+    }
+    supabase.table("job_executions").insert(job_data).execute()
+
+    try:
+        result = await run_scan(
+            ghl_location_id=ctx.ghl_location_id,
+            rule_id=rule_id,
+            access_token=ctx.access_token,
+            tenant_id=ctx.tenant_id,
+            internal_location_id=ctx.location_id,
+            limit=actual_limit,
+            plan=ctx.plan,
+        )
+
+        # Update job execution with results
+        supabase.table("job_executions").update({
+            "status": "completed",
+            "completed_at": datetime.utcnow().isoformat(),
+            "records_scanned": result.get("records_scanned", 0),
+            "matches_found": result.get("matches_found", 0),
+            "matches_stored": result.get("matches_stored", 0),
+            "auto_merged": result.get("auto_merged", 0),
+        }).eq("id", job_id).execute()
+
+        # Update last_scan_at on the rule
+        supabase.table("match_rules").update({
+            "last_scan_at": datetime.utcnow().isoformat()
+        }).eq("id", rule_id).execute()
+
+        return {
+            "job_id": job_id,
+            "status": "completed",
+            **result,
+        }
+
+    except Exception as e:
+        # Update job execution with error
+        error_msg = str(e)[:500]  # Truncate long error messages
+        supabase.table("job_executions").update({
+            "status": "failed",
+            "completed_at": datetime.utcnow().isoformat(),
+            "error_message": error_msg,
+        }).eq("id", job_id).execute()
+
+        logger.error(f"Manual scan failed for rule {rule_id}: {error_msg}")
         raise HTTPException(status_code=500, detail="Scan failed. Please try again.")

@@ -558,7 +558,7 @@ export default function MatchReview() {
                     <TableRow className="bg-primary/10">
                       <TableCell colSpan={4} className="py-2 text-xs font-semibold uppercase tracking-wide text-primary">
                         <div className="flex items-center gap-2">
-                          <Save className="h-3.5 w-3.5" />
+                          <Save className="h-4 w-4" />
                           Values to Preserve
                         </div>
                       </TableCell>
