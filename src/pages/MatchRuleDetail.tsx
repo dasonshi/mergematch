@@ -15,7 +15,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, Edit, Search, Play, Loader2, ChevronDown, ChevronUp, RotateCcw, X, Trash2, ArrowRight, CalendarClock, Lock, AlertCircle, RefreshCw } from "lucide-react";
+import { ArrowLeft, Edit, Search, Play, Loader2, ChevronDown, ChevronUp, X, Trash2, ArrowRight, AlertCircle, RefreshCw } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
@@ -28,7 +28,7 @@ import { MergeHistoryCard, RuleSummaryCard, getRecordName, getMatchFieldSubheadi
 export default function MatchRuleDetail() {
   const { id } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { locationId, isLoading: authLoading, lastWebhookAt, plan } = useLocation();
+  const { locationId, isLoading: authLoading, lastWebhookAt } = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [matchesExpanded, setMatchesExpanded] = useState(true);
@@ -492,25 +492,6 @@ export default function MatchRuleDetail() {
               <Search className="mr-1.5 h-4 w-4" />
             )}
             {scanMutation.isPending ? "Scanning..." : "Scan Now"}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={plan === 'free'}
-            asChild={plan !== 'free'}
-          >
-            {plan === 'free' ? (
-              <span className="flex items-center">
-                <Lock className="mr-1.5 h-3 w-3" />
-                <CalendarClock className="mr-1.5 h-4 w-4" />
-                Schedule
-              </span>
-            ) : (
-              <Link to={`/match-rules/${id}/edit`}>
-                <CalendarClock className="mr-1.5 h-4 w-4" />
-                Schedule
-              </Link>
-            )}
           </Button>
           <Button variant="outline" size="sm" asChild>
             <Link to={`/match-rules/${id}/edit`}>
