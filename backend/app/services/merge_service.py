@@ -324,25 +324,16 @@ async def execute_merge(
                 if not source_field or not target_field:
                     continue
 
-                # Get which record was selected for this field
-                selected = field_selections.get(source_field)
-                if not selected:
-                    continue
+                # Always preserve from the duplicate (loser) record that will be deleted
+                value_to_preserve = duplicate_data.get(source_field)
 
-                # Get the NON-selected value (the alternate)
-                if selected == "a":
-                    alternate_value = record_b_data.get(source_field)
-                else:
-                    alternate_value = record_a_data.get(source_field)
-
-                # Only preserve if there's an alternate value that differs from selected
-                selected_value = merged_fields.get(source_field)
-                if alternate_value and alternate_value != selected_value:
+                # Only preserve if there's a non-empty value
+                if value_to_preserve:
                     custom_fields.append({
                         "key": target_field,
-                        "field_value": alternate_value
+                        "field_value": value_to_preserve
                     })
-                    logger.info(f"Preserving alternate {source_field} value '{alternate_value}' to custom field '{target_field}'")
+                    logger.info(f"Preserving {source_field} value '{value_to_preserve}' from duplicate to custom field '{target_field}'")
 
             if custom_fields:
                 merged_fields["customFields"] = custom_fields
