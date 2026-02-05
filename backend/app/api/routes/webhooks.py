@@ -50,6 +50,7 @@ _DELETE_EVENTS = {
 _TRACKING_ONLY_EVENTS = {
     "NoteCreate", "NoteUpdate", "NoteDelete",
     "TaskCreate", "TaskDelete", "TaskComplete",
+    "RelationCreate", "RelationDelete",
 }
 
 # Map event types to their source_object for auto-scan
