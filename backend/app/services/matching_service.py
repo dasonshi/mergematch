@@ -4,6 +4,7 @@ Matching engine for duplicate detection.
 from typing import List, Dict, Any, Optional
 from difflib import SequenceMatcher
 import re
+import unicodedata
 import uuid
 
 from app.core.ghl.client import GHLClient
@@ -31,6 +32,12 @@ def get_email_domain(email: str) -> str:
     return email.split("@")[1].lower()
 
 
+def strip_accents(s: str) -> str:
+    """Remove diacritics/accents from a string (e.g. José → Jose, Muñoz → Munoz)."""
+    nfkd = unicodedata.normalize("NFKD", s)
+    return "".join(c for c in nfkd if not unicodedata.combining(c))
+
+
 def fuzzy_match(s1: str, s2: str, threshold: float = 0.85) -> tuple[bool, float]:
     """
     Fuzzy string matching using SequenceMatcher.
@@ -39,10 +46,10 @@ def fuzzy_match(s1: str, s2: str, threshold: float = 0.85) -> tuple[bool, float]
     if not s1 or not s2:
         return False, 0.0
 
-    s1_lower = s1.lower().strip()
-    s2_lower = s2.lower().strip()
+    s1_norm = strip_accents(s1.lower().strip())
+    s2_norm = strip_accents(s2.lower().strip())
 
-    ratio = SequenceMatcher(None, s1_lower, s2_lower).ratio()
+    ratio = SequenceMatcher(None, s1_norm, s2_norm).ratio()
     return ratio >= threshold, ratio
 
 
