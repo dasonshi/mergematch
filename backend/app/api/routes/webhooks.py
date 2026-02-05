@@ -433,15 +433,40 @@ async def ghl_webhook(
     - Tracking webhooks: Note, Task, Association, Relation events
     """
     body = await request.body()
-
-    # SECURITY: Always verify signature (fail closed)
-    if not x_ghl_signature or not verify_webhook_signature(body, x_ghl_signature):
-        logger.warning("Webhook signature verification failed")
-        raise HTTPException(status_code=401, detail="Invalid signature")
-
     payload = await request.json()
     event_type = payload.get("type")
     data = payload.get("data", {})
+
+    # Determine if this is a marketplace lifecycle event
+    _MARKETPLACE_EVENTS = {"INSTALL", "UNINSTALL", "PLAN_CHANGE"}
+    is_marketplace_event = event_type in _MARKETPLACE_EVENTS
+
+    if is_marketplace_event:
+        # SECURITY: Marketplace events always require valid signature
+        if not x_ghl_signature or not verify_webhook_signature(body, x_ghl_signature):
+            logger.warning("Marketplace webhook signature verification failed")
+            raise HTTPException(status_code=401, detail="Invalid signature")
+    elif x_ghl_signature:
+        # Data webhook with signature — verify it
+        if not verify_webhook_signature(body, x_ghl_signature):
+            logger.warning("Data webhook signature verification failed")
+            raise HTTPException(status_code=401, detail="Invalid signature")
+    else:
+        # Data webhook without signature — validate locationId against our DB
+        location_id_check = payload.get("locationId") or (
+            data.get("locationId") if isinstance(data, dict) else None
+        )
+        if not location_id_check:
+            logger.warning("Data webhook missing both signature and locationId")
+            raise HTTPException(status_code=401, detail="Unverifiable webhook")
+
+        supabase = get_supabase()
+        loc_check = supabase.table("locations").select("id").eq(
+            "ghl_location_id", location_id_check
+        ).limit(1).execute()
+        if not loc_check.data:
+            logger.warning(f"Data webhook from unknown location: {location_id_check}")
+            raise HTTPException(status_code=401, detail="Unknown location")
 
     # SECURITY: Verify timestamp to prevent replay attacks
     timestamp = payload.get("timestamp") or payload.get("createdAt")
