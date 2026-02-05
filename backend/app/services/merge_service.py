@@ -9,6 +9,7 @@ import httpx
 
 from app.core.ghl.client import GHLClient
 from app.db.supabase import get_supabase
+from app.services.matching_service import compare_records
 
 logger = logging.getLogger(__name__)
 
@@ -231,11 +232,94 @@ async def execute_merge(
     if not match.data:
         raise ValueError("Match not found")
 
-    record_a_data = match.data.get("record_a_data", {})
-    record_b_data = match.data.get("record_b_data", {})
     record_a_id = match.data["record_a_id"]
     record_b_id = match.data["record_b_id"]
     rule_id = match.data.get("rule_id")
+
+    # ── Re-fetch both records from GHL as a safety net ────────────────────
+    # This ensures we merge using the latest data, not a stale snapshot.
+    try:
+        async with GHLClient(access_token, ghl_location_id) as prefetch_client:
+            fresh_a = None
+            fresh_b = None
+
+            try:
+                fresh_a_resp = await prefetch_client.get_contact(record_a_id)
+                fresh_a = fresh_a_resp.get("contact", fresh_a_resp)
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 404:
+                    # Contact A was deleted — mark pair stale and abort
+                    supabase.table("match_pairs").update({"status": "stale"}).eq("id", match_id).execute()
+                    raise ValueError(
+                        f"Contact {record_a_id} no longer exists in GHL. "
+                        "The match has been marked as stale."
+                    )
+                raise
+
+            try:
+                fresh_b_resp = await prefetch_client.get_contact(record_b_id)
+                fresh_b = fresh_b_resp.get("contact", fresh_b_resp)
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 404:
+                    supabase.table("match_pairs").update({"status": "stale"}).eq("id", match_id).execute()
+                    raise ValueError(
+                        f"Contact {record_b_id} no longer exists in GHL. "
+                        "The match has been marked as stale."
+                    )
+                raise
+
+            # Update snapshots in the match_pair with fresh data
+            if fresh_a and fresh_b:
+                supabase.table("match_pairs").update({
+                    "record_a_data": fresh_a,
+                    "record_b_data": fresh_b,
+                }).eq("id", match_id).execute()
+
+                record_a_data = fresh_a
+                record_b_data = fresh_b
+                logger.info(f"Refreshed both contact snapshots from GHL before merge")
+
+                # Re-validate the pair still matches
+                if rule_id:
+                    rule_check = supabase.table("match_rules").select(
+                        "match_fields, review_threshold"
+                    ).eq("id", rule_id).single().execute()
+
+                    if rule_check.data:
+                        match_fields = rule_check.data.get("match_fields", [])
+                        review_threshold = float(rule_check.data.get("review_threshold", 0.70)) * 100
+
+                        if match_fields:
+                            is_match, confidence, _ = compare_records(
+                                record_a_data, record_b_data, match_fields
+                            )
+                            if not is_match or confidence < review_threshold:
+                                supabase.table("match_pairs").update({
+                                    "status": "stale",
+                                    "confidence_score": confidence / 100,
+                                }).eq("id", match_id).execute()
+                                raise ValueError(
+                                    f"These contacts no longer match after re-validation "
+                                    f"(confidence: {confidence:.0f}%, threshold: {review_threshold:.0f}%). "
+                                    "The match has been marked as stale."
+                                )
+                            logger.info(
+                                f"Re-validated pair before merge: confidence={confidence:.1f}%"
+                            )
+            else:
+                # Couldn't fetch fresh data — proceed with stored snapshots
+                record_a_data = match.data.get("record_a_data", {})
+                record_b_data = match.data.get("record_b_data", {})
+                logger.warning("Could not refresh contact data from GHL, using stored snapshots")
+
+    except ValueError:
+        # Re-raise validation errors (stale, deleted, no longer matching)
+        raise
+    except Exception as e:
+        # Non-critical: if the pre-fetch fails for other reasons, proceed with snapshots
+        logger.warning(f"Pre-merge contact refresh failed, using stored snapshots: {e}")
+        record_a_data = match.data.get("record_a_data", {})
+        record_b_data = match.data.get("record_b_data", {})
 
     # Fetch rule settings once (used for strategy auto-compute, field preservation, and related records)
     rule_merge_settings: dict = {}
