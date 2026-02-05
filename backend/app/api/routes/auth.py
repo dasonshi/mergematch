@@ -111,7 +111,12 @@ async def callback(
     ghl_location_id = tokens.get("locationId")
     company_id = tokens.get("companyId", ghl_location_id)
 
+    # Log token response keys for debugging (never log actual tokens)
+    print(f"🔑 Token response keys: {list(tokens.keys())}")
+    print(f"🔑 locationId: {ghl_location_id}, companyId: {tokens.get('companyId')}, userType: {tokens.get('userType')}")
+
     if not access_token or not ghl_location_id:
+        print(f"❌ Invalid token response - access_token: {'present' if access_token else 'missing'}, locationId: {'present' if ghl_location_id else 'missing'}")
         frontend_url = f"{settings.FRONTEND_URL}?error=invalid_token_response"
         return RedirectResponse(url=frontend_url)
 
