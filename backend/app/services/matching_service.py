@@ -271,7 +271,6 @@ async def run_scan(
     access_token: str,
     tenant_id: str,
     internal_location_id: str,
-    limit: int = 1000,
     plan: str = "free",
 ) -> dict:
     """
@@ -298,16 +297,27 @@ async def run_scan(
     review_threshold = float(rule.get("review_threshold", 0.70)) * 100  # Convert to percentage
     auto_merge_threshold = float(rule.get("auto_merge_threshold", 0.95)) * 100
 
-    # Fetch records from GHL
+    # Fetch ALL records from GHL (paginated)
     records = []
     try:
         async with GHLClient(access_token, ghl_location_id) as client:
             if source_object == "contacts":
-                result = await client.get_contacts(limit=limit)
-                records = result.get("contacts", [])
+                start_after_id = None
+                while True:
+                    result = await client.get_contacts(limit=100, start_after_id=start_after_id)
+                    page_records = result.get("contacts", [])
+                    if not page_records:
+                        break
+                    records.extend(page_records)
+                    start_after_id = (
+                        result.get("meta", {}).get("startAfterId")
+                        or result.get("startAfterId")
+                    )
+                    if not start_after_id or len(page_records) < 100:
+                        break
             elif source_object == "companies":
-                result = await client.search_companies(limit=limit)
-                records = result.get("companies", [])
+                result = await client.get_companies()
+                records = result.get("businesses", [])
     except Exception as e:
         # Extract actual error from RetryError if present
         error_msg = str(e)

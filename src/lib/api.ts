@@ -221,8 +221,8 @@ class ApiClient {
     return this.fetch<{ deleted: boolean }>(`/v1/rules/${id}`, { method: 'DELETE' });
   }
 
-  async scanRule(id: string, limit = 100) {
-    return this.fetch<{ matches_found: number; records_scanned: number; matches_stored: number }>(`/v1/rules/${id}/scan?limit=${limit}`, { method: 'POST' });
+  async scanRule(id: string) {
+    return this.fetch<{ matches_found: number; records_scanned: number; matches_stored: number }>(`/v1/rules/${id}/scan`, { method: 'POST' });
   }
 
   async toggleRuleStatus(id: string) {

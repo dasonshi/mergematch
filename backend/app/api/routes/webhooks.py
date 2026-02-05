@@ -392,7 +392,6 @@ async def _trigger_webhook_scan(ghl_location_id: str, source_object: str):
                     access_token=access_token,
                     tenant_id=tenant_id,
                     internal_location_id=internal_location_id,
-                    limit=500,
                     plan=plan,
                 )
 

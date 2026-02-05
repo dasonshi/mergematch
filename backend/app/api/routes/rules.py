@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query, Header, Request, Depends
+from fastapi import APIRouter, HTTPException, Header, Request, Depends
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime
@@ -236,19 +236,8 @@ async def toggle_rule_status(
 async def scan_rule(
     rule_id: str,
     ctx: AuthContext = Depends(get_auth_context),
-    limit: int = Query(None, description="Max records to scan (defaults based on plan)"),
 ):
-    """Run a duplicate scan for this rule."""
-    # Plan-based scan limits
-    plan_limits = {
-        "free": 1000,
-        "starter": 99999,
-        "pro": 99999,
-        "agency": 99999,
-    }
-    max_limit = plan_limits.get(ctx.plan, 1000)
-    actual_limit = min(limit, max_limit) if limit else max_limit
-
+    """Run a duplicate scan for this rule. Scans all records."""
     try:
         result = await run_scan(
             ghl_location_id=ctx.ghl_location_id,
@@ -256,8 +245,7 @@ async def scan_rule(
             access_token=ctx.access_token,
             tenant_id=ctx.tenant_id,
             internal_location_id=ctx.location_id,
-            limit=actual_limit,
-            plan=ctx.plan,  # Pass plan for auto_approve logic
+            plan=ctx.plan,
         )
 
         # Update last_scan_at on the rule
@@ -276,7 +264,6 @@ async def scan_rule(
 async def run_rule_manually(
     rule_id: str,
     ctx: AuthContext = Depends(get_auth_context),
-    limit: int = Query(None, description="Max records to scan (defaults based on plan)"),
 ):
     """
     Manually trigger a duplicate scan for this rule with job tracking.
@@ -291,16 +278,6 @@ async def run_rule_manually(
 
     if not rule_result.data:
         raise HTTPException(status_code=404, detail="Rule not found")
-
-    # Plan-based scan limits
-    plan_limits = {
-        "free": 1000,
-        "starter": 99999,
-        "pro": 99999,
-        "agency": 99999,
-    }
-    max_limit = plan_limits.get(ctx.plan, 1000)
-    actual_limit = min(limit, max_limit) if limit else max_limit
 
     # Create job execution record
     job_id = str(uuid.uuid4())
@@ -322,7 +299,6 @@ async def run_rule_manually(
             access_token=ctx.access_token,
             tenant_id=ctx.tenant_id,
             internal_location_id=ctx.location_id,
-            limit=actual_limit,
             plan=ctx.plan,
         )
 

@@ -206,7 +206,6 @@ async def process_scheduled_scans(
                 access_token=tokens["access_token"],
                 tenant_id=tenant_id,
                 internal_location_id=internal_location_id,
-                limit=500,  # Higher limit for scheduled scans
             )
 
             # Update job execution with results
