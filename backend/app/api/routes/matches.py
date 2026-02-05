@@ -198,6 +198,58 @@ async def cleanup_stale_matches(
     return {"cleaned": cleaned}
 
 
+@router.get("/counts")
+@limiter.limit("100/minute")
+async def get_match_counts(
+    request: Request,
+    user: AuthenticatedUser = Depends(get_user),
+    status: Optional[str] = Query(None, description="Filter by status: pending, approved, rejected, merged"),
+):
+    """Get lightweight counts of matches - no row data returned."""
+    supabase = get_supabase()
+
+    # Get the true total count
+    count_query = (
+        supabase.table("match_pairs")
+        .select("*", count="exact")
+        .eq("location_id", user.location_id)
+    )
+    if status:
+        count_query = count_query.eq("status", status)
+    count_result = count_query.limit(1).execute()
+    total = count_result.count if count_result.count is not None else 0
+
+    # Count unique contacts and per-rule counts in one paginated scan
+    unique_contacts = set()
+    by_rule = {}
+    page_offset = 0
+    page_size = 1000
+    while True:
+        ids_query = (
+            supabase.table("match_pairs")
+            .select("record_a_id, record_b_id, rule_id")
+            .eq("location_id", user.location_id)
+        )
+        if status:
+            ids_query = ids_query.eq("status", status)
+        ids_result = ids_query.range(page_offset, page_offset + page_size - 1).execute()
+        for row in ids_result.data:
+            unique_contacts.add(row["record_a_id"])
+            unique_contacts.add(row["record_b_id"])
+            rule_id = row.get("rule_id")
+            if rule_id:
+                by_rule[rule_id] = by_rule.get(rule_id, 0) + 1
+        if len(ids_result.data) < page_size:
+            break
+        page_offset += page_size
+
+    return {
+        "total": total,
+        "unique_contacts": len(unique_contacts),
+        "by_rule": by_rule,
+    }
+
+
 # ==================== DYNAMIC ROUTES (must come after static routes) ====================
 
 @router.get("/{match_id}")

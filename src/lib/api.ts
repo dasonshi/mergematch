@@ -254,12 +254,19 @@ class ApiClient {
   }
 
   // Matches
-  async getMatches(status?: string, ruleId?: string, limit?: number) {
+  async getMatches(status?: string, ruleId?: string, limit?: number, offset?: number) {
     const params = new URLSearchParams();
     if (status) params.set('status', status);
     if (ruleId) params.set('rule_id', ruleId);
     if (limit) params.set('limit', limit.toString());
+    if (offset) params.set('offset', offset.toString());
     return this.fetch<{ data: MatchPair[]; total: number; unique_contacts?: number }>(`/v1/matches/?${params}`);
+  }
+
+  async getMatchCounts(status?: string) {
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    return this.fetch<{ total: number; unique_contacts: number; by_rule: Record<string, number> }>(`/v1/matches/counts?${params}`);
   }
 
   async getMatch(id: string) {

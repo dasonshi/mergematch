@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { DataTable, DataTableColumn } from "@/components/ui/data-table";
 import { ConfidenceBadge } from "@/components/ui/confidence-badge";
+import { TablePagination } from "@/components/ui/table-pagination";
 import { useLocation } from "@/contexts/LocationContext";
 import { useUpgradeModal } from "@/components/ui/upgrade-modal";
 import { useToast } from "@/hooks/use-toast";
@@ -57,6 +58,10 @@ export default function PendingMatches() {
     window.scrollTo(0, 0);
   }, []);
 
+  // Pagination state
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+
   // Filter panel state
   const [filtersOpen, setFiltersOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -67,6 +72,7 @@ export default function PendingMatches() {
   const [bulkMergeProgress, setBulkMergeProgress] = useState({ current: 0, total: 0, inProgress: false });
   const abortMergeRef = useRef(false);
   const [isValidating, setIsValidating] = useState(false);
+  const [mergeAllValidIds, setMergeAllValidIds] = useState<string[]>([]);
 
   // Fetch rule details
   const { data: rule, isLoading: ruleLoading, isError: ruleError, refetch: refetchRule } = useQuery({
@@ -75,10 +81,10 @@ export default function PendingMatches() {
     enabled: !!locationId && !!ruleId,
   });
 
-  // Fetch pending matches
+  // Fetch pending matches (paginated)
   const { data: matchesData, isLoading: matchesLoading, isError: matchesError, refetch: refetchMatches } = useQuery({
-    queryKey: ["matches", ruleId, locationId],
-    queryFn: () => api.getMatches("pending", ruleId, 1000),
+    queryKey: ["matches", ruleId, locationId, page, pageSize],
+    queryFn: () => api.getMatches("pending", ruleId, pageSize, (page - 1) * pageSize),
     enabled: !!locationId && !!ruleId,
     gcTime: 0,
   });
@@ -92,16 +98,6 @@ export default function PendingMatches() {
 
   const allMatches = matchesData?.data || [];
   const totalCount = matchesData?.total ?? allMatches.length;
-  const isTruncated = allMatches.length < totalCount;
-
-  // Stats
-  const stats = useMemo(() => {
-    const total = totalCount;
-    const highConfidence = allMatches.filter((m: MatchPair) => m.confidence_score >= 0.9).length;
-    const mediumConfidence = allMatches.filter((m: MatchPair) => m.confidence_score >= 0.8 && m.confidence_score < 0.9).length;
-    const lowConfidence = allMatches.filter((m: MatchPair) => m.confidence_score < 0.8).length;
-    return { total, highConfidence, mediumConfidence, lowConfidence };
-  }, [allMatches, totalCount]);
 
   // Filter matches
   const filteredMatches = useMemo(() => {
@@ -160,6 +156,7 @@ export default function PendingMatches() {
       }
 
       if (result.valid.length > 0) {
+        setMergeAllValidIds(result.valid);
         setShowMergeAllDialog(true);
       } else {
         toast({
@@ -180,30 +177,28 @@ export default function PendingMatches() {
     }
   };
 
-  // Bulk merge
-  const handleMergeAll = async () => {
+  // Bulk merge using validated match IDs (fetches each individually)
+  const handleMergeAll = async (matchIds: string[]) => {
     setShowMergeAllDialog(false);
-    const matches = filteredMatches;
-
-    if (matches.length === 0) return;
+    if (matchIds.length === 0) return;
 
     abortMergeRef.current = false;
-    setBulkMergeProgress({ current: 0, total: matches.length, inProgress: true });
+    setBulkMergeProgress({ current: 0, total: matchIds.length, inProgress: true });
 
     let successCount = 0;
     let failCount = 0;
 
-    for (let i = 0; i < matches.length; i++) {
+    for (let i = 0; i < matchIds.length; i++) {
       if (abortMergeRef.current) {
         toast({
           title: "Merge Aborted",
-          description: `Stopped after ${i} of ${matches.length} merges. ${successCount} succeeded, ${failCount} failed.`,
+          description: `Stopped after ${i} of ${matchIds.length} merges. ${successCount} succeeded, ${failCount} failed.`,
         });
         break;
       }
 
-      const match = matches[i];
       try {
+        const match = await api.getMatch(matchIds[i]);
         const strategy = (rule?.merge_strategy || "standard") as StrategyId;
         const overwriteBlanks = rule?.merge_settings?.overwrite_blanks ?? false;
         const recordA = match.record_a_data || {};
@@ -222,12 +217,13 @@ export default function PendingMatches() {
       } catch {
         failCount++;
       }
-      setBulkMergeProgress({ current: i + 1, total: matches.length, inProgress: true });
+      setBulkMergeProgress({ current: i + 1, total: matchIds.length, inProgress: true });
       queryClient.invalidateQueries({ queryKey: ["merges"] });
     }
 
     setBulkMergeProgress({ current: 0, total: 0, inProgress: false });
     queryClient.invalidateQueries({ queryKey: ["matches"] });
+    queryClient.invalidateQueries({ queryKey: ["match-counts"] });
 
     if (!abortMergeRef.current) {
       if (ruleId && rule) {
@@ -370,17 +366,8 @@ export default function PendingMatches() {
             Pending Matches
           </h1>
           <div className="hidden sm:flex items-center gap-2 text-sm text-muted-foreground border-l pl-3">
-            <span className="font-medium text-foreground">{stats.total}</span>
-            <span>total</span>
-            <span className="text-muted-foreground/50">•</span>
-            <span className="text-success font-medium">{stats.highConfidence}</span>
-            <span>high</span>
-            <span className="text-muted-foreground/50">•</span>
-            <span className="text-warning font-medium">{stats.mediumConfidence}</span>
-            <span>med</span>
-            <span className="text-muted-foreground/50">•</span>
-            <span className="text-destructive font-medium">{stats.lowConfidence}</span>
-            <span>low</span>
+            <span className="font-medium text-foreground">{totalCount.toLocaleString()}</span>
+            <span>total pending</span>
           </div>
         </div>
 
@@ -428,10 +415,7 @@ export default function PendingMatches() {
 
       {/* Mobile Stats Row */}
       <div className="flex sm:hidden flex-wrap items-center gap-2 text-xs">
-        <Badge variant="secondary">{stats.total} total</Badge>
-        <Badge variant="success-subtle">{stats.highConfidence} high</Badge>
-        <Badge variant="warning-subtle">{stats.mediumConfidence} med</Badge>
-        <Badge variant="destructive-subtle">{stats.lowConfidence} low</Badge>
+        <Badge variant="secondary">{totalCount.toLocaleString()} total pending</Badge>
       </div>
 
       {/* Filters */}
@@ -530,16 +514,14 @@ export default function PendingMatches() {
             }
           />
         </CardContent>
+        <TablePagination
+          page={page}
+          pageSize={pageSize}
+          total={totalCount}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
       </Card>
-
-      {/* Footer */}
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>
-          Showing {filteredMatches.length} of {totalCount.toLocaleString()} matches
-          {hasActiveFilters && " (filtered)"}
-          {isTruncated && " (viewing first 1,000)"}
-        </span>
-      </div>
 
       {/* Merge All Dialog */}
       <AlertDialog open={showMergeAllDialog} onOpenChange={setShowMergeAllDialog}>
@@ -547,25 +529,16 @@ export default function PendingMatches() {
           <AlertDialogHeader>
             <AlertDialogTitle>Merge All Pending Matches?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will merge <span className="font-semibold">{filteredMatches.length.toLocaleString()}</span> pending matches
-              {isTruncated && (
-                <> (first batch of <span className="font-semibold">{totalCount.toLocaleString()}</span> total)</>
-              )}
-              {" "}using the rule's configured merge strategy.
-              {isTruncated && (
-                <>
-                  <br /><br />
-                  <span className="text-amber-600">Run again after completion to process remaining matches.</span>
-                </>
-              )}
+              This will merge <span className="font-semibold">{mergeAllValidIds.length.toLocaleString()}</span> pending matches
+              using the rule's configured merge strategy.
               <br /><br />
               Snapshots will be saved for 30-day rollback.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleMergeAll}>
-              Merge All ({filteredMatches.length.toLocaleString()})
+            <AlertDialogAction onClick={() => handleMergeAll(mergeAllValidIds)}>
+              Merge All ({mergeAllValidIds.length.toLocaleString()})
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

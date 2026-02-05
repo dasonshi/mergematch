@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { DataTable, DataTableColumn } from "@/components/ui/data-table";
 import { ConfidenceBadge } from "@/components/ui/confidence-badge";
+import { TablePagination } from "@/components/ui/table-pagination";
 import { useLocation } from "@/contexts/LocationContext";
 import { useUpgradeModal } from "@/components/ui/upgrade-modal";
 import { useToast } from "@/hooks/use-toast";
@@ -43,6 +44,10 @@ export default function AllPendingMatches() {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
+
+  // Pagination state
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState("");
@@ -68,10 +73,10 @@ export default function AllPendingMatches() {
   const rules = rulesData?.data || [];
   const rulesMap = new Map(rules.map((r: MatchRule) => [r.id, r]));
 
-  // Fetch all pending matches
+  // Fetch all pending matches (paginated, with optional rule filter)
   const { data: matchesData, isLoading: matchesLoading, isError: matchesError, refetch: refetchMatches } = useQuery({
-    queryKey: ["matches", "pending", "all", locationId],
-    queryFn: () => api.getMatches("pending", undefined, 1000),
+    queryKey: ["matches", "pending", "all", locationId, ruleFilter, page, pageSize],
+    queryFn: () => api.getMatches("pending", ruleFilter !== "all" ? ruleFilter : undefined, pageSize, (page - 1) * pageSize),
     enabled: !!locationId,
     gcTime: 0,
   });
@@ -85,66 +90,46 @@ export default function AllPendingMatches() {
 
   const allMatches = matchesData?.data || [];
   const totalCount = matchesData?.total ?? allMatches.length;
-  const isTruncated = allMatches.length < totalCount;
 
-  // Clear selection when filters change
+  // Fetch counts for per-rule badge numbers in the filter dropdown
+  const { data: matchCountsData } = useQuery({
+    queryKey: ["match-counts", "pending", locationId],
+    queryFn: () => api.getMatchCounts("pending"),
+    enabled: !!locationId,
+    gcTime: 0,
+  });
+  const countsByRule = matchCountsData?.by_rule ?? {};
+
+  // Clear selection when filters change; reset to page 1
   useEffect(() => {
     setSelectedIds(new Set());
     setSelectAllMatching(false);
+    setPage(1);
   }, [searchQuery, ruleFilter]);
 
-  // Stats
-  const stats = useMemo(() => {
-    const total = totalCount;
-    const highConfidence = allMatches.filter((m: MatchPair) => m.confidence_score >= 0.9).length;
-    const mediumConfidence = allMatches.filter((m: MatchPair) => m.confidence_score >= 0.8 && m.confidence_score < 0.9).length;
-    const lowConfidence = allMatches.filter((m: MatchPair) => m.confidence_score < 0.8).length;
-
-    // Count by rule
-    const byRule = allMatches.reduce((acc: Record<string, number>, m: MatchPair) => {
-      const ruleId = m.rule_id;
-      if (ruleId) {
-        acc[ruleId] = (acc[ruleId] || 0) + 1;
-      }
-      return acc;
-    }, {});
-    const rulesWithMatches = Object.keys(byRule).length;
-
-    return { total, highConfidence, mediumConfidence, lowConfidence, rulesWithMatches, byRule };
-  }, [allMatches, totalCount]);
-
-  // Filter matches
+  // Filter matches (rule filter is now server-side; search is client-side on current page)
   const filteredMatches = useMemo(() => {
+    if (!searchQuery) return allMatches;
+    const query = searchQuery.toLowerCase();
     return allMatches.filter((item: MatchPair) => {
-      // Rule filter
-      if (ruleFilter !== "all" && item.rule_id !== ruleFilter) {
-        return false;
-      }
-
-      // Search filter
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        const recordA = item.record_a_data || {};
-        const recordB = item.record_b_data || {};
-        const rule = rulesMap.get(item.rule_id);
-        const matchesSearch =
-          recordA.firstName?.toLowerCase().includes(query) ||
-          recordA.lastName?.toLowerCase().includes(query) ||
-          recordA.email?.toLowerCase().includes(query) ||
-          recordA.phone?.toLowerCase().includes(query) ||
-          recordB.firstName?.toLowerCase().includes(query) ||
-          recordB.lastName?.toLowerCase().includes(query) ||
-          recordB.email?.toLowerCase().includes(query) ||
-          recordB.phone?.toLowerCase().includes(query) ||
-          rule?.name?.toLowerCase().includes(query);
-        if (!matchesSearch) return false;
-      }
-
-      return true;
+      const recordA = item.record_a_data || {};
+      const recordB = item.record_b_data || {};
+      const rule = rulesMap.get(item.rule_id);
+      return (
+        recordA.firstName?.toLowerCase().includes(query) ||
+        recordA.lastName?.toLowerCase().includes(query) ||
+        recordA.email?.toLowerCase().includes(query) ||
+        recordA.phone?.toLowerCase().includes(query) ||
+        recordB.firstName?.toLowerCase().includes(query) ||
+        recordB.lastName?.toLowerCase().includes(query) ||
+        recordB.email?.toLowerCase().includes(query) ||
+        recordB.phone?.toLowerCase().includes(query) ||
+        rule?.name?.toLowerCase().includes(query)
+      );
     });
-  }, [allMatches, searchQuery, ruleFilter, rulesMap]);
+  }, [allMatches, searchQuery, rulesMap]);
 
-  const hasActiveFilters = searchQuery || ruleFilter !== "all";
+  const hasActiveFilters = !!searchQuery || ruleFilter !== "all";
 
   const clearFilters = () => {
     setSearchQuery("");
@@ -208,6 +193,7 @@ export default function AllPendingMatches() {
     setSelectedIds(new Set());
     setSelectAllMatching(false);
     queryClient.invalidateQueries({ queryKey: ["matches"] });
+    queryClient.invalidateQueries({ queryKey: ["match-counts"] });
     queryClient.invalidateQueries({ queryKey: ["merges"] });
     queryClient.invalidateQueries({ queryKey: ["merge-stats"] });
 
@@ -220,9 +206,15 @@ export default function AllPendingMatches() {
     }
   };
 
-  const handleMergeAll = () => {
+  const handleMergeAll = async () => {
     setShowMergeAllDialog(false);
-    handleBulkMerge(filteredMatches);
+    // Fetch all pending matches for the merge (not just the current page)
+    const allResult = await api.getMatches(
+      "pending",
+      ruleFilter !== "all" ? ruleFilter : undefined,
+      10000
+    );
+    handleBulkMerge(allResult.data || []);
   };
 
   const handleMergeSelected = () => {
@@ -376,9 +368,9 @@ export default function AllPendingMatches() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Rules</SelectItem>
-              {rules.filter((r: MatchRule) => stats.byRule[r.id]).map((rule: MatchRule) => (
+              {rules.filter((r: MatchRule) => countsByRule[r.id]).map((rule: MatchRule) => (
                 <SelectItem key={rule.id} value={rule.id}>
-                  {rule.name} ({stats.byRule[rule.id]})
+                  {rule.name} ({countsByRule[rule.id]})
                 </SelectItem>
               ))}
             </SelectContent>
@@ -514,16 +506,14 @@ export default function AllPendingMatches() {
             }
           />
         </CardContent>
+        <TablePagination
+          page={page}
+          pageSize={pageSize}
+          total={totalCount}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
       </Card>
-
-      {/* Footer */}
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>
-          Showing {filteredMatches.length} of {totalCount.toLocaleString()} matches
-          {hasActiveFilters && " (filtered)"}
-          {isTruncated && " (viewing first 1,000)"}
-        </span>
-      </div>
 
       {/* Merge All Dialog */}
       <AlertDialog open={showMergeAllDialog} onOpenChange={setShowMergeAllDialog}>
@@ -531,18 +521,8 @@ export default function AllPendingMatches() {
           <AlertDialogHeader>
             <AlertDialogTitle>Merge All Pending Matches?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will merge <span className="font-semibold">{filteredMatches.length.toLocaleString()}</span> pending matches
-              {isTruncated && (
-                <> (first batch of <span className="font-semibold">{totalCount.toLocaleString()}</span> total)</>
-              )}
-              {" "}across <span className="font-semibold">{new Set(filteredMatches.map((m: MatchPair) => m.rule_id)).size}</span> rules
+              This will merge <span className="font-semibold">{totalCount.toLocaleString()}</span> pending matches
               using each rule's configured merge strategy.
-              {isTruncated && (
-                <>
-                  <br /><br />
-                  <span className="text-amber-600">Run again after completion to process remaining matches.</span>
-                </>
-              )}
               <br /><br />
               Snapshots will be saved for 30-day rollback.
             </AlertDialogDescription>
@@ -550,7 +530,7 @@ export default function AllPendingMatches() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleMergeAll}>
-              Merge All ({filteredMatches.length.toLocaleString()})
+              Merge All ({totalCount.toLocaleString()})
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

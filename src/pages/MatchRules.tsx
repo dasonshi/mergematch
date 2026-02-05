@@ -7,7 +7,7 @@ import { useState, useMemo } from "react";
 import { Plus, Loader2, Search } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, MatchRule, MatchPair } from "@/lib/api";
+import { api, MatchRule } from "@/lib/api";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 import { DataTable, DataTableColumn } from "@/components/ui/data-table";
@@ -42,10 +42,10 @@ export default function MatchRules() {
     staleTime: 0,
   });
 
-  // Fetch pending matches for counts
-  const { data: matchesData } = useQuery({
-    queryKey: ['matches', 'pending', locationId],
-    queryFn: () => api.getMatches('pending', undefined, 1000),
+  // Fetch pending match counts (lightweight)
+  const { data: matchCountsData } = useQuery({
+    queryKey: ['match-counts', 'pending', locationId],
+    queryFn: () => api.getMatchCounts('pending'),
     enabled: isAuthenticated && !!locationId,
     gcTime: 0,
     staleTime: 0,
@@ -83,6 +83,7 @@ export default function MatchRules() {
       });
       queryClient.invalidateQueries({ queryKey: ["rules"] });
       queryClient.invalidateQueries({ queryKey: ["matches"] });
+      queryClient.invalidateQueries({ queryKey: ["match-counts"] });
       setRuleToDelete(null);
     },
     onError: (error: Error) => {
@@ -93,8 +94,6 @@ export default function MatchRules() {
       });
     },
   });
-
-  const pendingMatches = matchesData?.data ?? [];
 
   // Sort rules by creation date (newest first) and filter by search
   const filteredRules = useMemo(() => {
@@ -113,14 +112,8 @@ export default function MatchRules() {
     );
   }, [rulesData?.data, searchQuery]);
 
-  // Count pending matches per rule
-  const pendingByRule = pendingMatches.reduce((acc: Record<string, number>, match: MatchPair) => {
-    const ruleId = match.rule_id;
-    if (ruleId) {
-      acc[ruleId] = (acc[ruleId] || 0) + 1;
-    }
-    return acc;
-  }, {});
+  // Per-rule pending counts from lightweight counts endpoint
+  const pendingByRule = matchCountsData?.by_rule ?? {};
 
   const formatTimestamp = (lastScanAt?: string) => {
     if (!lastScanAt) return 'Never';

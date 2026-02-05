@@ -104,6 +104,7 @@ export default function Dashboard() {
       queryClient.invalidateQueries({ queryKey: ["companies"] });
       queryClient.invalidateQueries({ queryKey: ["rules"] });
       queryClient.invalidateQueries({ queryKey: ["matches"] });
+      queryClient.invalidateQueries({ queryKey: ["match-counts"] });
       queryClient.invalidateQueries({ queryKey: ["merges"] });
       queryClient.invalidateQueries({ queryKey: ["merge-stats"] });
 
@@ -152,14 +153,23 @@ export default function Dashboard() {
     staleTime: 0,
   });
 
-  // Fetch pending matches (higher limit to get accurate per-rule counts)
-  const { data: matchesData, isLoading: matchesLoading, isError: matchesError, refetch: refetchMatches } = useQuery({
-    queryKey: ['matches', 'pending', locationId],
-    queryFn: () => api.getMatches('pending', undefined, 1000),
+  // Fetch pending match counts (lightweight - no row data)
+  const { data: matchCountsData, isLoading: matchCountsLoading, isError: matchCountsError, refetch: refetchMatchCounts } = useQuery({
+    queryKey: ['match-counts', 'pending', locationId],
+    queryFn: () => api.getMatchCounts('pending'),
     enabled: isAuthenticated && !!locationId,
-    gcTime: 0, // No cache - always fresh
-    staleTime: 0, // Always refetch
-    refetchOnMount: 'always', // Always refetch when component mounts
+    gcTime: 0,
+    staleTime: 0,
+    refetchOnMount: 'always',
+  });
+
+  // Small preview for the pending matches table (only 5 records)
+  const { data: matchesPreview, isLoading: matchesPreviewLoading } = useQuery({
+    queryKey: ['matches', 'pending', 'preview', locationId],
+    queryFn: () => api.getMatches('pending', undefined, 5),
+    enabled: isAuthenticated && !!locationId && (matchCountsData?.total ?? 0) > 0,
+    gcTime: 0,
+    staleTime: 0,
   });
 
   // Fetch merge stats
@@ -206,6 +216,7 @@ export default function Dashboard() {
       });
       queryClient.invalidateQueries({ queryKey: ["merges"] });
       queryClient.invalidateQueries({ queryKey: ["matches"] });
+      queryClient.invalidateQueries({ queryKey: ["match-counts"] });
     },
     onError: (error: Error) => {
       toast({
@@ -228,6 +239,7 @@ export default function Dashboard() {
       });
       queryClient.invalidateQueries({ queryKey: ["rules"] });
       queryClient.invalidateQueries({ queryKey: ["matches"] });
+      queryClient.invalidateQueries({ queryKey: ["match-counts"] });
       setRuleToDelete(null);
     },
     onError: (error: Error) => {
@@ -240,16 +252,16 @@ export default function Dashboard() {
   });
 
   // Combined loading flag so all stat cards transition together
-  const statsLoading = contactsLoading || companiesLoading || matchesLoading || mergeStatsLoading;
+  const statsLoading = contactsLoading || companiesLoading || matchCountsLoading || mergeStatsLoading;
 
   // Check if any critical query has errored
-  const hasQueryError = rulesError || matchesError;
+  const hasQueryError = rulesError || matchCountsError;
 
   const retryAllQueries = () => {
     refetchContacts();
     refetchCompanies();
     refetchRules();
-    refetchMatches();
+    refetchMatchCounts();
     refetchMergeStats();
     refetchMerges();
   };
@@ -265,8 +277,11 @@ export default function Dashboard() {
       return dateB - dateA; // Newest first
     });
   }, [rulesData?.data]);
-  const pendingMatches = matchesData?.data ?? [];
-  const pendingTotalCount = matchesData?.total ?? pendingMatches.length;
+  const pendingByRule = matchCountsData?.by_rule ?? {};
+  const pendingTotalCount = matchCountsData?.total ?? 0;
+  const duplicatesToReview = matchCountsData?.unique_contacts ?? pendingTotalCount;
+  const rulesWithPending = rules.filter((r: MatchRule) => (pendingByRule[r.id] ?? 0) > 0).length;
+  const pendingMatches = matchesPreview?.data ?? [];
   const recentMerges = mergesData?.data ?? [];
 
   // Build object counts dynamically for future custom objects
@@ -274,20 +289,6 @@ export default function Dashboard() {
     { name: "Contacts", count: contactsCount, icon: <Users className="h-4 w-4" /> },
     { name: "Companies", count: companiesCount, icon: <Building2 className="h-4 w-4" /> },
   ];
-
-  // Count pending matches per rule
-  const pendingByRule = pendingMatches.reduce((acc: Record<string, number>, match: MatchPair) => {
-    const ruleId = match.rule_id;
-    if (ruleId) {
-      acc[ruleId] = (acc[ruleId] || 0) + 1;
-    }
-    return acc;
-  }, {});
-
-  const rulesWithPending = rules.filter((r: MatchRule) => pendingByRule[r.id] > 0).length;
-
-  // Unique contacts involved in pending matches (each contact counted once regardless of how many rules matched it)
-  const duplicatesToReview = matchesData?.unique_contacts ?? pendingTotalCount;
 
   const formatLastScan = (lastScanAt?: string) => {
     if (!lastScanAt) return 'Never';
@@ -321,7 +322,7 @@ export default function Dashboard() {
     );
   }
 
-  if (hasQueryError && !rulesLoading && !matchesLoading) {
+  if (hasQueryError && !rulesLoading && !matchCountsLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
         <AlertCircle className="h-8 w-8 text-destructive" />
@@ -767,7 +768,7 @@ export default function Dashboard() {
         </Card>
 
         {/* Pending Matches Table */}
-        {pendingMatches.length > 0 && (
+        {pendingTotalCount > 0 && (
           <Card className="overflow-hidden hover:shadow-md transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-4">
               <div className="flex items-center gap-3">
@@ -780,10 +781,10 @@ export default function Dashboard() {
             </CardHeader>
             <CardContent className="p-0">
               <DataTable
-                data={pendingMatches.slice(0, 5)}
+                data={pendingMatches}
                 columns={pendingMatchesColumns}
                 keyField="id"
-                loading={matchesLoading}
+                loading={matchesPreviewLoading}
                 minWidth="700px"
               />
               {pendingTotalCount > 5 && (

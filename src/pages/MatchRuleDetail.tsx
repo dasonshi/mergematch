@@ -24,6 +24,7 @@ import { api, MatchPair } from "@/lib/api";
 import { computeStrategySelections, computeMasterId, StrategyId } from "@/lib/merge-strategies";
 import { ResponsiveTable, ResponsiveTableContent } from "@/components/ui/responsive-table";
 import { ConfidenceBadge } from "@/components/ui/confidence-badge";
+import { TablePagination } from "@/components/ui/table-pagination";
 import { MergeHistoryCard, RuleSummaryCard, getRecordName, getMatchFieldSubheading } from "@/components/rules";
 
 export default function MatchRuleDetail() {
@@ -39,6 +40,9 @@ export default function MatchRuleDetail() {
   const [showMergeAllDialog, setShowMergeAllDialog] = useState(false);
   const [bulkMergeProgress, setBulkMergeProgress] = useState({ current: 0, total: 0, inProgress: false });
   const abortMergeRef = useRef(false);
+  const [matchPage, setMatchPage] = useState(1);
+  const [matchPageSize, setMatchPageSize] = useState(50);
+  const [mergeAllValidIds, setMergeAllValidIds] = useState<string[]>([]);
 
   // Scroll to top on mount
   useEffect(() => {
@@ -58,12 +62,12 @@ export default function MatchRuleDetail() {
     enabled: !!locationId && !!id,
   });
 
-  // Fetch pending matches for this rule
+  // Fetch pending matches for this rule (paginated)
   const { data: matchesData, isLoading: matchesLoading, isError: matchesError, refetch: refetchMatches } = useQuery({
-    queryKey: ["matches", id, locationId],
-    queryFn: () => api.getMatches("pending", id),
+    queryKey: ["matches", id, locationId, matchPage, matchPageSize],
+    queryFn: () => api.getMatches("pending", id, matchPageSize, (matchPage - 1) * matchPageSize),
     enabled: !!locationId && !!id,
-    gcTime: 0, // No cache - always fresh
+    gcTime: 0,
   });
 
   // Error state
@@ -102,6 +106,7 @@ export default function MatchRuleDetail() {
       queryClient.invalidateQueries({ queryKey: ["matches"] });
       queryClient.invalidateQueries({ queryKey: ["matches", "pending"] });
       queryClient.invalidateQueries({ queryKey: ["matches", id] });
+      queryClient.invalidateQueries({ queryKey: ["match-counts"] });
       queryClient.invalidateQueries({ queryKey: ["rule", id] }); // Update last_scan_at
     },
     onError: (error: Error) => {
@@ -115,8 +120,8 @@ export default function MatchRuleDetail() {
 
   // Auto-trigger merge all dialog from URL param (Pro+ only)
   useEffect(() => {
-    const matches = matchesData?.data || [];
-    if (searchParams.get('action') === 'merge-all' && matches.length > 0 && !matchesLoading) {
+    const matchTotal = matchesData?.total ?? 0;
+    if (searchParams.get('action') === 'merge-all' && matchTotal > 0 && !matchesLoading) {
       // Clear the action param from URL
       searchParams.delete('action');
       setSearchParams(searchParams, { replace: true });
@@ -222,6 +227,7 @@ export default function MatchRuleDetail() {
       }
 
       if (result.valid.length > 0) {
+        setMergeAllValidIds(result.valid);
         setShowMergeAllDialog(true);
       } else {
         toast({
@@ -285,36 +291,28 @@ export default function MatchRuleDetail() {
     });
   };
 
-  // Bulk merge all pending matches
-  const handleMergeAll = async (specificMatchIds?: string[]) => {
+  // Bulk merge all pending matches using match IDs (fetches each individually)
+  const handleMergeAll = async (matchIds: string[]) => {
     setShowMergeAllDialog(false);
-    const allMatches = matchesData?.data || [];
+    if (matchIds.length === 0) return;
 
-    // If specific IDs provided, filter to only those; otherwise use all
-    const matches = specificMatchIds
-      ? allMatches.filter((m: MatchPair) => specificMatchIds.includes(m.id))
-      : allMatches;
-
-    if (matches.length === 0) return;
-
-    abortMergeRef.current = false; // Reset abort flag
-    setBulkMergeProgress({ current: 0, total: matches.length, inProgress: true });
+    abortMergeRef.current = false;
+    setBulkMergeProgress({ current: 0, total: matchIds.length, inProgress: true });
 
     let successCount = 0;
     let failCount = 0;
 
-    for (let i = 0; i < matches.length; i++) {
-      // Check abort flag before each merge
+    for (let i = 0; i < matchIds.length; i++) {
       if (abortMergeRef.current) {
         toast({
           title: "Merge Aborted",
-          description: `Stopped after ${i} of ${matches.length} merges. ${successCount} succeeded, ${failCount} failed.`,
+          description: `Stopped after ${i} of ${matchIds.length} merges. ${successCount} succeeded, ${failCount} failed.`,
         });
         break;
       }
 
-      const match = matches[i];
       try {
+        const match = await api.getMatch(matchIds[i]);
         const strategy = (rule?.merge_strategy || "standard") as StrategyId;
         const overwriteBlanks = rule?.merge_settings?.overwrite_blanks ?? false;
         const recordA = match.record_a_data || {};
@@ -334,18 +332,15 @@ export default function MatchRuleDetail() {
       } catch {
         failCount++;
       }
-      setBulkMergeProgress({ current: i + 1, total: matches.length, inProgress: true });
-
-      // Real-time update: invalidate queries after each merge
+      setBulkMergeProgress({ current: i + 1, total: matchIds.length, inProgress: true });
       queryClient.invalidateQueries({ queryKey: ["merges"] });
     }
 
     setBulkMergeProgress({ current: 0, total: 0, inProgress: false });
     queryClient.invalidateQueries({ queryKey: ["matches"] });
+    queryClient.invalidateQueries({ queryKey: ["match-counts"] });
 
-    // Only show completion toast and create notification if not aborted
     if (!abortMergeRef.current) {
-      // Create notification for bulk merge result
       try {
         await api.createBulkMergeNotification(id!, rule?.name || "Unknown Rule", successCount, failCount);
         queryClient.invalidateQueries({ queryKey: ["notifications"] });
@@ -363,9 +358,10 @@ export default function MatchRuleDetail() {
   };
 
   const pendingMatches = matchesData?.data || [];
+  const pendingTotal = matchesData?.total ?? 0;
   const mergeHistory = mergesData?.data || [];
 
-  // Filter pending matches by search query
+  // Filter pending matches by search query (applies to current page)
   const filteredPendingMatches = pendingMatches.filter((match: MatchPair) => {
     if (!matchSearchQuery) return true;
     const query = matchSearchQuery.toLowerCase();
@@ -460,7 +456,7 @@ export default function MatchRuleDetail() {
             size="sm"
             variant={canAutoMerge ? "default" : "secondary"}
             onClick={canAutoMerge ? handleMergeAllClick : () => openUpgradeModal("auto_merge")}
-            disabled={canAutoMerge && (pendingMatches.length === 0 || bulkMergeProgress.inProgress || isValidating)}
+            disabled={canAutoMerge && (pendingTotal === 0 || bulkMergeProgress.inProgress || isValidating)}
           >
             {isValidating ? (
               <>
@@ -569,9 +565,9 @@ export default function MatchRuleDetail() {
             className="flex items-center gap-2 font-semibold hover:text-primary transition-colors"
           >
             {matchesExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            Pending Matches ({matchesLoading ? <Loader2 className="h-3 w-3 animate-spin inline" /> : pendingMatches.length})
+            Pending Matches ({matchesLoading ? <Loader2 className="h-3 w-3 animate-spin inline" /> : pendingTotal})
           </button>
-          {matchesExpanded && pendingMatches.length > 0 && (
+          {matchesExpanded && pendingTotal > 0 && (
             <div className="relative w-48">
               <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -590,7 +586,7 @@ export default function MatchRuleDetail() {
               <div className="flex items-center justify-center h-20">
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
-            ) : pendingMatches.length === 0 ? (
+            ) : pendingTotal === 0 ? (
               <div className="p-8 text-center">
                 <p className="text-muted-foreground text-sm">No pending matches. Click "Scan Now" to search.</p>
               </div>
@@ -603,86 +599,77 @@ export default function MatchRuleDetail() {
               </div>
             ) : (
               <>
-                <div className="max-h-80 overflow-y-auto">
-                  <ResponsiveTable>
-                    <ResponsiveTableContent minWidth="600px">
-                      <thead className="bg-muted/30 sticky top-0 z-10">
-                        <tr className="border-b">
-                          <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground bg-muted/30">Record A</th>
-                          <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground bg-muted/30">Record B</th>
-                          <th className="text-center py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground bg-muted/30">Score</th>
-                          <th className="text-right py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground bg-muted/30">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredPendingMatches.map((match: MatchPair) => {
-                          const recordA = match.record_a_data || {};
-                          const recordB = match.record_b_data || {};
-                          const matchFields = rule.match_fields || [];
-                          const subheadingA = getMatchFieldSubheading(recordA, matchFields);
-                          const subheadingB = getMatchFieldSubheading(recordB, matchFields);
+                <ResponsiveTable>
+                  <ResponsiveTableContent minWidth="600px">
+                    <thead className="bg-muted/30">
+                      <tr className="border-b">
+                        <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground bg-muted/30">Record A</th>
+                        <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground bg-muted/30">Record B</th>
+                        <th className="text-center py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground bg-muted/30">Score</th>
+                        <th className="text-right py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground bg-muted/30">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredPendingMatches.map((match: MatchPair) => {
+                        const recordA = match.record_a_data || {};
+                        const recordB = match.record_b_data || {};
+                        const matchFields = rule.match_fields || [];
+                        const subheadingA = getMatchFieldSubheading(recordA, matchFields);
+                        const subheadingB = getMatchFieldSubheading(recordB, matchFields);
 
-                          return (
-                            <tr key={match.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
-                              <td className="py-3 px-4">
-                                <a
-                                  href={`https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${match.record_a_id}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="font-medium truncate max-w-[200px] block hover:text-primary hover:underline"
-                                >
-                                  {getRecordName(recordA)}
-                                </a>
-                                {subheadingA && (
-                                  <div className="text-xs text-muted-foreground truncate max-w-[200px]">
-                                    {subheadingA}
-                                  </div>
-                                )}
-                              </td>
-                              <td className="py-3 px-4">
-                                <a
-                                  href={`https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${match.record_b_id}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="font-medium truncate max-w-[200px] block hover:text-primary hover:underline"
-                                >
-                                  {getRecordName(recordB)}
-                                </a>
-                                {subheadingB && (
-                                  <div className="text-xs text-muted-foreground truncate max-w-[200px]">
-                                    {subheadingB}
-                                  </div>
-                                )}
-                              </td>
-                              <td className="py-3 px-4 text-center">
-                                <ConfidenceBadge score={match.confidence_score || 0} />
-                              </td>
-                              <td className="py-3 px-4 text-right">
-                                <Button size="sm" asChild>
-                                  <Link to={`/match-rules/${id}/review/${match.id}`}>Merge</Link>
-                                </Button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </ResponsiveTableContent>
-                  </ResponsiveTable>
-                </div>
-                {/* Footer bar with View All button */}
-                <div className="flex items-center justify-between p-3 border-t bg-muted/20">
-                  <span className="text-sm text-muted-foreground">
-                    {matchSearchQuery
-                      ? `${filteredPendingMatches.length} of ${pendingMatches.length} matches`
-                      : `${pendingMatches.length} pending matches`}
-                  </span>
-                  <Button variant="outline" size="sm" asChild>
-                    <Link to={`/match-rules/${id}/matches`}>
-                      View All
-                      <ArrowRight className="ml-1.5 h-4 w-4" />
-                    </Link>
-                  </Button>
-                </div>
+                        return (
+                          <tr key={match.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
+                            <td className="py-3 px-4">
+                              <a
+                                href={`https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${match.record_a_id}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-medium truncate max-w-[200px] block hover:text-primary hover:underline"
+                              >
+                                {getRecordName(recordA)}
+                              </a>
+                              {subheadingA && (
+                                <div className="text-xs text-muted-foreground truncate max-w-[200px]">
+                                  {subheadingA}
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-3 px-4">
+                              <a
+                                href={`https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${match.record_b_id}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-medium truncate max-w-[200px] block hover:text-primary hover:underline"
+                              >
+                                {getRecordName(recordB)}
+                              </a>
+                              {subheadingB && (
+                                <div className="text-xs text-muted-foreground truncate max-w-[200px]">
+                                  {subheadingB}
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <ConfidenceBadge score={match.confidence_score || 0} />
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              <Button size="sm" asChild>
+                                <Link to={`/match-rules/${id}/review/${match.id}`}>Merge</Link>
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </ResponsiveTableContent>
+                </ResponsiveTable>
+                <TablePagination
+                  page={matchPage}
+                  pageSize={matchPageSize}
+                  total={pendingTotal}
+                  onPageChange={setMatchPage}
+                  onPageSizeChange={setMatchPageSize}
+                />
               </>
             )}
           </>
@@ -703,7 +690,7 @@ export default function MatchRuleDetail() {
           <AlertDialogHeader>
             <AlertDialogTitle>Merge All Pending Matches?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will merge <span className="font-semibold">{pendingMatches.length}</span> pending matches
+              This will merge <span className="font-semibold">{mergeAllValidIds.length}</span> pending matches
               using Record A as the master for each pair. All duplicate records will be deleted.
               <br /><br />
               Snapshots will be saved for 30-day rollback. This action cannot be easily undone in bulk.
@@ -711,8 +698,8 @@ export default function MatchRuleDetail() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => handleMergeAll()}>
-              Merge All ({pendingMatches.length})
+            <AlertDialogAction onClick={() => handleMergeAll(mergeAllValidIds)}>
+              Merge All ({mergeAllValidIds.length})
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
