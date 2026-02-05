@@ -22,7 +22,7 @@ import { useUpgradeModal } from "@/components/ui/upgrade-modal";
 import { useToast } from "@/hooks/use-toast";
 import { api, MatchPair } from "@/lib/api";
 import { computeStrategySelections, computeMasterId, StrategyId } from "@/lib/merge-strategies";
-import { ResponsiveTable, ResponsiveTableContent } from "@/components/ui/responsive-table";
+import { DataTable, DataTableColumn } from "@/components/ui/data-table";
 import { ConfidenceBadge } from "@/components/ui/confidence-badge";
 import { TablePagination } from "@/components/ui/table-pagination";
 import { MergeHistoryCard, RuleSummaryCard, getRecordName, getMatchFieldSubheading } from "@/components/rules";
@@ -379,6 +379,73 @@ export default function MatchRuleDetail() {
     );
   });
 
+  // Define columns for the pending matches table
+  const matchColumns: DataTableColumn<MatchPair>[] = [
+    {
+      header: "Record A",
+      accessor: (match) => {
+        const recordA = match.record_a_data || {};
+        const matchFields = rule?.match_fields || [];
+        const subheading = getMatchFieldSubheading(recordA, matchFields);
+        return (
+          <div>
+            <a
+              href={`https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${match.record_a_id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium hover:text-primary hover:underline"
+            >
+              {getRecordName(recordA)}
+            </a>
+            {subheading && (
+              <div className="text-xs text-muted-foreground">
+                {subheading}
+              </div>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      header: "Record B",
+      accessor: (match) => {
+        const recordB = match.record_b_data || {};
+        const matchFields = rule?.match_fields || [];
+        const subheading = getMatchFieldSubheading(recordB, matchFields);
+        return (
+          <div>
+            <a
+              href={`https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${match.record_b_id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium hover:text-primary hover:underline"
+            >
+              {getRecordName(recordB)}
+            </a>
+            {subheading && (
+              <div className="text-xs text-muted-foreground">
+                {subheading}
+              </div>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      header: "Confidence",
+      accessor: (match) => <ConfidenceBadge score={match.confidence_score || 0} />,
+    },
+    {
+      header: "Actions",
+      align: "right" as const,
+      accessor: (match) => (
+        <Button size="sm" asChild>
+          <Link to={`/match-rules/${id}/review/${match.id}`}>Merge</Link>
+        </Button>
+      ),
+    },
+  ];
+
   // Format date for inline display
   const formatInlineDate = (dateStr: string | null | undefined) => {
     if (!dateStr) return null;
@@ -582,96 +649,36 @@ export default function MatchRuleDetail() {
 
         {matchesExpanded && (
           <>
-            {matchesLoading ? (
-              <div className="flex items-center justify-center h-20">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              </div>
-            ) : pendingTotal === 0 ? (
-              <div className="p-8 text-center">
-                <p className="text-muted-foreground text-sm">No pending matches. Click "Scan Now" to search.</p>
-              </div>
-            ) : filteredPendingMatches.length === 0 ? (
-              <div className="p-8 text-center">
-                <p className="text-muted-foreground text-sm">No matches found for "{matchSearchQuery}"</p>
-                <Button variant="link" size="sm" onClick={() => setMatchSearchQuery("")}>
-                  Clear search
-                </Button>
-              </div>
-            ) : (
-              <>
-                <ResponsiveTable>
-                  <ResponsiveTableContent minWidth="600px">
-                    <thead className="bg-muted/30">
-                      <tr className="border-b">
-                        <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground bg-muted/30">Record A</th>
-                        <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground bg-muted/30">Record B</th>
-                        <th className="text-center py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground bg-muted/30">Score</th>
-                        <th className="text-right py-3 px-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground bg-muted/30">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredPendingMatches.map((match: MatchPair) => {
-                        const recordA = match.record_a_data || {};
-                        const recordB = match.record_b_data || {};
-                        const matchFields = rule.match_fields || [];
-                        const subheadingA = getMatchFieldSubheading(recordA, matchFields);
-                        const subheadingB = getMatchFieldSubheading(recordB, matchFields);
-
-                        return (
-                          <tr key={match.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
-                            <td className="py-3 px-4">
-                              <a
-                                href={`https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${match.record_a_id}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="font-medium truncate max-w-[200px] block hover:text-primary hover:underline"
-                              >
-                                {getRecordName(recordA)}
-                              </a>
-                              {subheadingA && (
-                                <div className="text-xs text-muted-foreground truncate max-w-[200px]">
-                                  {subheadingA}
-                                </div>
-                              )}
-                            </td>
-                            <td className="py-3 px-4">
-                              <a
-                                href={`https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${match.record_b_id}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="font-medium truncate max-w-[200px] block hover:text-primary hover:underline"
-                              >
-                                {getRecordName(recordB)}
-                              </a>
-                              {subheadingB && (
-                                <div className="text-xs text-muted-foreground truncate max-w-[200px]">
-                                  {subheadingB}
-                                </div>
-                              )}
-                            </td>
-                            <td className="py-3 px-4 text-center">
-                              <ConfidenceBadge score={match.confidence_score || 0} />
-                            </td>
-                            <td className="py-3 px-4 text-right">
-                              <Button size="sm" asChild>
-                                <Link to={`/match-rules/${id}/review/${match.id}`}>Merge</Link>
-                              </Button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </ResponsiveTableContent>
-                </ResponsiveTable>
-                <TablePagination
-                  page={matchPage}
-                  pageSize={matchPageSize}
-                  total={pendingTotal}
-                  onPageChange={setMatchPage}
-                  onPageSizeChange={setMatchPageSize}
-                />
-              </>
-            )}
+            <CardContent className="p-0">
+              <DataTable
+                data={filteredPendingMatches}
+                columns={matchColumns}
+                keyField="id"
+                loading={matchesLoading}
+                minWidth="600px"
+                emptyState={
+                  pendingTotal === 0 ? (
+                    <div className="p-8 text-center">
+                      <p className="text-muted-foreground text-sm">No pending matches. Click "Scan Now" to search.</p>
+                    </div>
+                  ) : (
+                    <div className="p-8 text-center">
+                      <p className="text-muted-foreground text-sm">No matches found for "{matchSearchQuery}"</p>
+                      <Button variant="link" size="sm" onClick={() => setMatchSearchQuery("")}>
+                        Clear search
+                      </Button>
+                    </div>
+                  )
+                }
+              />
+            </CardContent>
+            <TablePagination
+              page={matchPage}
+              pageSize={matchPageSize}
+              total={pendingTotal}
+              onPageChange={setMatchPage}
+              onPageSizeChange={setMatchPageSize}
+            />
           </>
         )}
       </Card>
