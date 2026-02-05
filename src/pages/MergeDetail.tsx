@@ -163,7 +163,7 @@ export default function MergeDetail() {
     const selectedSource = fieldSelections[field];
 
     return (
-      <tr key={field} className="border-b last:border-0">
+      <tr key={field} className="hover:bg-muted/50 transition-colors">
         <td className="py-3 px-4 font-medium text-muted-foreground">
           <div className="flex items-center gap-2">
             {getFieldLabel(field)}
@@ -352,8 +352,8 @@ export default function MergeDetail() {
         <CardContent className="pt-6">
           <ResponsiveTable>
             <ResponsiveTableContent minWidth="600px">
-              <thead className="bg-muted/30">
-                <tr className="border-b">
+              <thead>
+                <tr className="border-y bg-muted/40">
                   <th className="w-40 py-3 px-4 text-left"></th>
                   <th className="min-w-40 py-3 px-4 text-left">
                     <div className="flex items-center gap-2">
@@ -380,7 +380,7 @@ export default function MergeDetail() {
                   </th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y">
                 {/* Standard Fields */}
                 {standardFields.map((field) => renderFieldRow(field))}
 
@@ -446,7 +446,7 @@ export default function MergeDetail() {
                     {rule.merge_settings.field_preservation.mappings.map((mapping, idx) => {
                       const preservedValue = duplicateSnapshot?.[mapping.sourceField];
                       return (
-                        <tr key={`preserve-${idx}`} className="bg-primary/5 border-b last:border-0">
+                        <tr key={`preserve-${idx}`} className="bg-primary/5 hover:bg-primary/10 transition-colors">
                           <td className="py-3 px-4 font-medium text-muted-foreground">
                             <div className="flex items-center gap-2">
                               {getFieldLabel(mapping.targetField)}
