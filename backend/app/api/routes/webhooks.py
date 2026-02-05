@@ -93,21 +93,31 @@ def verify_webhook_signature(payload: bytes, signature: str) -> bool:
     return hmac.compare_digest(signature, expected)
 
 
-def verify_webhook_timestamp(timestamp_ms: int) -> bool:
+def verify_webhook_timestamp(timestamp_value) -> bool:
     """Verify webhook timestamp is within acceptable range to prevent replay attacks.
 
     Args:
-        timestamp_ms: Unix timestamp in milliseconds from webhook payload
+        timestamp_value: Unix timestamp in milliseconds (int) or ISO 8601 string
 
     Returns:
         True if timestamp is within MAX_WEBHOOK_AGE_SECONDS, False otherwise
     """
-    if not timestamp_ms:
+    if not timestamp_value:
         # If no timestamp provided, allow (GHL may not always include it)
         return True
 
-    current_time_ms = int(time.time() * 1000)
-    age_seconds = (current_time_ms - timestamp_ms) / 1000
+    # Convert to epoch seconds depending on type
+    if isinstance(timestamp_value, str):
+        try:
+            from datetime import datetime as _dt
+            ts = _dt.fromisoformat(timestamp_value.replace("Z", "+00:00"))
+            age_seconds = time.time() - ts.timestamp()
+        except (ValueError, TypeError):
+            # Can't parse — allow through rather than block
+            return True
+    else:
+        current_time_ms = int(time.time() * 1000)
+        age_seconds = (current_time_ms - int(timestamp_value)) / 1000
 
     if age_seconds > MAX_WEBHOOK_AGE_SECONDS:
         logger.warning(f"Webhook timestamp too old: {age_seconds:.0f}s (max {MAX_WEBHOOK_AGE_SECONDS}s)")
