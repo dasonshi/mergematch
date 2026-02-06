@@ -8,6 +8,11 @@ from celery import Celery
 # Get Redis URL from environment (Upstash or other Redis provider)
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
+# For rediss:// (TLS), append SSL cert requirement if not already present
+if REDIS_URL.startswith("rediss://") and "ssl_cert_reqs" not in REDIS_URL:
+    separator = "&" if "?" in REDIS_URL else "?"
+    REDIS_URL = f"{REDIS_URL}{separator}ssl_cert_reqs=CERT_NONE"
+
 # Create Celery app
 celery_app = Celery(
     "mergematch",
