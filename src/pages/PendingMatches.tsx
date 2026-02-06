@@ -177,6 +177,25 @@ export default function PendingMatches() {
     }
   };
 
+  // localStorage key for persisting active bulk job
+  const BULK_JOB_KEY = `bulkJob_${ruleId}`;
+
+  // Resume polling if there's an active job (e.g., after page refresh)
+  useEffect(() => {
+    const savedJobId = localStorage.getItem(BULK_JOB_KEY);
+    if (savedJobId && !bulkJobId) {
+      console.log('[BulkMerge] Resuming job from localStorage:', savedJobId);
+      setBulkJobId(savedJobId);
+      setBulkMergeProgress({ current: 0, total: 0, inProgress: true });
+
+      // Start polling immediately
+      pollJobStatus(savedJobId);
+      pollIntervalRef.current = setInterval(() => {
+        pollJobStatus(savedJobId);
+      }, 2000);
+    }
+  }, [ruleId]);
+
   // Cleanup polling on unmount
   useEffect(() => {
     return () => {
@@ -205,6 +224,9 @@ export default function PendingMatches() {
         }
         setBulkJobId(null);
         setBulkMergeProgress({ current: 0, total: 0, inProgress: false });
+
+        // Clear localStorage
+        localStorage.removeItem(BULK_JOB_KEY);
 
         // Refresh data
         queryClient.invalidateQueries({ queryKey: ["matches"] });
@@ -258,6 +280,9 @@ export default function PendingMatches() {
       // Start server-side bulk merge
       const response = await api.startBulkMerge(matchIds, ruleId);
       setBulkJobId(response.job_id);
+
+      // Save to localStorage for resume on refresh
+      localStorage.setItem(BULK_JOB_KEY, response.job_id);
 
       // Poll immediately, then every 2 seconds
       pollJobStatus(response.job_id);
