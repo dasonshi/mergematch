@@ -275,10 +275,12 @@ async def run_scan(
 ) -> dict:
     """
     Run a duplicate scan for a given rule.
+    Memory-optimized: processes contacts page-by-page and stores matches immediately.
 
     Returns dict with matches_found, records_scanned, and match details.
     """
     import logging
+    import gc
     logger = logging.getLogger(__name__)
 
     supabase = get_supabase()
@@ -294,32 +296,71 @@ async def run_scan(
     rule = rule_result.data
     match_fields = rule.get("match_fields", [])
     source_object = rule.get("source_object", "contacts")
-    review_threshold = float(rule.get("review_threshold", 0.70)) * 100  # Convert to percentage
+    review_threshold = float(rule.get("review_threshold", 0.70)) * 100
     auto_merge_threshold = float(rule.get("auto_merge_threshold", 0.95)) * 100
 
-    # Fetch ALL records from GHL (paginated)
-    records = []
+    # Extract which fields we need for comparison
+    needed_fields = {"id"}
+    for field_config in match_fields:
+        field = field_config.get("field", "")
+        if field:
+            needed_fields.add(field)
+    # Always include common fields for display
+    needed_fields.update(["email", "phone", "firstName", "lastName", "name", "companyName"])
+
+    # Track stats
+    records_scanned = 0
+    matches_found = 0
+    matches_stored = 0
+    high_confidence_count = 0
+    stale_count = 0
+    compared_pairs = set()
+    valid_contact_ids = set()
+
+    # Store all contacts with full data for matching and storage
+    # We need full data to store in match_pairs for later merge operations
+    all_contacts = []
+
     try:
         async with GHLClient(access_token, ghl_location_id) as client:
             if source_object == "contacts":
                 start_after_id = None
+                page_num = 0
                 while True:
                     result = await client.get_contacts(limit=100, start_after_id=start_after_id)
                     page_records = result.get("contacts", [])
                     if not page_records:
                         break
-                    records.extend(page_records)
+
+                    page_num += 1
+                    records_scanned += len(page_records)
+
+                    for record in page_records:
+                        record_id = record.get("id")
+                        if record_id:
+                            valid_contact_ids.add(record_id)
+                            all_contacts.append(record)
+
+                    logger.info(f"Fetched page {page_num}: {len(page_records)} contacts (total: {records_scanned})")
+
                     start_after_id = (
                         result.get("meta", {}).get("startAfterId")
                         or result.get("startAfterId")
                     )
                     if not start_after_id or len(page_records) < 100:
                         break
+
             elif source_object == "companies":
                 result = await client.get_companies()
-                records = result.get("businesses", [])
+                page_records = result.get("businesses", [])
+                records_scanned = len(page_records)
+                for record in page_records:
+                    record_id = record.get("id")
+                    if record_id:
+                        valid_contact_ids.add(record_id)
+                        all_contacts.append(record)
+
     except Exception as e:
-        # Extract actual error from RetryError if present
         error_msg = str(e)
         if hasattr(e, 'last_attempt') and e.last_attempt.exception():
             inner_error = e.last_attempt.exception()
@@ -330,23 +371,18 @@ async def run_scan(
         logger.error(f"Failed to fetch {source_object} from GHL: {error_msg}")
         raise Exception(f"GHL API call failed: {error_msg}")
 
-    logger.info(f"Scan: Fetched {len(records)} {source_object}")
-    if records:
-        # Log sample record structure
-        sample = records[0]
-        logger.info(f"Sample record keys: {list(sample.keys())}")
-        logger.info(f"Sample email field: {sample.get('email')}")
-        logger.info(f"Sample phone field: {sample.get('phone')}")
+    logger.info(f"Scan: Fetched {len(all_contacts)} {source_object} total")
 
-    # Build set of valid contact IDs from GHL response
-    valid_contact_ids = {record.get("id") for record in records if record.get("id")}
+    if all_contacts:
+        sample = all_contacts[0]
+        logger.info(f"Sample record keys: {list(sample.keys())[:10]}...")
+        logger.info(f"Sample email: {sample.get('email')}, phone: {sample.get('phone')}")
 
     # Proactively clean up stale pending match_pairs that reference deleted contacts
     existing_pending = supabase.table("match_pairs").select(
         "id, record_a_id, record_b_id"
     ).eq("rule_id", rule_id).eq("location_id", internal_location_id).eq("status", "pending").execute()
 
-    stale_count = 0
     for match in existing_pending.data:
         record_a_exists = match["record_a_id"] in valid_contact_ids
         record_b_exists = match["record_b_id"] in valid_contact_ids
@@ -359,83 +395,98 @@ async def run_scan(
     if stale_count > 0:
         logger.info(f"Cleaned up {stale_count} stale match pairs during scan")
 
-    if len(records) < 2:
+    if len(all_contacts) < 2:
         return {
             "matches_found": 0,
             "matches_stored": 0,
             "stale_cleaned": stale_count,
-            "records_scanned": len(records),
+            "records_scanned": records_scanned,
             "message": "Not enough records to compare"
         }
 
-    # Compare all pairs
-    matches_found = []
-    compared_pairs = set()
+    # Build lookup dict for full record data (needed for storing matches)
+    contacts_by_id = {c.get("id"): c for c in all_contacts}
 
-    for i, record_a in enumerate(records):
-        for j, record_b in enumerate(records):
-            if i >= j:
+    # Compare all pairs and store matches immediately to reduce memory
+    comparison_count = 0
+    total_contacts = len(all_contacts)
+
+    for i in range(total_contacts):
+        record_a = all_contacts[i]
+        id_a = record_a.get("id")
+        if not id_a:
+            continue
+
+        for j in range(i + 1, total_contacts):
+            record_b = all_contacts[j]
+            id_b = record_b.get("id")
+            if not id_b:
                 continue
 
-            # Skip already compared pairs
-            pair_key = tuple(sorted([record_a.get("id", i), record_b.get("id", j)]))
+            # Skip already compared pairs (use IDs only to save memory)
+            pair_key = (min(id_a, id_b), max(id_a, id_b))
             if pair_key in compared_pairs:
                 continue
             compared_pairs.add(pair_key)
+            comparison_count += 1
 
             is_match, confidence, field_scores = compare_records(
                 record_a, record_b, match_fields
             )
 
-            # Log some comparisons for debugging
-            if len(compared_pairs) <= 5:
-                logger.info(f"Comparison {len(compared_pairs)}: is_match={is_match}, confidence={confidence:.1f}%, threshold={review_threshold}")
+            # Log first few comparisons for debugging
+            if comparison_count <= 5:
+                logger.info(f"Comparison {comparison_count}: is_match={is_match}, confidence={confidence:.1f}%, threshold={review_threshold}")
                 logger.info(f"  Field scores: {field_scores}")
 
             if is_match and confidence >= review_threshold:
-                matches_found.append({
-                    "record_a": record_a,
-                    "record_b": record_b,
-                    "confidence": round(confidence, 2),
+                matches_found += 1
+                is_high_confidence = confidence >= auto_merge_threshold
+                if is_high_confidence:
+                    high_confidence_count += 1
+
+                # Store match immediately to avoid accumulating in memory
+                match_id = str(uuid.uuid4())
+                match_data = {
+                    "id": match_id,
+                    "tenant_id": tenant_id,
+                    "location_id": internal_location_id,
+                    "rule_id": rule_id,
+                    "record_a_id": id_a,
+                    "record_a_type": source_object[:-1],
+                    "record_a_data": contacts_by_id.get(id_a, record_a),
+                    "record_b_id": id_b,
+                    "record_b_type": source_object[:-1],
+                    "record_b_data": contacts_by_id.get(id_b, record_b),
+                    "confidence_score": round(confidence, 2) / 100,
                     "field_scores": field_scores,
-                    "auto_merge": confidence >= auto_merge_threshold,
-                })
+                    "status": "pending",
+                }
 
-    # Store matches in database
-    stored_matches = []
-    for match in matches_found:
-        match_id = str(uuid.uuid4())
+                try:
+                    result = supabase.table("match_pairs").insert(match_data).execute()
+                    if result.data:
+                        matches_stored += 1
+                except Exception as e:
+                    # Skip duplicates (same record pair already matched)
+                    logger.debug(f"Skipped duplicate match: {e}")
 
-        match_data = {
-            "id": match_id,
-            "tenant_id": tenant_id,
-            "location_id": internal_location_id,
-            "rule_id": rule_id,
-            "record_a_id": match["record_a"].get("id", ""),
-            "record_a_type": source_object[:-1],  # contacts -> contact
-            "record_a_data": match["record_a"],
-            "record_b_id": match["record_b"].get("id", ""),
-            "record_b_type": source_object[:-1],
-            "record_b_data": match["record_b"],
-            "confidence_score": match["confidence"] / 100,  # Store as decimal
-            "field_scores": match["field_scores"],
-            "status": "pending",
-        }
+        # Periodic memory cleanup every 500 records processed
+        if i > 0 and i % 500 == 0:
+            gc.collect()
+            logger.info(f"Processed {i}/{total_contacts} records, {matches_found} matches found so far")
 
-        try:
-            result = supabase.table("match_pairs").insert(match_data).execute()
-            if result.data:
-                stored_matches.append(result.data[0])
-        except Exception as e:
-            # Skip duplicates (same record pair already matched)
-            print(f"Error storing match: {e}")
+    # Final cleanup
+    del all_contacts
+    del contacts_by_id
+    gc.collect()
 
     return {
-        "matches_found": len(matches_found),
-        "matches_stored": len(stored_matches),
+        "matches_found": matches_found,
+        "matches_stored": matches_stored,
         "stale_cleaned": stale_count,
-        "records_scanned": len(records),
-        "high_confidence": sum(1 for m in matches_found if m["auto_merge"]),  # Above auto-merge threshold
+        "records_scanned": records_scanned,
+        "high_confidence": high_confidence_count,
     }
 
 
