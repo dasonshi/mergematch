@@ -1,8 +1,9 @@
 """
 Bulk operations API routes.
 Server-side bulk merge with progress tracking and cancellation support.
+Uses Celery for reliable job queue processing when Redis is available.
 """
-import asyncio
+import os
 import logging
 from typing import List, Optional
 from pydantic import BaseModel
@@ -21,6 +22,20 @@ from app.services.billing_service import check_merge_quota
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Check if Celery/Redis is available
+REDIS_URL = os.getenv("REDIS_URL")
+USE_CELERY = bool(REDIS_URL)
+
+if USE_CELERY:
+    try:
+        from app.tasks.merge_tasks import execute_bulk_merge_task
+        logger.info("Celery task queue enabled (Redis available)")
+    except ImportError as e:
+        logger.warning(f"Celery import failed, using BackgroundTasks: {e}")
+        USE_CELERY = False
+else:
+    logger.info("Celery disabled (no REDIS_URL), using BackgroundTasks")
 
 
 class BulkMergeRequest(BaseModel):
@@ -50,7 +65,8 @@ async def start_bulk_merge(
     Start a server-side bulk merge operation.
 
     Returns immediately with a job_id that can be used to poll progress.
-    The merge is executed in the background with parallel processing.
+    Uses Celery for reliable processing when Redis is available,
+    falls back to FastAPI BackgroundTasks otherwise.
     """
     if not body.match_ids:
         raise HTTPException(status_code=400, detail="No match IDs provided")
@@ -77,7 +93,6 @@ async def start_bulk_merge(
             f"Bulk merge may exceed quota: requesting {len(body.match_ids)}, "
             f"remaining {quota['remaining']}"
         )
-        # We'll still proceed but some merges may fail due to quota
 
     # Create bulk job record
     job = await create_bulk_job(
@@ -90,20 +105,33 @@ async def start_bulk_merge(
     if not job:
         raise HTTPException(status_code=500, detail="Failed to create bulk job")
 
-    # Start background task to execute merges
-    background_tasks.add_task(
-        execute_bulk_merge,
-        job_id=job["id"],
-        tenant_id=ctx.tenant_id,
-        location_id=ctx.location_id,
-        rule_id=body.rule_id,
-        match_ids=body.match_ids,
-        access_token=ctx.access_token,
-        ghl_location_id=ctx.ghl_location_id,
-        plan=ctx.plan,
-    )
-
-    logger.info(f"Started bulk merge job {job['id']} with {len(body.match_ids)} matches")
+    # Start the merge job
+    if USE_CELERY:
+        # Use Celery task queue (reliable, retryable)
+        execute_bulk_merge_task.delay(
+            job_id=job["id"],
+            tenant_id=ctx.tenant_id,
+            location_id=ctx.location_id,
+            rule_id=body.rule_id,
+            match_ids=body.match_ids,
+            ghl_location_id=ctx.ghl_location_id,
+            plan=ctx.plan,
+        )
+        logger.info(f"Queued bulk merge job {job['id']} via Celery ({len(body.match_ids)} matches)")
+    else:
+        # Fallback to BackgroundTasks (less reliable)
+        background_tasks.add_task(
+            execute_bulk_merge,
+            job_id=job["id"],
+            tenant_id=ctx.tenant_id,
+            location_id=ctx.location_id,
+            rule_id=body.rule_id,
+            match_ids=body.match_ids,
+            access_token=ctx.access_token,
+            ghl_location_id=ctx.ghl_location_id,
+            plan=ctx.plan,
+        )
+        logger.info(f"Started bulk merge job {job['id']} via BackgroundTasks ({len(body.match_ids)} matches)")
 
     return {
         "job_id": job["id"],
