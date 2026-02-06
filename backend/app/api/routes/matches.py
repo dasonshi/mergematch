@@ -4,6 +4,7 @@ from typing import Optional, List
 import httpx
 import logging
 import gc
+import asyncio
 
 from app.db.supabase import get_supabase
 from app.services.auth_service import get_location_tokens
@@ -99,6 +100,7 @@ async def validate_matches(
 ):
     """
     Validate match pairs - check if contacts still exist in GHL.
+    Uses parallel batched validation for 10x faster processing.
     Returns list of valid and stale match IDs.
     """
     supabase = get_supabase()
@@ -122,40 +124,60 @@ async def validate_matches(
         contact_ids.add(m["record_a_id"])
         contact_ids.add(m["record_b_id"])
 
-    logger.info(f"Validating {len(contact_ids)} unique contacts for {len(matches.data)} match pairs")
+    contact_ids_list = list(contact_ids)
+    logger.info(f"Validating {len(contact_ids_list)} unique contacts for {len(matches.data)} match pairs")
 
-    # Check which contacts exist in GHL
+    # Helper to check single contact
+    async def check_contact(client, contact_id: str) -> tuple[str, bool]:
+        """Check if a contact exists. Returns (contact_id, exists)."""
+        try:
+            await client.get_contact(contact_id)
+            return (contact_id, True)
+        except httpx.HTTPStatusError as e:
+            # GHL returns 404 OR 400 with "Contact not found" for deleted contacts
+            if e.response.status_code == 404:
+                logger.debug(f"Contact {contact_id} not found (404)")
+                return (contact_id, False)
+            elif e.response.status_code == 400:
+                try:
+                    error_body = e.response.json()
+                    if "not found" in error_body.get("message", "").lower():
+                        logger.debug(f"Contact {contact_id} not found (400)")
+                        return (contact_id, False)
+                except Exception:
+                    pass
+                # Other 400 error - assume exists
+                return (contact_id, True)
+            else:
+                # Other errors (5xx, etc) - assume exists
+                return (contact_id, True)
+        except Exception as e:
+            # Assume exists on other errors
+            logger.warning(f"Contact {contact_id} check error: {e}, assuming exists")
+            return (contact_id, True)
+
+    # Parallel validation in batches of 10
+    BATCH_SIZE = 10
+    existing_ids = set()
+
     async with GHLClient(ctx.access_token, ctx.ghl_location_id) as client:
-        existing_ids = set()
-        for contact_id in contact_ids:
-            try:
-                await client.get_contact(contact_id)
-                existing_ids.add(contact_id)
-            except httpx.HTTPStatusError as e:
-                # GHL returns 404 OR 400 with "Contact not found" for deleted contacts
-                if e.response.status_code == 404:
-                    logger.info(f"Contact {contact_id} not found in GHL (404)")
-                elif e.response.status_code == 400:
-                    # Check if it's a "Contact not found" error
-                    try:
-                        error_body = e.response.json()
-                        if "not found" in error_body.get("message", "").lower():
-                            logger.info(f"Contact {contact_id} not found in GHL (400: {error_body.get('message')})")
-                        else:
-                            # Other 400 error - assume exists
-                            existing_ids.add(contact_id)
-                            logger.warning(f"Contact {contact_id} check failed with 400: {error_body}, assuming exists")
-                    except Exception:
-                        # Can't parse response, treat as not found to be safe
-                        logger.info(f"Contact {contact_id} returned 400, treating as not found")
-                else:
-                    # Other errors (5xx, etc) - assume exists
-                    existing_ids.add(contact_id)
-                    logger.warning(f"Contact {contact_id} check failed with {e.response.status_code}, assuming exists")
-            except Exception as e:
-                # Assume exists on other errors
-                existing_ids.add(contact_id)
-                logger.warning(f"Contact {contact_id} check error: {e}, assuming exists")
+        for i in range(0, len(contact_ids_list), BATCH_SIZE):
+            batch = contact_ids_list[i:i + BATCH_SIZE]
+
+            # Check all contacts in this batch in parallel
+            results = await asyncio.gather(
+                *[check_contact(client, cid) for cid in batch],
+                return_exceptions=True
+            )
+
+            # Process results
+            for result in results:
+                if isinstance(result, Exception):
+                    logger.warning(f"Batch check exception: {result}")
+                elif result[1]:  # contact exists
+                    existing_ids.add(result[0])
+
+            logger.debug(f"Validated batch {i // BATCH_SIZE + 1}, {len(existing_ids)} existing so far")
 
     # Categorize matches and mark stale ones in DB
     valid = []
@@ -167,7 +189,7 @@ async def validate_matches(
             # Mark as stale directly in DB
             supabase.table("match_pairs").update({"status": "stale"}).eq("id", m["id"]).execute()
             stale.append(m["id"])
-            logger.info(f"Marked match {m['id']} as stale - contact(s) no longer exist in GHL")
+            logger.debug(f"Marked match {m['id']} as stale - contact(s) no longer exist")
 
     logger.info(f"Validation result: {len(valid)} valid, {len(stale)} stale (auto-cleaned)")
 

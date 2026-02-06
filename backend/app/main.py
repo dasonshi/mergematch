@@ -16,7 +16,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
-from app.api.routes import auth, health, matches, rules, merges, webhooks, contacts, companies, fields, notifications, sync, cron, dedupe, jobs
+from app.api.routes import auth, health, matches, rules, merges, webhooks, contacts, companies, fields, notifications, sync, cron, dedupe, jobs, bulk
 from app.api.routes import settings as settings_routes
 from app.core.security import validate_security_config
 from app.core.rate_limit import limiter
@@ -122,6 +122,7 @@ app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 app.include_router(matches.router, prefix="/v1/matches", tags=["Matches"])
 app.include_router(rules.router, prefix="/v1/rules", tags=["Rules"])
 app.include_router(merges.router, prefix="/v1/merges", tags=["Merges"])
+app.include_router(bulk.router, prefix="/v1/bulk", tags=["Bulk Operations"])
 app.include_router(jobs.router, prefix="/v1/jobs", tags=["Jobs"])
 app.include_router(webhooks.router, prefix="/webhooks", tags=["Webhooks"])
 app.include_router(contacts.router, prefix="/v1/contacts", tags=["Contacts"])

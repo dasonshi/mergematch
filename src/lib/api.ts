@@ -342,6 +342,22 @@ class ApiClient {
     return this.fetch<{ id: string; status: string; restored_record_id?: string }>(`/v1/merges/${id}/rollback`, { method: 'POST' });
   }
 
+  // Bulk Operations
+  async startBulkMerge(matchIds: string[], ruleId?: string) {
+    return this.fetch<BulkJobStatus>('/v1/bulk/merge', {
+      method: 'POST',
+      body: { match_ids: matchIds, rule_id: ruleId },
+    });
+  }
+
+  async getBulkJobStatus(jobId: string) {
+    return this.fetch<BulkJobStatus>(`/v1/bulk/${jobId}/status`);
+  }
+
+  async cancelBulkJob(jobId: string) {
+    return this.fetch<{ message: string; job_id: string }>(`/v1/bulk/${jobId}/cancel`, { method: 'POST' });
+  }
+
   // Auth
   async checkAuth() {
     if (!this.accessToken && !this.locationId) return null;
@@ -674,6 +690,19 @@ export interface MergeQuota {
   used: number;
   limit: number;
   remaining: number;
+}
+
+export interface BulkJobStatus {
+  job_id: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  total_count: number;
+  processed_count: number;
+  success_count: number;
+  failed_count: number;
+  cancel_requested?: boolean;
+  started_at?: string;
+  completed_at?: string;
+  failed_items?: Array<{ match_id?: string; error?: string }>;
 }
 
 export const api = new ApiClient();

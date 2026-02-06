@@ -29,7 +29,6 @@ import { useLocation } from "@/contexts/LocationContext";
 import { useUpgradeModal } from "@/components/ui/upgrade-modal";
 import { useToast } from "@/hooks/use-toast";
 import { api, MatchRule, MatchPair } from "@/lib/api";
-import { computeStrategySelections, computeMasterId, StrategyId } from "@/lib/merge-strategies";
 import { getRecordName } from "@/components/rules/helpers";
 
 export default function AllPendingMatches() {
@@ -61,7 +60,8 @@ export default function AllPendingMatches() {
   // Merge state
   const [showMergeAllDialog, setShowMergeAllDialog] = useState(false);
   const [bulkMergeProgress, setBulkMergeProgress] = useState({ current: 0, total: 0, inProgress: false });
-  const abortMergeRef = useRef(false);
+  const [bulkJobId, setBulkJobId] = useState<string | null>(null);
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Fetch all match rules
   const { data: rulesData, isLoading: rulesLoading, isError: rulesError, refetch: refetchRules } = useQuery({
@@ -141,80 +141,122 @@ export default function AllPendingMatches() {
     setSelectAllMatching(false);
   };
 
-  // Bulk merge handler (for both "Merge All" and "Merge Selected")
-  const handleBulkMerge = async (matchesToMerge: MatchPair[]) => {
-    if (matchesToMerge.length === 0) return;
-
-    abortMergeRef.current = false;
-    setBulkMergeProgress({ current: 0, total: matchesToMerge.length, inProgress: true });
-
-    let successCount = 0;
-    let failCount = 0;
-
-    for (let i = 0; i < matchesToMerge.length; i++) {
-      if (abortMergeRef.current) {
-        toast({
-          title: "Merge Aborted",
-          description: `Stopped after ${i} of ${matchesToMerge.length} merges. ${successCount} succeeded, ${failCount} failed.`,
-        });
-        break;
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
       }
+    };
+  }, []);
 
-      const match = matchesToMerge[i];
-      try {
-        const rule = rulesMap.get(match.rule_id);
-        if (!rule) {
-          failCount++;
-          continue;
+  // Poll bulk job status
+  const pollJobStatus = async (jobId: string) => {
+    try {
+      const status = await api.getBulkJobStatus(jobId);
+      setBulkMergeProgress({
+        current: status.processed_count,
+        total: status.total_count,
+        inProgress: status.status === 'pending' || status.status === 'running',
+      });
+
+      // Job completed or stopped
+      if (status.status === 'completed' || status.status === 'failed' || status.status === 'cancelled') {
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current);
+          pollIntervalRef.current = null;
         }
+        setBulkJobId(null);
+        setBulkMergeProgress({ current: 0, total: 0, inProgress: false });
+        setSelectedIds(new Set());
+        setSelectAllMatching(false);
 
-        const strategy = (rule.merge_strategy || "standard") as StrategyId;
-        const overwriteBlanks = rule.merge_settings?.overwrite_blanks ?? false;
-        const recordA = match.record_a_data || {};
-        const recordB = match.record_b_data || {};
-        const fields = ["firstName", "lastName", "email", "phone", "tags", "address1", "city", "state", "postalCode"];
-        const selections = computeStrategySelections({
-          strategy,
-          recordA,
-          recordB,
-          fields,
-          overwriteBlanks,
-        });
-        const masterId = computeMasterId(strategy, recordA, recordB, fields, match.record_a_id, match.record_b_id);
-        await api.executeMerge(match.id, masterId, selections);
-        successCount++;
-      } catch {
-        failCount++;
+        // Refresh data
+        queryClient.invalidateQueries({ queryKey: ["matches"] });
+        queryClient.invalidateQueries({ queryKey: ["match-counts"] });
+        queryClient.invalidateQueries({ queryKey: ["merges"] });
+        queryClient.invalidateQueries({ queryKey: ["merge-stats"] });
+
+        // Show completion toast
+        if (status.status === 'completed') {
+          toast({
+            title: "Bulk Merge Complete",
+            description: `Successfully merged ${status.success_count} records.${status.failed_count > 0 ? ` ${status.failed_count} failed.` : ''}`,
+            variant: status.failed_count > 0 ? "destructive" : "default",
+          });
+        } else if (status.status === 'cancelled') {
+          toast({
+            title: "Merge Cancelled",
+            description: `Stopped after ${status.processed_count} of ${status.total_count} merges. ${status.success_count} succeeded, ${status.failed_count} failed.`,
+          });
+        } else if (status.status === 'failed') {
+          toast({
+            title: "Bulk Merge Failed",
+            description: `Job failed after ${status.processed_count} merges. ${status.success_count} succeeded.`,
+            variant: "destructive",
+          });
+        }
       }
-      setBulkMergeProgress({ current: i + 1, total: matchesToMerge.length, inProgress: true });
+    } catch (error) {
+      console.error("Failed to poll job status:", error);
     }
+  };
 
-    setBulkMergeProgress({ current: 0, total: 0, inProgress: false });
-    setSelectedIds(new Set());
-    setSelectAllMatching(false);
-    queryClient.invalidateQueries({ queryKey: ["matches"] });
-    queryClient.invalidateQueries({ queryKey: ["match-counts"] });
-    queryClient.invalidateQueries({ queryKey: ["merges"] });
-    queryClient.invalidateQueries({ queryKey: ["merge-stats"] });
+  // Server-side bulk merge with polling
+  const startBulkMerge = async (matchIds: string[], ruleId?: string) => {
+    if (matchIds.length === 0) return;
 
-    if (!abortMergeRef.current) {
+    setBulkMergeProgress({ current: 0, total: matchIds.length, inProgress: true });
+
+    try {
+      // Start server-side bulk merge
+      const response = await api.startBulkMerge(matchIds, ruleId);
+      setBulkJobId(response.job_id);
+
+      // Start polling for progress
+      pollIntervalRef.current = setInterval(() => {
+        pollJobStatus(response.job_id);
+      }, 1000);
+
+    } catch (error) {
+      setBulkMergeProgress({ current: 0, total: 0, inProgress: false });
       toast({
-        title: "Bulk Merge Complete",
-        description: `Successfully merged ${successCount} records.${failCount > 0 ? ` ${failCount} failed.` : ''}`,
-        variant: failCount > 0 ? "destructive" : "default",
+        title: "Bulk Merge Failed",
+        description: error instanceof Error ? error.message : "Failed to start bulk merge",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Cancel bulk job
+  const handleCancelBulkMerge = async () => {
+    if (!bulkJobId) return;
+
+    try {
+      await api.cancelBulkJob(bulkJobId);
+      toast({
+        title: "Cancellation Requested",
+        description: "The merge will stop after the current batch completes.",
+      });
+    } catch (error) {
+      toast({
+        title: "Cancel Failed",
+        description: error instanceof Error ? error.message : "Failed to cancel merge",
+        variant: "destructive",
       });
     }
   };
 
   const handleMergeAll = async () => {
     setShowMergeAllDialog(false);
-    // Fetch all pending matches for the merge (not just the current page)
+    // Fetch all pending match IDs for the merge (not just the current page)
     const allResult = await api.getMatches(
       "pending",
       ruleFilter !== "all" ? ruleFilter : undefined,
       10000
     );
-    handleBulkMerge(allResult.data || []);
+    const matchIds = (allResult.data || []).map((m: MatchPair) => m.id);
+    startBulkMerge(matchIds, ruleFilter !== "all" ? ruleFilter : undefined);
   };
 
   const handleMergeSelected = () => {
@@ -222,7 +264,9 @@ export default function AllPendingMatches() {
     const matchesToMerge = selectAllMatching
       ? filteredMatches
       : filteredMatches.filter((m: MatchPair) => selectedIds.has(m.id));
-    handleBulkMerge(matchesToMerge);
+    const matchIds = matchesToMerge.map((m: MatchPair) => m.id);
+    // For selected merges across multiple rules, don't pass a rule_id
+    startBulkMerge(matchIds);
   };
 
   // Table columns
@@ -406,7 +450,7 @@ export default function AllPendingMatches() {
                 <Button
                   variant="destructive"
                   size="sm"
-                  onClick={() => { abortMergeRef.current = true; }}
+                  onClick={handleCancelBulkMerge}
                 >
                   <X className="h-4 w-4" />
                 </Button>
@@ -460,7 +504,7 @@ export default function AllPendingMatches() {
             <Button
               variant="destructive"
               size="sm"
-              onClick={() => { abortMergeRef.current = true; }}
+              onClick={handleCancelBulkMerge}
             >
               <X className="h-4 w-4" />
             </Button>

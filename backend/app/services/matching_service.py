@@ -1,7 +1,7 @@
 """
 Matching engine for duplicate detection.
 """
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Set, Tuple
 from difflib import SequenceMatcher
 import re
 import unicodedata
@@ -9,6 +9,13 @@ import uuid
 
 from app.core.ghl.client import GHLClient
 from app.db.supabase import get_supabase
+from app.services.blocking_service import (
+    populate_contact_blocks,
+    get_candidate_pairs_sql,
+    should_use_blocking,
+    clear_contact_blocks,
+    stream_contacts_to_blocks,
+)
 
 
 def normalize_phone(phone: str) -> str:
@@ -317,9 +324,16 @@ async def run_scan(
     compared_pairs = set()
     valid_contact_ids = set()
 
+    # Check if blocking can be used before fetching
+    use_blocking = should_use_blocking(match_fields)
+
     # Store all contacts with full data for matching and storage
     # We need full data to store in match_pairs for later merge operations
     all_contacts = []
+
+    # If using blocking, clear and prepare for streaming inserts
+    if use_blocking:
+        clear_contact_blocks(internal_location_id)
 
     try:
         async with GHLClient(access_token, ghl_location_id) as client:
@@ -341,7 +355,15 @@ async def run_scan(
                             valid_contact_ids.add(record_id)
                             all_contacts.append(record)
 
+                    # Stream to blocking table during fetch if blocking is enabled
+                    if use_blocking:
+                        stream_contacts_to_blocks(internal_location_id, page_records)
+
                     logger.info(f"Fetched page {page_num}: {len(page_records)} contacts (total: {records_scanned})")
+
+                    # Periodic GC during fetch to manage memory
+                    if page_num % 10 == 0:
+                        gc.collect()
 
                     start_after_id = (
                         result.get("meta", {}).get("startAfterId")
@@ -359,6 +381,10 @@ async def run_scan(
                     if record_id:
                         valid_contact_ids.add(record_id)
                         all_contacts.append(record)
+
+                # Stream to blocking table if blocking is enabled
+                if use_blocking:
+                    stream_contacts_to_blocks(internal_location_id, page_records)
 
     except Exception as e:
         error_msg = str(e)
@@ -406,75 +432,157 @@ async def run_scan(
 
     # Build lookup dict for full record data (needed for storing matches)
     contacts_by_id = {c.get("id"): c for c in all_contacts}
-
-    # Compare all pairs and store matches immediately to reduce memory
-    comparison_count = 0
     total_contacts = len(all_contacts)
 
-    for i in range(total_contacts):
-        record_a = all_contacts[i]
-        id_a = record_a.get("id")
-        if not id_a:
-            continue
+    # Determine if we can use blocking optimization
+    use_blocking = should_use_blocking(match_fields)
 
-        for j in range(i + 1, total_contacts):
-            record_b = all_contacts[j]
-            id_b = record_b.get("id")
-            if not id_b:
-                continue
+    if use_blocking:
+        # BLOCKING-BASED SCAN: O(n) instead of O(n^2)
+        logger.info(f"Using blocking optimization for {total_contacts} contacts")
 
-            # Skip already compared pairs (use IDs only to save memory)
-            pair_key = (min(id_a, id_b), max(id_a, id_b))
-            if pair_key in compared_pairs:
-                continue
-            compared_pairs.add(pair_key)
-            comparison_count += 1
+        # Blocking keys already populated during fetch, get candidate pairs
+        candidate_pairs = get_candidate_pairs_sql(internal_location_id, match_fields)
+        total_pairs = len(candidate_pairs)
 
-            is_match, confidence, field_scores = compare_records(
-                record_a, record_b, match_fields
-            )
+        logger.info(f"Blocking reduced pairs from {total_contacts * (total_contacts - 1) // 2} to {total_pairs}")
 
-            # Log first few comparisons for debugging
-            if comparison_count <= 5:
-                logger.info(f"Comparison {comparison_count}: is_match={is_match}, confidence={confidence:.1f}%, threshold={review_threshold}")
-                logger.info(f"  Field scores: {field_scores}")
+        # Process candidate pairs in chunks for memory efficiency
+        CHUNK_SIZE = 500
+        comparison_count = 0
 
-            if is_match and confidence >= review_threshold:
-                matches_found += 1
-                is_high_confidence = confidence >= auto_merge_threshold
-                if is_high_confidence:
-                    high_confidence_count += 1
+        for chunk_start in range(0, total_pairs, CHUNK_SIZE):
+            chunk_end = min(chunk_start + CHUNK_SIZE, total_pairs)
+            chunk = candidate_pairs[chunk_start:chunk_end]
 
-                # Store match immediately to avoid accumulating in memory
-                match_id = str(uuid.uuid4())
-                match_data = {
-                    "id": match_id,
-                    "tenant_id": tenant_id,
-                    "location_id": internal_location_id,
-                    "rule_id": rule_id,
-                    "record_a_id": id_a,
-                    "record_a_type": source_object[:-1],
-                    "record_a_data": contacts_by_id.get(id_a, record_a),
-                    "record_b_id": id_b,
-                    "record_b_type": source_object[:-1],
-                    "record_b_data": contacts_by_id.get(id_b, record_b),
-                    "confidence_score": round(confidence, 2) / 100,
-                    "field_scores": field_scores,
-                    "status": "pending",
-                }
+            # Process each pair in the chunk
+            for id_a, id_b in chunk:
+                record_a = contacts_by_id.get(id_a)
+                record_b = contacts_by_id.get(id_b)
 
-                try:
-                    result = supabase.table("match_pairs").insert(match_data).execute()
-                    if result.data:
-                        matches_stored += 1
-                except Exception as e:
-                    # Skip duplicates (same record pair already matched)
-                    logger.debug(f"Skipped duplicate match: {e}")
+                if not record_a or not record_b:
+                    continue
 
-        # Periodic memory cleanup every 500 records processed
-        if i > 0 and i % 500 == 0:
+                # Skip already compared pairs
+                pair_key = (id_a, id_b)
+                if pair_key in compared_pairs:
+                    continue
+                compared_pairs.add(pair_key)
+                comparison_count += 1
+
+                is_match, confidence, field_scores = compare_records(
+                    record_a, record_b, match_fields
+                )
+
+                # Log first few comparisons for debugging
+                if comparison_count <= 5:
+                    logger.info(f"Comparison {comparison_count}: is_match={is_match}, confidence={confidence:.1f}%, threshold={review_threshold}")
+                    logger.info(f"  Field scores: {field_scores}")
+
+                if is_match and confidence >= review_threshold:
+                    matches_found += 1
+                    is_high_confidence = confidence >= auto_merge_threshold
+                    if is_high_confidence:
+                        high_confidence_count += 1
+
+                    # Store match immediately
+                    match_id = str(uuid.uuid4())
+                    match_data = {
+                        "id": match_id,
+                        "tenant_id": tenant_id,
+                        "location_id": internal_location_id,
+                        "rule_id": rule_id,
+                        "record_a_id": id_a,
+                        "record_a_type": source_object[:-1],
+                        "record_a_data": record_a,
+                        "record_b_id": id_b,
+                        "record_b_type": source_object[:-1],
+                        "record_b_data": record_b,
+                        "confidence_score": round(confidence, 2) / 100,
+                        "field_scores": field_scores,
+                        "status": "pending",
+                    }
+
+                    try:
+                        result = supabase.table("match_pairs").insert(match_data).execute()
+                        if result.data:
+                            matches_stored += 1
+                    except Exception as e:
+                        logger.debug(f"Skipped duplicate match: {e}")
+
+            # Explicit GC after each chunk
             gc.collect()
-            logger.info(f"Processed {i}/{total_contacts} records, {matches_found} matches found so far")
+            logger.info(f"Processed chunk {chunk_start // CHUNK_SIZE + 1}/{(total_pairs + CHUNK_SIZE - 1) // CHUNK_SIZE}, {matches_found} matches found")
+
+    else:
+        # FULL SCAN: Compare all pairs (O(n^2)) - required for complex rules
+        logger.info(f"Using full scan for {total_contacts} contacts (blocking not applicable)")
+
+        comparison_count = 0
+        for i in range(total_contacts):
+            record_a = all_contacts[i]
+            id_a = record_a.get("id")
+            if not id_a:
+                continue
+
+            for j in range(i + 1, total_contacts):
+                record_b = all_contacts[j]
+                id_b = record_b.get("id")
+                if not id_b:
+                    continue
+
+                # Skip already compared pairs (use IDs only to save memory)
+                pair_key = (min(id_a, id_b), max(id_a, id_b))
+                if pair_key in compared_pairs:
+                    continue
+                compared_pairs.add(pair_key)
+                comparison_count += 1
+
+                is_match, confidence, field_scores = compare_records(
+                    record_a, record_b, match_fields
+                )
+
+                # Log first few comparisons for debugging
+                if comparison_count <= 5:
+                    logger.info(f"Comparison {comparison_count}: is_match={is_match}, confidence={confidence:.1f}%, threshold={review_threshold}")
+                    logger.info(f"  Field scores: {field_scores}")
+
+                if is_match and confidence >= review_threshold:
+                    matches_found += 1
+                    is_high_confidence = confidence >= auto_merge_threshold
+                    if is_high_confidence:
+                        high_confidence_count += 1
+
+                    # Store match immediately to avoid accumulating in memory
+                    match_id = str(uuid.uuid4())
+                    match_data = {
+                        "id": match_id,
+                        "tenant_id": tenant_id,
+                        "location_id": internal_location_id,
+                        "rule_id": rule_id,
+                        "record_a_id": id_a,
+                        "record_a_type": source_object[:-1],
+                        "record_a_data": contacts_by_id.get(id_a, record_a),
+                        "record_b_id": id_b,
+                        "record_b_type": source_object[:-1],
+                        "record_b_data": contacts_by_id.get(id_b, record_b),
+                        "confidence_score": round(confidence, 2) / 100,
+                        "field_scores": field_scores,
+                        "status": "pending",
+                    }
+
+                    try:
+                        result = supabase.table("match_pairs").insert(match_data).execute()
+                        if result.data:
+                            matches_stored += 1
+                    except Exception as e:
+                        # Skip duplicates (same record pair already matched)
+                        logger.debug(f"Skipped duplicate match: {e}")
+
+            # Periodic memory cleanup every 500 records processed
+            if i > 0 and i % 500 == 0:
+                gc.collect()
+                logger.info(f"Processed {i}/{total_contacts} records, {matches_found} matches found so far")
 
     # Final cleanup
     del all_contacts
