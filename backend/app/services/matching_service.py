@@ -365,10 +365,10 @@ async def run_scan(
                     if page_num % 10 == 0:
                         gc.collect()
 
-                    start_after_id = (
-                        result.get("meta", {}).get("startAfterId")
-                        or result.get("startAfterId")
-                    )
+                    # Use last contact ID as the startAfterId for next page
+                    # GHL API doesn't return meta.startAfterId - we use last record's ID
+                    last_contact = page_records[-1] if page_records else None
+                    start_after_id = last_contact.get("id") if last_contact else None
                     if not start_after_id or len(page_records) < 100:
                         break
 
@@ -662,10 +662,9 @@ async def fetch_all_contacts(client, contact_id: str) -> List[dict]:
                 if isinstance(c, dict) and c.get("id") and c["id"] != contact_id:
                     all_contacts.append(c)
 
-            start_after_id = (
-                page_result.get("meta", {}).get("startAfterId")
-                or page_result.get("startAfterId")
-            )
+            # Use last contact ID as the startAfterId for next page
+            last_contact = page_contacts[-1] if page_contacts else None
+            start_after_id = last_contact.get("id") if last_contact else None
             if not start_after_id or len(page_contacts) < 100:
                 break
         except Exception as e:

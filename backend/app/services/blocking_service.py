@@ -136,7 +136,11 @@ def stream_contacts_to_blocks(
 
     if records:
         try:
-            supabase.table("contact_blocks").insert(records).execute()
+            # Use upsert to handle any duplicate contacts gracefully
+            supabase.table("contact_blocks").upsert(
+                records,
+                on_conflict="location_id,contact_id"
+            ).execute()
             return len(records)
         except Exception as e:
             logger.error(f"Failed to stream blocking records: {e}")
