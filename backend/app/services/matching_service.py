@@ -369,6 +369,7 @@ async def run_scan(
                     # GHL API doesn't return meta.startAfterId - we use last record's ID
                     last_contact = page_records[-1] if page_records else None
                     start_after_id = last_contact.get("id") if last_contact else None
+                    logger.info(f"Page {page_num} last contact ID: {start_after_id}")
                     if not start_after_id or len(page_records) < 100:
                         break
 
