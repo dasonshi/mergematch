@@ -400,7 +400,6 @@ export default function Dashboard() {
       accessor: (rule) => (
         <RuleActionButtons
           rule={rule}
-          pendingCount={pendingByRule[rule.id] || 0}
           onDelete={() => setRuleToDelete(rule)}
         />
       ),

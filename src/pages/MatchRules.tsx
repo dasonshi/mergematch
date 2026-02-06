@@ -199,7 +199,6 @@ export default function MatchRules() {
       accessor: (rule) => (
         <RuleActionButtons
           rule={rule}
-          pendingCount={pendingByRule[rule.id] || 0}
           onDelete={() => setRuleToDelete(rule)}
         />
       ),
