@@ -45,11 +45,15 @@ class GHLClient:
         self,
         limit: int = 100,
         start_after_id: Optional[str] = None,
+        start_after: Optional[int] = None,
         query: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Fetch contacts with pagination."""
         params = {"locationId": self.location_id, "limit": limit}
-        if start_after_id:
+        if start_after:
+            # Timestamp-based pagination (more reliable)
+            params["startAfter"] = start_after
+        elif start_after_id:
             params["startAfterId"] = start_after_id
         if query:
             params["query"] = query
