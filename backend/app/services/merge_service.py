@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import uuid
 import logging
 import httpx
+import gc
 
 from app.core.ghl.client import GHLClient
 from app.db.supabase import get_supabase
@@ -656,6 +657,9 @@ async def execute_merge(
             logger.info(f"Marked {stale_count} other match_pairs as stale (referenced deleted contact {duplicate_id})")
 
         logger.info(f"Merge {merge_id} completed successfully")
+
+        # Force garbage collection to free memory after each merge
+        gc.collect()
 
         return {
             "id": merge_id,

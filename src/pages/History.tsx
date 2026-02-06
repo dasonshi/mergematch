@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DateRange } from "react-day-picker";
-import { RotateCcw, Loader2, ExternalLink, Search, Filter, Download, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { RotateCcw, Loader2, ExternalLink, Search, Filter, Download, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -33,6 +33,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { DataTable, DataTableColumn } from "@/components/ui/data-table";
+import { TablePagination } from "@/components/ui/table-pagination";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
@@ -122,9 +123,6 @@ export default function History() {
 
   const merges = mergesData?.data || [];
   const total = mergesData?.total || 0;
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const startRecord = total > 0 ? offset + 1 : 0;
-  const endRecord = Math.min(offset + merges.length, total);
 
   // Count restorable items (only completed status can be restored)
   const restorableOnPage = merges.filter((m: MergeItem) => m.status === "completed").length;
@@ -538,58 +536,14 @@ export default function History() {
             }
           />
         </CardContent>
+        <TablePagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
       </Card>
-
-      {/* Pagination Footer */}
-      {total > 0 && (
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm text-muted-foreground">
-          {/* Page size selector */}
-          <div className="flex items-center gap-2">
-            <span>Rows per page</span>
-            <Select value={pageSize.toString()} onValueChange={(v) => setPageSize(Number(v))}>
-              <SelectTrigger className="w-[70px] h-8">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="10">10</SelectItem>
-                <SelectItem value="50">50</SelectItem>
-                <SelectItem value="100">100</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Range indicator */}
-          <span>
-            Showing {startRecord}&ndash;{endRecord} of {total}
-            {hasActiveFilters && " (filtered)"}
-          </span>
-
-          {/* Prev / Next buttons */}
-          <div className="flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 w-8 p-0"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page <= 1}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <span className="px-2 min-w-[80px] text-center">
-              Page {page} of {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 w-8 p-0"
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      )}
 
       {/* Restore Confirmation Dialog */}
       <Dialog open={!!restoreItem} onOpenChange={() => setRestoreItem(null)}>

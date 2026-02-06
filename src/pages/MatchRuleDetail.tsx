@@ -626,7 +626,7 @@ export default function MatchRuleDetail() {
       {/* Pending Matches Section */}
       <Card className="overflow-hidden">
         {/* Header with expand toggle and search */}
-        <div className="flex items-center justify-between gap-4 p-4 border-b bg-muted/30">
+        <div className="flex items-center justify-between gap-4 p-4 border-b bg-muted/40">
           <button
             onClick={() => setMatchesExpanded(!matchesExpanded)}
             className="flex items-center gap-2 font-semibold hover:text-primary transition-colors"

@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 import httpx
 import logging
+import gc
 
 from app.db.supabase import get_supabase
 from app.services.auth_service import get_location_tokens
@@ -169,6 +170,9 @@ async def validate_matches(
             logger.info(f"Marked match {m['id']} as stale - contact(s) no longer exist in GHL")
 
     logger.info(f"Validation result: {len(valid)} valid, {len(stale)} stale (auto-cleaned)")
+
+    # Force garbage collection after processing many API responses
+    gc.collect()
 
     return {"valid": valid, "stale": stale, "stale_cleaned": len(stale)}
 

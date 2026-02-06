@@ -102,7 +102,7 @@ export function MergeHistoryCard({
 
   return (
     <Card className="overflow-hidden">
-      <div className="flex items-center gap-2 p-4 border-b bg-muted/30">
+      <div className="flex items-center gap-2 p-4 border-b bg-muted/40">
         <span className="font-semibold">Merge History</span>
         <Badge variant="secondary">{mergeHistory.length}</Badge>
       </div>
@@ -125,7 +125,7 @@ export function MergeHistoryCard({
       </CardContent>
 
       {mergeHistory.length > 0 && (
-        <div className="flex items-center justify-between p-3 border-t bg-muted/20">
+        <div className="flex items-center justify-between px-4 py-3 border-t bg-muted/20">
           <span className="text-sm text-muted-foreground">
             Showing {mergeHistory.length} recent merges
           </span>
