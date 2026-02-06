@@ -3,15 +3,14 @@ Celery application configuration.
 Uses Redis as message broker for reliable job queue processing.
 """
 import os
+import ssl
 from celery import Celery
 
 # Get Redis URL from environment (Upstash or other Redis provider)
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
-# For rediss:// (TLS), append SSL cert requirement if not already present
-if REDIS_URL.startswith("rediss://") and "ssl_cert_reqs" not in REDIS_URL:
-    separator = "&" if "?" in REDIS_URL else "?"
-    REDIS_URL = f"{REDIS_URL}{separator}ssl_cert_reqs=CERT_NONE"
+# Check if using TLS (rediss://)
+USE_SSL = REDIS_URL.startswith("rediss://")
 
 # Create Celery app
 celery_app = Celery(
@@ -20,6 +19,11 @@ celery_app = Celery(
     backend=REDIS_URL,
     include=["app.tasks.merge_tasks"],
 )
+
+# SSL configuration for Upstash/TLS Redis
+ssl_config = {
+    "ssl_cert_reqs": ssl.CERT_NONE,
+} if USE_SSL else None
 
 # Celery configuration
 celery_app.conf.update(
@@ -47,4 +51,8 @@ celery_app.conf.update(
     # Task time limits
     task_soft_time_limit=300,  # 5 min soft limit (raises exception)
     task_time_limit=360,  # 6 min hard limit (kills task)
+
+    # SSL settings for rediss:// URLs (Upstash)
+    broker_use_ssl=ssl_config,
+    redis_backend_use_ssl=ssl_config,
 )
