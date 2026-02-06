@@ -9,6 +9,7 @@ from datetime import datetime
 from app.db.supabase import get_supabase
 from app.services.merge_service import execute_merge
 from app.services.billing_service import check_merge_quota
+from app.services.auth_service import get_location_tokens, refresh_ghl_token
 
 logger = logging.getLogger(__name__)
 
@@ -243,6 +244,29 @@ async def execute_bulk_merge(
         "started_at": datetime.utcnow().isoformat(),
     })
 
+    # Fetch fresh tokens to avoid stale token issues in background task
+    try:
+        tokens = await get_location_tokens(ghl_location_id)
+        if tokens:
+            access_token = tokens["access_token"]
+            logger.info(f"Bulk job {job_id}: Using fresh token for {ghl_location_id}")
+        else:
+            # Try refreshing the token
+            refreshed = await refresh_ghl_token(ghl_location_id)
+            if refreshed:
+                access_token = refreshed["access_token"]
+                logger.info(f"Bulk job {job_id}: Refreshed token for {ghl_location_id}")
+            else:
+                await update_bulk_job(job_id, {
+                    "status": "failed",
+                    "completed_at": datetime.utcnow().isoformat(),
+                    "failed_items": [{"error": "Failed to get valid access token"}],
+                })
+                logger.error(f"Bulk job {job_id}: Could not get valid token")
+                return
+    except Exception as e:
+        logger.warning(f"Bulk job {job_id}: Token fetch error ({e}), using provided token")
+
     # Get rule configuration
     rule = {}
     if rule_id:
@@ -295,6 +319,15 @@ async def execute_bulk_merge(
             })
             logger.warning(f"Bulk job {job_id} stopped - merge quota exceeded")
             return
+
+        # Refresh token every 50 merges to avoid expiration during long operations
+        if processed_count > 0 and processed_count % 50 == 0:
+            try:
+                tokens = await get_location_tokens(ghl_location_id)
+                if tokens:
+                    access_token = tokens["access_token"]
+            except Exception:
+                pass  # Continue with current token
 
         chunk = match_ids[i:i + CHUNK_SIZE]
 
