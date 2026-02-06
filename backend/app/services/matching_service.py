@@ -338,15 +338,16 @@ async def run_scan(
     try:
         async with GHLClient(access_token, ghl_location_id) as client:
             if source_object == "contacts":
-                start_after_ts = None
+                # Use Search API with page-based pagination (more reliable than cursor-based)
                 page_num = 0
                 while True:
-                    result = await client.get_contacts(limit=100, start_after=start_after_ts)
+                    page_num += 1
+                    result = await client.search_contacts(page=page_num, page_limit=100)
                     page_records = result.get("contacts", [])
+
                     if not page_records:
                         break
 
-                    page_num += 1
                     records_scanned += len(page_records)
 
                     for record in page_records:
@@ -365,21 +366,8 @@ async def run_scan(
                     if page_num % 10 == 0:
                         gc.collect()
 
-                    # Use timestamp-based pagination (startAfter) - more reliable than startAfterId
-                    # GHL returns contacts sorted by dateAdded, use last contact's timestamp
-                    last_contact = page_records[-1] if page_records else None
-                    if last_contact:
-                        date_added = last_contact.get("dateAdded")
-                        if date_added:
-                            # Convert ISO timestamp to milliseconds since epoch
-                            from datetime import datetime
-                            try:
-                                dt = datetime.fromisoformat(date_added.replace("Z", "+00:00"))
-                                start_after_ts = int(dt.timestamp() * 1000)
-                            except (ValueError, AttributeError):
-                                start_after_ts = None
-                    logger.info(f"Page {page_num} last contact timestamp: {start_after_ts}")
-                    if not start_after_ts or len(page_records) < 100:
+                    # Stop if we got fewer than requested (last page)
+                    if len(page_records) < 100:
                         break
 
             elif source_object == "companies":
@@ -656,15 +644,15 @@ def can_use_targeted_search(match_fields: List[dict]) -> bool:
 async def fetch_all_contacts(client, contact_id: str) -> List[dict]:
     """Fetch all contacts via pagination (fallback for complex rules)."""
     import logging
-    from datetime import datetime
     logger = logging.getLogger(__name__)
 
     all_contacts = []
-    start_after_ts = None
+    page_num = 0
 
     while True:
         try:
-            page_result = await client.get_contacts(limit=100, start_after=start_after_ts)
+            page_num += 1
+            page_result = await client.search_contacts(page=page_num, page_limit=100)
             page_contacts = page_result.get("contacts", [])
             if not page_contacts:
                 break
@@ -673,17 +661,7 @@ async def fetch_all_contacts(client, contact_id: str) -> List[dict]:
                 if isinstance(c, dict) and c.get("id") and c["id"] != contact_id:
                     all_contacts.append(c)
 
-            # Use timestamp-based pagination
-            last_contact = page_contacts[-1] if page_contacts else None
-            if last_contact:
-                date_added = last_contact.get("dateAdded")
-                if date_added:
-                    try:
-                        dt = datetime.fromisoformat(date_added.replace("Z", "+00:00"))
-                        start_after_ts = int(dt.timestamp() * 1000)
-                    except (ValueError, AttributeError):
-                        start_after_ts = None
-            if not start_after_ts or len(page_contacts) < 100:
+            if len(page_contacts) < 100:
                 break
         except Exception as e:
             logger.error(f"Failed to fetch contacts page: {e}")

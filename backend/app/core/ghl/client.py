@@ -110,17 +110,19 @@ class GHLClient:
 
     async def search_contacts(
         self,
-        limit: int = 1,
+        page: int = 1,
+        page_limit: int = 100,
         filters: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
-        """Search contacts with filters. Returns total count."""
+        """Search contacts with page-based pagination."""
         body = {
             "locationId": self.location_id,
-            "page": 1,
-            "pageLimit": limit,
+            "page": page,
+            "pageLimit": page_limit,
         }
         if filters:
             body["filters"] = filters
+        logger.info(f"[GHL] POST /contacts/search page={page}, pageLimit={page_limit}")
         response = await self._client.post("/contacts/search", json=body)
         response.raise_for_status()
         return response.json()
