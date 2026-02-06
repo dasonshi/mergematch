@@ -1,6 +1,7 @@
 """
 MergeMatch API - Duplicate detection & merge platform
 """
+import logging
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -8,6 +9,13 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
+
+# Configure logging to output INFO level and above
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 from app.api.routes import auth, health, matches, rules, merges, webhooks, contacts, companies, fields, notifications, sync, cron, dedupe, jobs
 from app.api.routes import settings as settings_routes
 from app.core.security import validate_security_config

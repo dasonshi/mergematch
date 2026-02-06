@@ -67,6 +67,34 @@ npm run build && npx vercel --prod
 | Backend | Render | https://mergematch.onrender.com |
 | Database | Supabase | (via MCP) |
 
+## Observability & Logs
+
+**Render service:** `mergematch` (ID: `srv-d59j6c0gjchc73ap4q00`)
+
+**Access logs via CLI:**
+```bash
+# Recent logs
+render logs -r srv-d59j6c0gjchc73ap4q00 --limit 50 --output json
+
+# Search for specific text
+render logs -r srv-d59j6c0gjchc73ap4q00 --text "scan,merge,error" --limit 100 --output json
+
+# App logs only (excludes HTTP request logs)
+render logs -r srv-d59j6c0gjchc73ap4q00 --type app --limit 50 --output json
+
+# Filter by log level
+render logs -r srv-d59j6c0gjchc73ap4q00 --level error --limit 50 --output json
+```
+
+**Axiom:** Logs drain to `custom-object-importer` dataset (shared across projects).
+- Hostname: `mergematch` for app logs, `mergematch.onrender.com` for HTTP request logs
+```bash
+# Query Axiom
+axiom query "['custom-object-importer'] | where hostname == 'mergematch' | take 50" -f table --start-time "2026-02-01T00:00:00Z"
+```
+
+**Note:** If `render` CLI shows "token expired", run `render login` to re-authenticate.
+
 ### Deploy Process
 
 **Frontend:**
