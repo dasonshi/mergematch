@@ -292,85 +292,110 @@ async def execute_bulk_merge(
     # Process in chunks to allow progress updates and cancellation checks
     CHUNK_SIZE = 10
 
-    for i in range(0, len(match_ids), CHUNK_SIZE):
-        # Check for cancellation
-        if await is_cancellation_requested(job_id):
-            await update_bulk_job(job_id, {
-                "status": "cancelled",
-                "completed_at": datetime.utcnow().isoformat(),
-                "processed_count": processed_count,
-                "success_count": success_count,
-                "failed_count": failed_count,
-                "failed_items": failed_items,
-            })
-            logger.info(f"Bulk job {job_id} cancelled after {processed_count} merges")
-            return
+    try:
+        for i in range(0, len(match_ids), CHUNK_SIZE):
+            # Check for cancellation
+            try:
+                if await is_cancellation_requested(job_id):
+                    await update_bulk_job(job_id, {
+                        "status": "cancelled",
+                        "completed_at": datetime.utcnow().isoformat(),
+                        "processed_count": processed_count,
+                        "success_count": success_count,
+                        "failed_count": failed_count,
+                        "failed_items": failed_items,
+                    })
+                    logger.info(f"Bulk job {job_id} cancelled after {processed_count} merges")
+                    return
+            except Exception as e:
+                logger.warning(f"Bulk job {job_id}: cancellation check failed: {e}")
 
-        # Check merge quota
-        quota = await check_merge_quota(location_id, plan)
-        if not quota["allowed"]:
+            # Check merge quota (with error handling)
+            try:
+                quota = await check_merge_quota(location_id, plan)
+                if not quota["allowed"]:
+                    await update_bulk_job(job_id, {
+                        "status": "failed",
+                        "completed_at": datetime.utcnow().isoformat(),
+                        "processed_count": processed_count,
+                        "success_count": success_count,
+                        "failed_count": failed_count,
+                        "failed_items": [{"error": "Merge quota exceeded"}] + failed_items,
+                    })
+                    logger.warning(f"Bulk job {job_id} stopped - merge quota exceeded")
+                    return
+            except Exception as e:
+                logger.warning(f"Bulk job {job_id}: quota check failed ({e}), continuing")
+
+            # Refresh token every 50 merges to avoid expiration during long operations
+            if processed_count > 0 and processed_count % 50 == 0:
+                try:
+                    tokens = await get_location_tokens(ghl_location_id)
+                    if tokens:
+                        access_token = tokens["access_token"]
+                except Exception:
+                    pass  # Continue with current token
+
+            chunk = match_ids[i:i + CHUNK_SIZE]
+
+            # Process chunk in parallel
+            tasks = [
+                process_single_merge(
+                    match_id=mid,
+                    rule=rule,
+                    access_token=access_token,
+                    ghl_location_id=ghl_location_id,
+                    tenant_id=tenant_id,
+                    internal_location_id=location_id,
+                    semaphore=semaphore,
+                )
+                for mid in chunk
+            ]
+
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Process results
+            for result in results:
+                processed_count += 1
+
+                if isinstance(result, Exception):
+                    failed_count += 1
+                    failed_items.append({"error": str(result)})
+                elif result.get("success"):
+                    success_count += 1
+                else:
+                    failed_count += 1
+                    failed_items.append({
+                        "match_id": result.get("match_id"),
+                        "error": result.get("error"),
+                    })
+
+            # Update progress in database
+            try:
+                await update_bulk_job(job_id, {
+                    "processed_count": processed_count,
+                    "success_count": success_count,
+                    "failed_count": failed_count,
+                })
+            except Exception as e:
+                logger.error(f"Bulk job {job_id}: failed to update progress: {e}")
+
+            logger.info(f"Bulk job {job_id}: processed {processed_count}/{len(match_ids)}")
+
+    except Exception as e:
+        logger.error(f"Bulk job {job_id} failed with error: {e}")
+        try:
             await update_bulk_job(job_id, {
                 "status": "failed",
                 "completed_at": datetime.utcnow().isoformat(),
                 "processed_count": processed_count,
                 "success_count": success_count,
                 "failed_count": failed_count,
-                "failed_items": [{"error": "Merge quota exceeded"}] + failed_items,
+                "failed_items": [{"error": f"Job failed: {str(e)}"}] + failed_items,
             })
-            logger.warning(f"Bulk job {job_id} stopped - merge quota exceeded")
-            return
-
-        # Refresh token every 50 merges to avoid expiration during long operations
-        if processed_count > 0 and processed_count % 50 == 0:
-            try:
-                tokens = await get_location_tokens(ghl_location_id)
-                if tokens:
-                    access_token = tokens["access_token"]
-            except Exception:
-                pass  # Continue with current token
-
-        chunk = match_ids[i:i + CHUNK_SIZE]
-
-        # Process chunk in parallel
-        tasks = [
-            process_single_merge(
-                match_id=mid,
-                rule=rule,
-                access_token=access_token,
-                ghl_location_id=ghl_location_id,
-                tenant_id=tenant_id,
-                internal_location_id=location_id,
-                semaphore=semaphore,
-            )
-            for mid in chunk
-        ]
-
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Process results
-        for result in results:
-            processed_count += 1
-
-            if isinstance(result, Exception):
-                failed_count += 1
-                failed_items.append({"error": str(result)})
-            elif result.get("success"):
-                success_count += 1
-            else:
-                failed_count += 1
-                failed_items.append({
-                    "match_id": result.get("match_id"),
-                    "error": result.get("error"),
-                })
-
-        # Update progress in database
-        await update_bulk_job(job_id, {
-            "processed_count": processed_count,
-            "success_count": success_count,
-            "failed_count": failed_count,
-        })
-
-        logger.info(f"Bulk job {job_id}: processed {processed_count}/{len(match_ids)}")
+        except Exception as update_error:
+            logger.error(f"Bulk job {job_id}: failed to update status after error: {update_error}")
+        return
 
     # Mark job as completed
     await update_bulk_job(job_id, {
