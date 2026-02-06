@@ -118,11 +118,12 @@ async def process_single_merge_async(
         if match.get("status") != "pending":
             return {"match_id": match_id, "success": False, "error": f"Match status is {match.get('status')}"}
 
-        record_a = match.get("record_a_data", {})
-        record_b = match.get("record_b_data", {})
+        record_a = match.get("record_a_data") or {}
+        record_b = match.get("record_b_data") or {}
 
-        strategy = rule.get("merge_strategy", "standard")
-        overwrite_blanks = rule.get("merge_settings", {}).get("overwrite_blanks", False)
+        strategy = rule.get("merge_strategy") or "standard"
+        merge_settings = rule.get("merge_settings") or {}
+        overwrite_blanks = merge_settings.get("overwrite_blanks", False)
 
         master_id, selections = compute_merge_selections(
             record_a, record_b, strategy, overwrite_blanks
@@ -130,9 +131,9 @@ async def process_single_merge_async(
 
         # Get field preservation mappings
         mappings = None
-        field_preservation = rule.get("merge_settings", {}).get("field_preservation", {})
+        field_preservation = merge_settings.get("field_preservation") or {}
         if field_preservation.get("enabled"):
-            mappings = field_preservation.get("mappings", [])
+            mappings = field_preservation.get("mappings") or []
 
         # Execute the merge
         result = await execute_merge(
