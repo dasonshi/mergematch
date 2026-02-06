@@ -57,10 +57,16 @@ export default function AllPendingMatches() {
   const [selectAllMatching, setSelectAllMatching] = useState(false);
   const [showMergeSelectedDialog, setShowMergeSelectedDialog] = useState(false);
 
-  // Merge state
+  // Merge state - check localStorage on init to show correct button state immediately
+  const BULK_JOB_KEY_INIT = 'bulkJob_allMatches';
   const [showMergeAllDialog, setShowMergeAllDialog] = useState(false);
-  const [bulkMergeProgress, setBulkMergeProgress] = useState({ current: 0, total: 0, inProgress: false });
-  const [bulkJobId, setBulkJobId] = useState<string | null>(null);
+  const [bulkMergeProgress, setBulkMergeProgress] = useState(() => {
+    const savedJobId = localStorage.getItem(BULK_JOB_KEY_INIT);
+    return { current: 0, total: 0, inProgress: !!savedJobId };
+  });
+  const [bulkJobId, setBulkJobId] = useState<string | null>(() => {
+    return localStorage.getItem(BULK_JOB_KEY_INIT);
+  });
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Fetch all match rules

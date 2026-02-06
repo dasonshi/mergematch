@@ -66,10 +66,16 @@ export default function PendingMatches() {
   const [searchQuery, setSearchQuery] = useState("");
   const [confidenceFilter, setConfidenceFilter] = useState<string>("all");
 
-  // Merge state
+  // Merge state - check localStorage on init to show correct button state immediately
   const [showMergeAllDialog, setShowMergeAllDialog] = useState(false);
-  const [bulkMergeProgress, setBulkMergeProgress] = useState({ current: 0, total: 0, inProgress: false });
-  const [bulkJobId, setBulkJobId] = useState<string | null>(null);
+  const [bulkMergeProgress, setBulkMergeProgress] = useState(() => {
+    // Check if there's an active job for this rule
+    const savedJobId = ruleId ? localStorage.getItem(`bulkJob_${ruleId}`) : null;
+    return { current: 0, total: 0, inProgress: !!savedJobId };
+  });
+  const [bulkJobId, setBulkJobId] = useState<string | null>(() => {
+    return ruleId ? localStorage.getItem(`bulkJob_${ruleId}`) : null;
+  });
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [isValidating, setIsValidating] = useState(false);
   const [mergeAllValidIds, setMergeAllValidIds] = useState<string[]>([]);
