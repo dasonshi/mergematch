@@ -102,6 +102,7 @@ Plans:
 
 ## Future Enhancements
 
+- [ ] Webhook-triggered auto-scan — Automatically run scans when GHL contacts are created/updated via webhook events
 - [ ] Jobs API - Scheduled/recurring scan jobs (backend stub exists at `backend/app/api/routes/jobs.py`)
 - [ ] Custom Objects support in rule builder (backend already supports, frontend needs UI)
 - [ ] Bulk operations improvements

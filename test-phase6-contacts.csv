@@ -1,0 +1,12 @@
+firstName,lastName,email,phone
+José T34-A,Muñoz,jose.t34@mmtest2.io,
+Jose T34-B,Munoz,jose.t34b@mmtest2.io,
+Blank T35-A,Test,,
+Blank T35-B,Test,,
+Special T36-A,Email,test+tag.t36@mmtest2.io,
+Special T36-B,Email,test+tag.t36@mmtest2.io,
+Duplicate T38-A,Chain,dup.t38@mmtest2.io,
+Duplicate T38-B,Chain,dup.t38@mmtest2.io,
+Duplicate T38-C,Chain,dup.t38@mmtest2.io,
+JOHN T40-A,UPPER,JOHN.T40@MMTEST2.IO,
+john T40-B,lower,john.t40@mmtest2.io,

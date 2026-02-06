@@ -213,10 +213,11 @@ export default function AllPendingMatches() {
       const response = await api.startBulkMerge(matchIds, ruleId);
       setBulkJobId(response.job_id);
 
-      // Start polling for progress
+      // Poll immediately, then every 2 seconds
+      pollJobStatus(response.job_id);
       pollIntervalRef.current = setInterval(() => {
         pollJobStatus(response.job_id);
-      }, 1000);
+      }, 2000);
 
     } catch (error) {
       setBulkMergeProgress({ current: 0, total: 0, inProgress: false });

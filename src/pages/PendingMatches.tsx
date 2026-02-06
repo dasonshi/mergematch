@@ -190,6 +190,7 @@ export default function PendingMatches() {
   const pollJobStatus = async (jobId: string) => {
     try {
       const status = await api.getBulkJobStatus(jobId);
+      console.log('[BulkMerge] Poll status:', status.processed_count, '/', status.total_count, status.status);
       setBulkMergeProgress({
         current: status.processed_count,
         total: status.total_count,
@@ -258,10 +259,11 @@ export default function PendingMatches() {
       const response = await api.startBulkMerge(matchIds, ruleId);
       setBulkJobId(response.job_id);
 
-      // Start polling for progress
+      // Poll immediately, then every 2 seconds
+      pollJobStatus(response.job_id);
       pollIntervalRef.current = setInterval(() => {
         pollJobStatus(response.job_id);
-      }, 1000);
+      }, 2000);
 
     } catch (error) {
       setBulkMergeProgress({ current: 0, total: 0, inProgress: false });
