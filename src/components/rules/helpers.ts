@@ -17,12 +17,27 @@ export function getFieldValue(record: Record<string, unknown>, field: string): s
 
 /**
  * Get the record's display name (first + last name, or fallback).
+ * For custom objects without standard name fields, uses match fields.
  */
-export function getRecordName(record: Record<string, unknown>): string {
+export function getRecordName(
+  record: Record<string, unknown>,
+  matchFields?: Array<{ field: string; algorithm: string }>
+): string {
+  // Try standard contact fields first
   if (record.firstName && record.lastName) {
     return `${record.firstName} ${record.lastName}`;
   }
-  return record.firstName || record.name || record.email || "—";
+  if (record.firstName) return String(record.firstName);
+  if (record.name) return String(record.name);
+  if (record.email) return String(record.email);
+
+  // For custom objects: use first match field value as the title
+  if (matchFields && matchFields.length > 0) {
+    const firstValue = getFieldValue(record, matchFields[0].field);
+    if (firstValue) return String(firstValue);
+  }
+
+  return "—";
 }
 
 /**

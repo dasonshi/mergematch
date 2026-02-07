@@ -417,17 +417,20 @@ export default function Dashboard() {
         const recordA = item.record_a_data || {};
         const rule = rulesMap.get(item.rule_id);
         const matchFields = rule?.match_fields || [];
+        const name = getRecordName(recordA, matchFields);
         const fieldValue = getFirstMatchFieldValue(recordA, matchFields);
         const ghlUrl = `https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${item.record_a_id}`;
+        // Don't show subheading if it duplicates the name (for custom objects)
+        const showFieldValue = fieldValue && fieldValue !== name;
         return (
           <div>
             <Link
               to={`/match-rules/${item.rule_id}/review/${item.id}`}
               className="font-medium hover:text-primary hover:underline"
             >
-              {getRecordName(recordA)}
+              {name}
             </Link>
-            {fieldValue && (
+            {showFieldValue && (
               <a
                 href={ghlUrl}
                 target="_blank"
@@ -447,17 +450,20 @@ export default function Dashboard() {
         const recordB = item.record_b_data || {};
         const rule = rulesMap.get(item.rule_id);
         const matchFields = rule?.match_fields || [];
+        const name = getRecordName(recordB, matchFields);
         const fieldValue = getFirstMatchFieldValue(recordB, matchFields);
         const ghlUrl = `https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${item.record_b_id}`;
+        // Don't show subheading if it duplicates the name (for custom objects)
+        const showFieldValue = fieldValue && fieldValue !== name;
         return (
           <div>
             <Link
               to={`/match-rules/${item.rule_id}/review/${item.id}`}
               className="font-medium hover:text-primary hover:underline"
             >
-              {getRecordName(recordB)}
+              {name}
             </Link>
-            {fieldValue && (
+            {showFieldValue && (
               <a
                 href={ghlUrl}
                 target="_blank"

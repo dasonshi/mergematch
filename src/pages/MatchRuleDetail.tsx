@@ -449,16 +449,19 @@ export default function MatchRuleDetail() {
       accessor: (match) => {
         const recordA = match.record_a_data || {};
         const matchFields = rule?.match_fields || [];
+        const name = getRecordName(recordA, matchFields);
         const subheading = getMatchFieldSubheading(recordA, matchFields);
+        // Don't show subheading if it duplicates the name (for custom objects)
+        const showSubheading = subheading && subheading !== name && !name.includes(subheading.split(" • ")[0]);
         return (
           <div>
             <Link
               to={`/match-rules/${id}/review/${match.id}`}
               className="font-medium hover:text-primary hover:underline"
             >
-              {getRecordName(recordA)}
+              {name}
             </Link>
-            {subheading && (
+            {showSubheading && (
               <div className="text-xs text-muted-foreground">
                 {subheading}
               </div>
@@ -472,16 +475,19 @@ export default function MatchRuleDetail() {
       accessor: (match) => {
         const recordB = match.record_b_data || {};
         const matchFields = rule?.match_fields || [];
+        const name = getRecordName(recordB, matchFields);
         const subheading = getMatchFieldSubheading(recordB, matchFields);
+        // Don't show subheading if it duplicates the name (for custom objects)
+        const showSubheading = subheading && subheading !== name && !name.includes(subheading.split(" • ")[0]);
         return (
           <div>
             <Link
               to={`/match-rules/${id}/review/${match.id}`}
               className="font-medium hover:text-primary hover:underline"
             >
-              {getRecordName(recordB)}
+              {name}
             </Link>
-            {subheading && (
+            {showSubheading && (
               <div className="text-xs text-muted-foreground">
                 {subheading}
               </div>
