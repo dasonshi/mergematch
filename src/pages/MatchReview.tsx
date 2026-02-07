@@ -317,24 +317,29 @@ export default function MatchReview() {
     return formatted || "(empty)";
   };
 
-  // Compute preservation preview based on current mappings and master selection
+  // Compute preservation preview based on current mappings and field selections
+  // For each mapping, the value to preserve is the one NOT selected for that field
   const preservationPreview = useMemo(() => {
     if (fieldPreservationMappings.length === 0) return [];
 
-    const loserRecord = masterId === "a" ? recordB : recordA;
-
     return fieldPreservationMappings
-      .filter(m => m.source && m.target) // only complete mappings
+      .filter(m => m.source && m.target)
       .map(mapping => {
         const sourceField = preservableFields.find(f => f.id === mapping.source);
         const targetField = preservableFields.find(f => f.id === mapping.target);
+
+        // For this specific field, which value is selected to keep?
+        const selectedSource = selections[mapping.source] || masterId;
+        // The opposite value is the one being overwritten - that's what we preserve
+        const valueToPreserve = selectedSource === "a" ? recordB[mapping.source] : recordA[mapping.source];
+
         return {
           sourceLabel: sourceField?.name || getFieldLabel(mapping.source),
           targetLabel: targetField?.name || getFieldLabel(mapping.target),
-          value: formatDisplayValue(loserRecord[mapping.source]),
+          value: formatDisplayValue(valueToPreserve),
         };
       });
-  }, [fieldPreservationMappings, masterId, recordA, recordB, preservableFields, getFieldLabel, formatDisplayValue]);
+  }, [fieldPreservationMappings, selections, masterId, recordA, recordB, preservableFields, getFieldLabel, formatDisplayValue]);
 
   const handleMerge = () => {
     // Only require acknowledgment if warning is enabled
@@ -344,12 +349,29 @@ export default function MatchReview() {
     }
     const actualMasterId = masterId === "a" ? recordAId : recordBId;
     const hasValidMappings = hasFieldPreservation && fieldPreservationMappings.some(m => m.source && m.target);
+
+    // Build mappings with the actual values to preserve
+    // For each mapping, the value to preserve is the one NOT selected for that field
+    const mappingsWithValues = hasValidMappings
+      ? fieldPreservationMappings
+          .filter(m => m.source && m.target)
+          .map(m => {
+            const selectedSource = selections[m.source] || masterId;
+            const valueToPreserve = selectedSource === "a" ? recordB[m.source] : recordA[m.source];
+            return {
+              source: m.source,
+              target: m.target,
+              value: valueToPreserve, // The actual value to preserve
+            };
+          })
+      : undefined;
+
     mergeMutation.mutate({
       matchId: matchId!,
       masterId: actualMasterId,
       selections,
       preserveAlternates: hasValidMappings,
-      fieldPreservationMappings: hasValidMappings ? fieldPreservationMappings.filter(m => m.source && m.target) : undefined,
+      fieldPreservationMappings: mappingsWithValues,
     });
   };
 

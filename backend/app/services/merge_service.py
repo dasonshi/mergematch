@@ -409,8 +409,11 @@ async def execute_merge(
                 if not source_field or not target_field:
                     continue
 
-                # Always preserve from the duplicate (loser) record that will be deleted
-                value_to_preserve = duplicate_data.get(source_field)
+                # Use provided value if available (computed based on field selections),
+                # otherwise fall back to duplicate's value for backwards compatibility
+                value_to_preserve = mapping.get("value")
+                if value_to_preserve is None:
+                    value_to_preserve = duplicate_data.get(source_field)
 
                 # Only preserve if there's a non-empty value
                 if value_to_preserve:
@@ -418,7 +421,7 @@ async def execute_merge(
                         "id": target_field,  # GHL API expects 'id' for custom field identifier
                         "field_value": value_to_preserve
                     })
-                    logger.info(f"Preserving {source_field} value '{value_to_preserve}' from duplicate to custom field '{target_field}'")
+                    logger.info(f"Preserving {source_field} value '{value_to_preserve}' to custom field '{target_field}'")
 
             if custom_fields:
                 merged_fields["customFields"] = custom_fields
