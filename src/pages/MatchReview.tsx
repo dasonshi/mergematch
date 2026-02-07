@@ -504,21 +504,23 @@ export default function MatchReview() {
         </CardHeader>
         <CardContent className="pt-6">
           <div className="flex gap-4">
+            {/* Master button (left) - currently selected master */}
             <Button
-              variant={masterId === "a" ? "default" : "outline"}
-              onClick={() => handleMasterChange("a")}
+              variant="default"
+              onClick={() => {}} // Already master, no action needed
               className="flex-1"
             >
-              <Star className={cn("h-4 w-4 mr-2", masterId === "a" && "fill-current")} />
-              {String(recordA.firstName || '')} {String(recordA.lastName || '')}
+              <Star className="h-4 w-4 mr-2 fill-current" />
+              {String(masterRecord.firstName || '')} {String(masterRecord.lastName || '')}
             </Button>
+            {/* Duplicate button (right) - click to make this the master */}
             <Button
-              variant={masterId === "b" ? "default" : "outline"}
-              onClick={() => handleMasterChange("b")}
+              variant="outline"
+              onClick={() => handleMasterChange(masterId === "a" ? "b" : "a")}
               className="flex-1"
             >
-              <Star className={cn("h-4 w-4 mr-2", masterId === "b" && "fill-current")} />
-              {String(recordB.firstName || '')} {String(recordB.lastName || '')}
+              <Star className="h-4 w-4 mr-2" />
+              {String(duplicateRecord.firstName || '')} {String(duplicateRecord.lastName || '')}
             </Button>
           </div>
           <p className="text-sm text-muted-foreground mt-2">
