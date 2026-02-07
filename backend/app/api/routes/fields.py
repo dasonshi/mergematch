@@ -241,10 +241,21 @@ async def list_available_objects(
                         continue
 
                     labels = obj.get("labels", {})
+                    # Extract the display field name from primaryDisplayProperty
+                    # Format: "custom_objects.{object_key}.{field_name}"
+                    primary_display = obj.get("primaryDisplayProperty", "")
+                    display_field = None
+                    if primary_display:
+                        # Extract just the field name (last part after the last dot)
+                        parts = primary_display.split(".")
+                        if len(parts) >= 3:
+                            display_field = parts[-1]  # e.g., "name" from "custom_objects.pet.name"
+
                     objects.append({
                         "id": key,
                         "name": labels.get("plural") or labels.get("singular") or obj.get("name") or key,
                         "standard": False,
+                        "displayField": display_field,  # Field to use for record display name
                     })
         except Exception as e:
             # If fetching custom objects fails, just return standard ones

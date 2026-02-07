@@ -312,7 +312,7 @@ export default function AllPendingMatches() {
         const name = getRecordName(recordA, matchFields);
         const fieldValue = getFirstMatchFieldValue(recordA, matchFields);
         const ghlUrl = `https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${item.record_a_id}`;
-        // Don't show subheading if it duplicates the name (for custom objects)
+        // Don't show subheading if it matches the name (used as title)
         const showFieldValue = fieldValue && fieldValue !== name;
         return (
           <div>
@@ -345,7 +345,7 @@ export default function AllPendingMatches() {
         const name = getRecordName(recordB, matchFields);
         const fieldValue = getFirstMatchFieldValue(recordB, matchFields);
         const ghlUrl = `https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${item.record_b_id}`;
-        // Don't show subheading if it duplicates the name (for custom objects)
+        // Don't show subheading if it matches the name (used as title)
         const showFieldValue = fieldValue && fieldValue !== name;
         return (
           <div>

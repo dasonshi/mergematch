@@ -17,21 +17,39 @@ export function getFieldValue(record: Record<string, unknown>, field: string): s
 
 /**
  * Get the record's display name (first + last name, or fallback).
- * For custom objects without standard name fields, uses match fields.
+ * For custom objects, uses the schema's displayField if provided,
+ * otherwise falls back to common display fields or match fields.
+ *
+ * @param record - The record data
+ * @param matchFields - Optional match fields for fallback
+ * @param displayField - Optional primary display field from object schema (e.g., "pet_name")
  */
 export function getRecordName(
   record: Record<string, unknown>,
-  matchFields?: Array<{ field: string; algorithm: string }>
+  matchFields?: Array<{ field: string; algorithm: string }>,
+  displayField?: string
 ): string {
-  // Try standard contact fields first
+  // If schema specifies a display field, try that first
+  if (displayField && record[displayField]) {
+    return String(record[displayField]);
+  }
+
+  // Try standard contact fields
   if (record.firstName && record.lastName) {
     return `${record.firstName} ${record.lastName}`;
   }
   if (record.firstName) return String(record.firstName);
+
+  // Try common display/identifier fields for custom objects
   if (record.name) return String(record.name);
+  if (record.title) return String(record.title);
+  if (record.label) return String(record.label);
+  if (record.displayName) return String(record.displayName);
+
+  // Try email for contacts
   if (record.email) return String(record.email);
 
-  // For custom objects: use first match field value as the title
+  // For custom objects without standard name fields: use first match field as title
   if (matchFields && matchFields.length > 0) {
     const firstValue = getFieldValue(record, matchFields[0].field);
     if (firstValue) return String(firstValue);

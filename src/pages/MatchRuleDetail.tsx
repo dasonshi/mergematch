@@ -107,6 +107,12 @@ export default function MatchRuleDetail() {
     return obj?.name || key;
   };
 
+  // Helper to get the display field for a custom object (from schema's primaryDisplayProperty)
+  const getObjectDisplayField = (key: string): string | undefined => {
+    const obj = availableObjects?.find(o => o.id === key);
+    return obj?.displayField;
+  };
+
   // Scan mutation (defined before useEffect that uses it)
   const scanMutation = useMutation({
     mutationFn: () => api.scanRule(id!),
@@ -442,6 +448,9 @@ export default function MatchRuleDetail() {
     );
   });
 
+  // Get display field for custom objects (from schema's primaryDisplayProperty)
+  const displayField = rule?.source_object ? getObjectDisplayField(rule.source_object) : undefined;
+
   // Define columns for the pending matches table
   const matchColumns: DataTableColumn<MatchPair>[] = [
     {
@@ -449,10 +458,9 @@ export default function MatchRuleDetail() {
       accessor: (match) => {
         const recordA = match.record_a_data || {};
         const matchFields = rule?.match_fields || [];
-        const name = getRecordName(recordA, matchFields);
+        const name = getRecordName(recordA, matchFields, displayField);
         const subheading = getMatchFieldSubheading(recordA, matchFields);
-        // Don't show subheading if it duplicates the name (for custom objects)
-        const showSubheading = subheading && subheading !== name && !name.includes(subheading.split(" • ")[0]);
+        // Always show subheading if we have match fields (shows what fields matched)
         return (
           <div>
             <Link
@@ -461,7 +469,7 @@ export default function MatchRuleDetail() {
             >
               {name}
             </Link>
-            {showSubheading && (
+            {subheading && (
               <div className="text-xs text-muted-foreground">
                 {subheading}
               </div>
@@ -475,10 +483,9 @@ export default function MatchRuleDetail() {
       accessor: (match) => {
         const recordB = match.record_b_data || {};
         const matchFields = rule?.match_fields || [];
-        const name = getRecordName(recordB, matchFields);
+        const name = getRecordName(recordB, matchFields, displayField);
         const subheading = getMatchFieldSubheading(recordB, matchFields);
-        // Don't show subheading if it duplicates the name (for custom objects)
-        const showSubheading = subheading && subheading !== name && !name.includes(subheading.split(" • ")[0]);
+        // Always show subheading if we have match fields (shows what fields matched)
         return (
           <div>
             <Link
@@ -487,7 +494,7 @@ export default function MatchRuleDetail() {
             >
               {name}
             </Link>
-            {showSubheading && (
+            {subheading && (
               <div className="text-xs text-muted-foreground">
                 {subheading}
               </div>

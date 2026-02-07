@@ -605,6 +605,7 @@ export interface ObjectType {
   id: string;
   name: string;
   standard: boolean;
+  displayField?: string;  // Primary display property field name for custom objects
 }
 
 export interface ObjectAssociation {
