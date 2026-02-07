@@ -384,6 +384,19 @@ class ApiClient {
     }
   }
 
+  // Convenience methods for HTTP verbs
+  async post<T>(endpoint: string, body?: unknown): Promise<T> {
+    return this.fetch<T>(endpoint, { method: 'POST', body });
+  }
+
+  async put<T>(endpoint: string, body?: unknown): Promise<T> {
+    return this.fetch<T>(endpoint, { method: 'PUT', body });
+  }
+
+  async delete<T>(endpoint: string): Promise<T> {
+    return this.fetch<T>(endpoint, { method: 'DELETE' });
+  }
+
   // Notifications
   async getNotifications(limit = 50, offset = 0, unreadOnly = false) {
     const params = new URLSearchParams({
