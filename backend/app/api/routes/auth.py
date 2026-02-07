@@ -351,6 +351,36 @@ async def logout(
     return {"success": True, "message": "Logged out successfully"}
 
 
+@router.post("/disconnect")
+async def disconnect(
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    location_id: str = Query(None),
+):
+    """
+    Disconnect the location by clearing OAuth tokens.
+    User will need to re-authorize to reconnect.
+    """
+    from app.db.supabase import get_supabase
+
+    # Authenticate to verify the request is valid
+    user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
+
+    supabase = get_supabase()
+
+    # Clear tokens from the locations table
+    result = supabase.table("locations").update({
+        "access_token_encrypted": None,
+        "refresh_token_encrypted": None,
+        "token_expires_at": None,
+        "updated_at": "now()",
+    }).eq("ghl_location_id", user.ghl_location_id).execute()
+
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Location not found")
+
+    return {"success": True, "message": "Account disconnected. Re-authorize from Marketplace to reconnect."}
+
+
 def decrypt_ghl_sso_data(encrypted_data: str, secret: str) -> dict:
     """
     Decrypt GHL SSO encrypted data (CryptoJS AES compatible).

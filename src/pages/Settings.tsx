@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useWarningPreferences } from "@/hooks/use-warning-preferences";
 import { useLocation } from "@/contexts/LocationContext";
+import { api } from "@/lib/api";
 
 export default function Settings() {
   const { toast } = useToast();
@@ -84,12 +86,30 @@ export default function Settings() {
     });
   };
 
-  const handleDisconnect = () => {
-    toast({
-      title: "Account disconnected",
-      description: "MergeMatch access has been revoked. Reinstall from Marketplace to reconnect.",
-      variant: "destructive",
-    });
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
+
+  const handleDisconnect = async () => {
+    setIsDisconnecting(true);
+    try {
+      await api.post("/auth/disconnect");
+      toast({
+        title: "Account disconnected",
+        description: "MergeMatch access has been revoked. Reinstall from Marketplace to reconnect.",
+        variant: "destructive",
+      });
+      // Clear local storage and reload to force re-auth
+      localStorage.clear();
+      window.location.reload();
+    } catch (error) {
+      console.error("Disconnect failed:", error);
+      toast({
+        title: "Disconnect failed",
+        description: "Could not disconnect account. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDisconnecting(false);
+    }
   };
 
   return (
@@ -437,7 +457,9 @@ export default function Settings() {
               </div>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button variant="destructive">Disconnect</Button>
+                  <Button variant="destructive" disabled={isDisconnecting}>
+                    {isDisconnecting ? "Disconnecting..." : "Disconnect"}
+                  </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
@@ -449,9 +471,10 @@ export default function Settings() {
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction 
+                    <AlertDialogCancel disabled={isDisconnecting}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
                       onClick={handleDisconnect}
+                      disabled={isDisconnecting}
                       className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                     >
                       Disconnect Account
