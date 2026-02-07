@@ -188,10 +188,6 @@ export default function MatchReview() {
   const recordBId = match?.record_b_id || "b";
   const confidence = Math.round((match?.confidence_score || 0) * 100);
 
-  // Swap display order based on who is master - master always on left
-  const masterRecord = masterId === "a" ? recordA : recordB;
-  const duplicateRecord = masterId === "a" ? recordB : recordA;
-
   // Get all fields from both records (excluding system fields)
   const allFields = useMemo(() => new Set([
     ...Object.keys(recordA),
@@ -279,6 +275,10 @@ export default function MatchReview() {
   const [showWarningError, setShowWarningError] = useState(false);
   const [masterId, setMasterId] = useState<string>("a");
   const [initialized, setInitialized] = useState(false);
+
+  // Swap display order based on who is master - master always on left
+  const masterRecord = masterId === "a" ? recordA : recordB;
+  const duplicateRecord = masterId === "a" ? recordB : recordA;
 
   // Initialize master and selections when match/rule load
   useEffect(() => {

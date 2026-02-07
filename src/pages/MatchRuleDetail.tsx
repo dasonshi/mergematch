@@ -438,14 +438,12 @@ export default function MatchRuleDetail() {
         const subheading = getMatchFieldSubheading(recordA, matchFields);
         return (
           <div>
-            <a
-              href={`https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${match.record_a_id}`}
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link
+              to={`/match-rules/${id}/review/${match.id}`}
               className="font-medium hover:text-primary hover:underline"
             >
               {getRecordName(recordA)}
-            </a>
+            </Link>
             {subheading && (
               <div className="text-xs text-muted-foreground">
                 {subheading}
@@ -463,14 +461,12 @@ export default function MatchRuleDetail() {
         const subheading = getMatchFieldSubheading(recordB, matchFields);
         return (
           <div>
-            <a
-              href={`https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${match.record_b_id}`}
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link
+              to={`/match-rules/${id}/review/${match.id}`}
               className="font-medium hover:text-primary hover:underline"
             >
               {getRecordName(recordB)}
-            </a>
+            </Link>
             {subheading && (
               <div className="text-xs text-muted-foreground">
                 {subheading}
