@@ -188,6 +188,10 @@ export default function MatchReview() {
   const recordBId = match?.record_b_id || "b";
   const confidence = Math.round((match?.confidence_score || 0) * 100);
 
+  // Swap display order based on who is master - master always on left
+  const masterRecord = masterId === "a" ? recordA : recordB;
+  const duplicateRecord = masterId === "a" ? recordB : recordA;
+
   // Get all fields from both records (excluding system fields)
   const allFields = useMemo(() => new Set([
     ...Object.keys(recordA),
@@ -375,12 +379,20 @@ export default function MatchReview() {
     });
   };
 
-  // Render a field row
+  // Render a field row - master always on left, duplicate on right
   const renderFieldRow = (field: string, isRuleField: boolean) => {
-    const valueA = recordA[field];
-    const valueB = recordB[field];
-    const displayValueA = formatDisplayValue(valueA);
-    const displayValueB = formatDisplayValue(valueB);
+    const masterValue = masterRecord[field];
+    const duplicateValue = duplicateRecord[field];
+    const displayMasterValue = formatDisplayValue(masterValue);
+    const displayDuplicateValue = formatDisplayValue(duplicateValue);
+
+    // Determine if master or duplicate is selected
+    const isMasterSelected = selections[field] === masterId;
+    const isDuplicateSelected = selections[field] === (masterId === "a" ? "b" : "a");
+
+    // Click handlers map back to "a" or "b" for selections state
+    const handleMasterClick = () => handleCellClick(field, masterId as "a" | "b");
+    const handleDuplicateClick = () => handleCellClick(field, masterId === "a" ? "b" : "a");
 
     return (
       <TableRow key={field}>
@@ -397,18 +409,18 @@ export default function MatchReview() {
         <TableCell
           className={cn(
             "cursor-pointer hover:bg-muted/50 transition-colors",
-            selections[field] === "a" && "bg-primary/10"
+            isMasterSelected && "bg-primary/10"
           )}
-          onClick={() => handleCellClick(field, "a")}
+          onClick={handleMasterClick}
         >
           <div className="flex items-center gap-2">
-            {selections[field] === "a" && (
+            {isMasterSelected && (
               <span className="text-primary font-medium">[</span>
             )}
-            <span className={cn(!displayValueA && "text-muted-foreground italic")}>
-              {displayValueA || "(empty)"}
+            <span className={cn(!displayMasterValue && "text-muted-foreground italic")}>
+              {displayMasterValue || "(empty)"}
             </span>
-            {selections[field] === "a" && (
+            {isMasterSelected && (
               <>
                 <span className="text-primary font-medium">]</span>
                 <span className="text-primary">✓</span>
@@ -419,18 +431,18 @@ export default function MatchReview() {
         <TableCell
           className={cn(
             "cursor-pointer hover:bg-muted/50 transition-colors",
-            selections[field] === "b" && "bg-primary/10"
+            isDuplicateSelected && "bg-primary/10"
           )}
-          onClick={() => handleCellClick(field, "b")}
+          onClick={handleDuplicateClick}
         >
           <div className="flex items-center gap-2">
-            {selections[field] === "b" && (
+            {isDuplicateSelected && (
               <span className="text-primary font-medium">[</span>
             )}
-            <span className={cn(!displayValueB && "text-muted-foreground italic")}>
-              {displayValueB || "(empty)"}
+            <span className={cn(!displayDuplicateValue && "text-muted-foreground italic")}>
+              {displayDuplicateValue || "(empty)"}
             </span>
-            {selections[field] === "b" && (
+            {isDuplicateSelected && (
               <>
                 <span className="text-primary font-medium">]</span>
                 <span className="text-primary">✓</span>
@@ -531,24 +543,19 @@ export default function MatchReview() {
                   <TableHead className="w-32"></TableHead>
                   <TableHead className="min-w-40">
                     <div className="flex items-center gap-2">
-                      {masterId === "a" && <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />}
-                      <span className={masterId === "a" ? "font-semibold" : ""}>
-                        {masterId === "a" ? "MASTER" : "DUPLICATE"}
-                      </span>
+                      <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
+                      <span className="font-semibold">MASTER</span>
                     </div>
                     <div className="text-sm font-normal text-muted-foreground mt-1">
-                      {String(recordA.firstName || '')} {String(recordA.lastName || '')}
+                      {String(masterRecord.firstName || '')} {String(masterRecord.lastName || '')}
                     </div>
                   </TableHead>
                   <TableHead className="min-w-40">
                     <div className="flex items-center gap-2">
-                      {masterId === "b" && <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />}
-                      <span className={masterId === "b" ? "font-semibold" : ""}>
-                        {masterId === "b" ? "MASTER" : "DUPLICATE"}
-                      </span>
+                      <span>DUPLICATE</span>
                     </div>
                     <div className="text-sm font-normal text-muted-foreground mt-1">
-                      {String(recordB.firstName || '')} {String(recordB.lastName || '')}
+                      {String(duplicateRecord.firstName || '')} {String(duplicateRecord.lastName || '')}
                     </div>
                   </TableHead>
                   <TableHead className="min-w-40 bg-muted/50">
@@ -622,8 +629,23 @@ export default function MatchReview() {
                     {fieldPreservationMappings.filter(m => m.source && m.target).map((mapping, idx) => {
                       const sourceField = preservableFields.find(f => f.id === mapping.source);
                       const targetField = preservableFields.find(f => f.id === mapping.target);
-                      const loserRecord = masterId === "a" ? recordB : recordA;
-                      const valueToPreserve = formatDisplayValue(loserRecord[mapping.source]);
+
+                      // Get values from master and duplicate (using display order)
+                      const masterValue = formatDisplayValue(masterRecord[mapping.source]);
+                      const duplicateValue = formatDisplayValue(duplicateRecord[mapping.source]);
+
+                      // The preserved value is the one NOT selected for this field
+                      // If master's value is selected for the field, duplicate's value is preserved (and vice versa)
+                      const selectedForField = selections[mapping.source] || masterId;
+                      const isPreservingMaster = selectedForField !== masterId;
+                      const isPreservingDuplicate = selectedForField === masterId;
+                      const valueToPreserve = isPreservingMaster ? masterValue : duplicateValue;
+
+                      // Clicking a preservation cell toggles the field selection
+                      // Click master column to preserve master's value → select duplicate's value for the field
+                      // Click duplicate column to preserve duplicate's value → select master's value for the field
+                      const handlePreserveMaster = () => handleCellClick(mapping.source, masterId === "a" ? "b" : "a");
+                      const handlePreserveDuplicate = () => handleCellClick(mapping.source, masterId as "a" | "b");
 
                       return (
                         <TableRow key={`preserve-${idx}`} className="bg-primary/5">
@@ -638,8 +660,50 @@ export default function MatchReview() {
                               ← from {sourceField?.name || mapping.source}
                             </div>
                           </TableCell>
-                          <TableCell className="text-muted-foreground italic">(not shown)</TableCell>
-                          <TableCell className="text-muted-foreground italic">(not shown)</TableCell>
+                          <TableCell
+                            className={cn(
+                              "cursor-pointer hover:bg-muted/50 transition-colors",
+                              isPreservingMaster && "bg-primary/20 ring-2 ring-primary/50"
+                            )}
+                            onClick={handlePreserveMaster}
+                          >
+                            <div className="flex items-center gap-2">
+                              {isPreservingMaster && (
+                                <span className="text-primary font-medium">[</span>
+                              )}
+                              <span className={cn(!masterValue && "text-muted-foreground italic")}>
+                                {masterValue || "(empty)"}
+                              </span>
+                              {isPreservingMaster && (
+                                <>
+                                  <span className="text-primary font-medium">]</span>
+                                  <span className="text-primary">✓</span>
+                                </>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell
+                            className={cn(
+                              "cursor-pointer hover:bg-muted/50 transition-colors",
+                              isPreservingDuplicate && "bg-primary/20 ring-2 ring-primary/50"
+                            )}
+                            onClick={handlePreserveDuplicate}
+                          >
+                            <div className="flex items-center gap-2">
+                              {isPreservingDuplicate && (
+                                <span className="text-primary font-medium">[</span>
+                              )}
+                              <span className={cn(!duplicateValue && "text-muted-foreground italic")}>
+                                {duplicateValue || "(empty)"}
+                              </span>
+                              {isPreservingDuplicate && (
+                                <>
+                                  <span className="text-primary font-medium">]</span>
+                                  <span className="text-primary">✓</span>
+                                </>
+                              )}
+                            </div>
+                          </TableCell>
                           <TableCell className="bg-primary/10 font-medium">
                             <span className={cn(!valueToPreserve && "text-muted-foreground italic")}>
                               {valueToPreserve || "(empty)"}
