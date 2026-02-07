@@ -22,7 +22,7 @@ import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 import { useWarningPreferences } from "@/hooks/use-warning-preferences";
 import { api, FieldPreservationMapping, ObjectField } from "@/lib/api";
-import { computeStrategySelections, StrategyId } from "@/lib/merge-strategies";
+import { computeStrategySelections, computeMasterId, StrategyId } from "@/lib/merge-strategies";
 import { LockedFeatureOverlay, UpgradeBadge } from "@/components/ui/upgrade-badge";
 import { useUpgradeModal } from "@/components/ui/upgrade-modal";
 import { isTypeCompatible, getIncompatibilityReason } from "@/lib/field-compatibility";
@@ -217,49 +217,74 @@ export default function MatchReview() {
     return base;
   }, [standardFields, ruleFields, otherFields, showAllFields]);
 
-  // Track selections - strategy-aware defaults
-  const getDefaultSelections = (forMaster: "a" | "b" = "a") => {
-    const strategy = (rule?.merge_strategy || "standard") as StrategyId;
-    const overwriteBlanks = rule?.merge_settings?.overwrite_blanks ?? false;
-
-    // Use ALL fields for selection computation (including additional fields)
-    const allFields = [...standardFields, ...ruleFields, ...otherFields];
-
-    // If master is "b", swap records so strategy prefers record B
-    const [primaryRecord, secondaryRecord] = forMaster === "a"
-      ? [recordA, recordB]
-      : [recordB, recordA];
-
-    const rawSelections = computeStrategySelections({
+  // Compute which record should be master based on rule's strategy
+  const computeInitialMaster = (): "a" | "b" => {
+    if (!match || !rule) return "a";
+    const strategy = (rule.merge_strategy || "standard") as StrategyId;
+    const allFieldsList = [...standardFields, ...ruleFields, ...otherFields];
+    const computedMasterId = computeMasterId(
       strategy,
-      recordA: primaryRecord as Record<string, unknown>,
-      recordB: secondaryRecord as Record<string, unknown>,
-      fields: allFields,
-      overwriteBlanks,
-    });
+      recordA as Record<string, unknown>,
+      recordB as Record<string, unknown>,
+      allFieldsList,
+      recordAId,
+      recordBId
+    );
+    return computedMasterId === recordAId ? "a" : "b";
+  };
 
-    // Map selections back to original a/b identifiers if we swapped
-    if (forMaster === "b") {
-      const mappedSelections: Record<string, "a" | "b"> = {};
-      for (const [field, sel] of Object.entries(rawSelections)) {
-        mappedSelections[field] = sel === "a" ? "b" : "a";
+  // Get default field selections - prefer master's values, fall back to duplicate only if master is blank
+  const getDefaultSelections = (forMaster: "a" | "b") => {
+    const overwriteBlanks = rule?.merge_settings?.overwrite_blanks ?? false;
+    const allFieldsList = [...standardFields, ...ruleFields, ...otherFields];
+
+    const masterRecord = forMaster === "a" ? recordA : recordB;
+    const duplicateRecord = forMaster === "a" ? recordB : recordA;
+
+    const selections: Record<string, "a" | "b"> = {};
+
+    for (const field of allFieldsList) {
+      const masterVal = masterRecord[field];
+      const duplicateVal = duplicateRecord[field];
+
+      const masterBlank =
+        masterVal === undefined ||
+        masterVal === null ||
+        masterVal === "" ||
+        (Array.isArray(masterVal) && masterVal.length === 0);
+
+      const duplicateBlank =
+        duplicateVal === undefined ||
+        duplicateVal === null ||
+        duplicateVal === "" ||
+        (Array.isArray(duplicateVal) && duplicateVal.length === 0);
+
+      // Prefer master's value, fall back to duplicate only if master is blank
+      if (masterBlank && !duplicateBlank && !overwriteBlanks) {
+        selections[field] = forMaster === "a" ? "b" : "a";
+      } else {
+        selections[field] = forMaster;
       }
-      return mappedSelections;
     }
 
-    return rawSelections;
+    return selections;
   };
 
   const [selections, setSelections] = useState<Record<string, string>>({});
   const [acknowledgedWarning, setAcknowledgedWarning] = useState(false);
   const [showWarningError, setShowWarningError] = useState(false);
   const [masterId, setMasterId] = useState<string>("a");
+  const [initialized, setInitialized] = useState(false);
 
-  // Initialize selections when match loads
-  if (match && Object.keys(selections).length === 0) {
-    const defaults = getDefaultSelections();
-    setSelections(defaults);
-  }
+  // Initialize master and selections when match/rule load
+  useEffect(() => {
+    if (match && rule && !initialized) {
+      const initialMaster = computeInitialMaster();
+      setMasterId(initialMaster);
+      setSelections(getDefaultSelections(initialMaster));
+      setInitialized(true);
+    }
+  }, [match, rule, initialized]);
 
   const handleCellClick = (field: string, source: "a" | "b") => {
     setSelections((prev) => ({ ...prev, [field]: source }));
