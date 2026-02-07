@@ -394,7 +394,14 @@ export function LocationProvider({ children }: { children: ReactNode }) {
 
   const reconnect = useCallback(() => {
     const installUrl = `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/auth/install`;
-    window.location.href = installUrl;
+    // OAuth flow requires full page navigation - can't run in iframe
+    // Open in new tab, or navigate parent if in iframe
+    if (window.parent !== window) {
+      // In iframe - open in new tab (parent navigation blocked by GHL)
+      window.open(installUrl, '_blank');
+    } else {
+      window.location.href = installUrl;
+    }
   }, []);
 
   useEffect(() => {

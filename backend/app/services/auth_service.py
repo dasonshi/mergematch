@@ -86,7 +86,10 @@ async def store_oauth_tokens(
 
 
 async def get_location_tokens(location_id: str) -> Optional[dict]:
-    """Get decrypted tokens for a location."""
+    """Get decrypted tokens for a location.
+
+    Returns None if location not found OR if access token is missing (disconnected).
+    """
     supabase = get_supabase()
 
     # Join with tenants to get plan info
@@ -98,6 +101,11 @@ async def get_location_tokens(location_id: str) -> Optional[dict]:
         return None
 
     location = result.data
+
+    # Check if location is disconnected (no access token)
+    if not location.get("access_token_encrypted"):
+        return None
+
     tenant = location.get("tenants", {})
     return {
         "access_token": decrypt_token(location["access_token_encrypted"]),
