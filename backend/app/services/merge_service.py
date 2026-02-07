@@ -247,7 +247,7 @@ async def execute_merge(
             source_object = rule_check.data.get("source_object", "contacts")
             if source_object.startswith("custom_objects."):
                 is_custom_object = True
-                schema_key = source_object.replace("custom_objects.", "")
+                schema_key = source_object  # Use full key
 
     logger.info(f"Merge source_object: {source_object}, is_custom_object: {is_custom_object}")
 
@@ -862,7 +862,7 @@ async def rollback_merge(
                 source_object = rule_check.data.get("source_object", "contacts")
                 if source_object.startswith("custom_objects."):
                     is_custom_object = True
-                    schema_key = source_object.replace("custom_objects.", "")
+                    schema_key = source_object  # Use full key
 
     logger.info(f"Rolling back merge {merge_id} (source_object: {source_object})")
     logger.info(f"Restoring duplicate record from snapshot")

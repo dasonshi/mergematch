@@ -384,9 +384,9 @@ async def run_scan(
                 if use_blocking:
                     stream_contacts_to_blocks(internal_location_id, page_records)
 
-            # Custom objects (schema_key extracted from source_object like "custom_objects.transactions")
+            # Custom objects (use full key like "custom_objects.transactions")
             elif source_object.startswith("custom_objects."):
-                schema_key = source_object.replace("custom_objects.", "")
+                schema_key = source_object  # Use full key, not stripped
                 logger.info(f"Scanning custom object: {schema_key}")
 
                 page_num = 0
