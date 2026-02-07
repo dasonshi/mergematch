@@ -48,6 +48,7 @@ interface RuleSummaryCardProps {
   rule: Rule;
   onToggleStatus: () => void;
   isTogglePending: boolean;
+  objectDisplayName?: string;
 }
 
 // Format match logic with AND/OR operators
@@ -129,6 +130,7 @@ export function RuleSummaryCard({
   rule,
   onToggleStatus,
   isTogglePending,
+  objectDisplayName,
 }: RuleSummaryCardProps) {
   const mergeSettings = rule.merge_settings;
   const fieldPreservation = mergeSettings?.field_preservation;
@@ -143,7 +145,7 @@ export function RuleSummaryCard({
           {/* Row 1: Object, Strategy, Status */}
           <div>
             <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Object</span>
-            <p className="font-medium capitalize mt-1">{rule.source_object}</p>
+            <p className="font-medium mt-1">{objectDisplayName || rule.source_object}</p>
           </div>
           <div>
             <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Strategy</span>

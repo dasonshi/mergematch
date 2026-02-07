@@ -93,6 +93,20 @@ export default function MatchRuleDetail() {
     gcTime: 0, // No cache - always fresh
   });
 
+  // Fetch available objects to get display names
+  const { data: availableObjects } = useQuery({
+    queryKey: ["available-objects", locationId],
+    queryFn: () => api.getAvailableObjects(),
+    enabled: !!locationId,
+    staleTime: 5 * 60 * 1000, // Cache for 5 min
+  });
+
+  // Helper to get human-readable object name from key
+  const getObjectDisplayName = (key: string) => {
+    const obj = availableObjects?.find(o => o.id === key);
+    return obj?.name || key;
+  };
+
   // Scan mutation (defined before useEffect that uses it)
   const scanMutation = useMutation({
     mutationFn: () => api.scanRule(id!),
@@ -550,7 +564,7 @@ export default function MatchRuleDetail() {
             <span className="font-medium text-foreground">
               {objectStatsLoading ? "..." : objectStats?.total?.toLocaleString() ?? "—"}
             </span>
-            <span className="capitalize">{rule.source_object.endsWith('s') ? rule.source_object : `${rule.source_object}s`}</span>
+            <span>{getObjectDisplayName(rule.source_object)}</span>
             <span className="text-muted-foreground/50">•</span>
             <span>Last Scanned: {formatInlineDate(rule.last_scan_at) || "Never"}</span>
             {lastWebhookAt && (
@@ -634,7 +648,7 @@ export default function MatchRuleDetail() {
       {/* Mobile Stats Row (visible only on small screens) */}
       <div className="flex sm:hidden flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <Badge variant="secondary">
-          {objectStatsLoading ? "..." : objectStats?.total?.toLocaleString() ?? "—"} {rule.source_object.endsWith('s') ? rule.source_object : `${rule.source_object}s`}
+          {objectStatsLoading ? "..." : objectStats?.total?.toLocaleString() ?? "—"} {getObjectDisplayName(rule.source_object)}
         </Badge>
         <Badge variant="outline">
           Last Scanned: {formatInlineDate(rule.last_scan_at) || "Never"}
@@ -666,6 +680,7 @@ export default function MatchRuleDetail() {
         rule={rule}
         onToggleStatus={() => toggleMutation.mutate()}
         isTogglePending={toggleMutation.isPending}
+        objectDisplayName={getObjectDisplayName(rule.source_object)}
       />
 
       {/* Pending Matches Section */}
