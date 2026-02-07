@@ -18,7 +18,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { AnimatedCounter } from "@/components/ui/animated-counter";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatsRow } from "@/components/ui/achievement-badge";
-import { getRecordName } from "@/components/rules/helpers";
+import { getRecordName, getFirstMatchFieldValue } from "@/components/rules/helpers";
 import { RuleActionButtons } from "@/components/rule-action-buttons";
 import { MergeActionButtons } from "@/components/merge-action-buttons";
 import {
@@ -415,18 +415,27 @@ export default function Dashboard() {
       header: "Record A",
       accessor: (item) => {
         const recordA = item.record_a_data || {};
+        const rule = rulesMap.get(item.rule_id);
+        const matchFields = rule?.match_fields || [];
+        const fieldValue = getFirstMatchFieldValue(recordA, matchFields);
+        const ghlUrl = `https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${item.record_a_id}`;
         return (
           <div>
-            <a
-              href={`https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${item.record_a_id}`}
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link
+              to={`/match-rules/${item.rule_id}/review/${item.id}`}
               className="font-medium hover:text-primary hover:underline"
             >
               {getRecordName(recordA)}
-            </a>
-            {typeof recordA.email === 'string' && (
-              <div className="text-xs text-muted-foreground">{recordA.email}</div>
+            </Link>
+            {fieldValue && (
+              <a
+                href={ghlUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block text-xs text-muted-foreground hover:text-primary hover:underline"
+              >
+                {fieldValue}
+              </a>
             )}
           </div>
         );
@@ -436,18 +445,27 @@ export default function Dashboard() {
       header: "Record B",
       accessor: (item) => {
         const recordB = item.record_b_data || {};
+        const rule = rulesMap.get(item.rule_id);
+        const matchFields = rule?.match_fields || [];
+        const fieldValue = getFirstMatchFieldValue(recordB, matchFields);
+        const ghlUrl = `https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${item.record_b_id}`;
         return (
           <div>
-            <a
-              href={`https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${item.record_b_id}`}
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link
+              to={`/match-rules/${item.rule_id}/review/${item.id}`}
               className="font-medium hover:text-primary hover:underline"
             >
               {getRecordName(recordB)}
-            </a>
-            {typeof recordB.email === 'string' && (
-              <div className="text-xs text-muted-foreground">{recordB.email}</div>
+            </Link>
+            {fieldValue && (
+              <a
+                href={ghlUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block text-xs text-muted-foreground hover:text-primary hover:underline"
+              >
+                {fieldValue}
+              </a>
             )}
           </div>
         );

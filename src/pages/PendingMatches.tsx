@@ -29,7 +29,7 @@ import { useLocation } from "@/contexts/LocationContext";
 import { useUpgradeModal } from "@/components/ui/upgrade-modal";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
-import { getRecordName, getMatchFieldSubheading } from "@/components/rules/helpers";
+import { getRecordName, getFirstMatchFieldValue } from "@/components/rules/helpers";
 
 interface MatchPair {
   id: string;
@@ -332,21 +332,25 @@ export default function PendingMatches() {
       header: "Record A",
       accessor: (item) => {
         const recordA = item.record_a_data || {};
-        const subheading = getMatchFieldSubheading(recordA, matchFields);
+        const fieldValue = getFirstMatchFieldValue(recordA, matchFields);
+        const ghlUrl = `https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${item.record_a_id}`;
         return (
           <div>
-            <a
-              href={`https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${item.record_a_id}`}
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link
+              to={`/match-rules/${ruleId}/review/${item.id}`}
               className="font-medium hover:text-primary hover:underline"
             >
               {getRecordName(recordA)}
-            </a>
-            {subheading && (
-              <div className="text-xs text-muted-foreground">
-                {subheading}
-              </div>
+            </Link>
+            {fieldValue && (
+              <a
+                href={ghlUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block text-xs text-muted-foreground hover:text-primary hover:underline"
+              >
+                {fieldValue}
+              </a>
             )}
           </div>
         );
@@ -356,21 +360,25 @@ export default function PendingMatches() {
       header: "Record B",
       accessor: (item) => {
         const recordB = item.record_b_data || {};
-        const subheading = getMatchFieldSubheading(recordB, matchFields);
+        const fieldValue = getFirstMatchFieldValue(recordB, matchFields);
+        const ghlUrl = `https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${item.record_b_id}`;
         return (
           <div>
-            <a
-              href={`https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${item.record_b_id}`}
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link
+              to={`/match-rules/${ruleId}/review/${item.id}`}
               className="font-medium hover:text-primary hover:underline"
             >
               {getRecordName(recordB)}
-            </a>
-            {subheading && (
-              <div className="text-xs text-muted-foreground">
-                {subheading}
-              </div>
+            </Link>
+            {fieldValue && (
+              <a
+                href={ghlUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block text-xs text-muted-foreground hover:text-primary hover:underline"
+              >
+                {fieldValue}
+              </a>
             )}
           </div>
         );

@@ -29,7 +29,7 @@ import { useLocation } from "@/contexts/LocationContext";
 import { useUpgradeModal } from "@/components/ui/upgrade-modal";
 import { useToast } from "@/hooks/use-toast";
 import { api, MatchRule, MatchPair } from "@/lib/api";
-import { getRecordName } from "@/components/rules/helpers";
+import { getRecordName, getFirstMatchFieldValue } from "@/components/rules/helpers";
 
 export default function AllPendingMatches() {
   const navigate = useNavigate();
@@ -307,18 +307,27 @@ export default function AllPendingMatches() {
       header: "Record A",
       accessor: (item) => {
         const recordA = item.record_a_data || {};
+        const rule = rulesMap.get(item.rule_id);
+        const matchFields = rule?.match_fields || [];
+        const fieldValue = getFirstMatchFieldValue(recordA, matchFields);
+        const ghlUrl = `https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${item.record_a_id}`;
         return (
           <div>
-            <a
-              href={`https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${item.record_a_id}`}
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link
+              to={`/match-rules/${item.rule_id}/review/${item.id}`}
               className="font-medium hover:text-primary hover:underline"
             >
               {getRecordName(recordA)}
-            </a>
-            {recordA.email && (
-              <div className="text-xs text-muted-foreground">{recordA.email}</div>
+            </Link>
+            {fieldValue && (
+              <a
+                href={ghlUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block text-xs text-muted-foreground hover:text-primary hover:underline"
+              >
+                {fieldValue}
+              </a>
             )}
           </div>
         );
@@ -328,18 +337,27 @@ export default function AllPendingMatches() {
       header: "Record B",
       accessor: (item) => {
         const recordB = item.record_b_data || {};
+        const rule = rulesMap.get(item.rule_id);
+        const matchFields = rule?.match_fields || [];
+        const fieldValue = getFirstMatchFieldValue(recordB, matchFields);
+        const ghlUrl = `https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${item.record_b_id}`;
         return (
           <div>
-            <a
-              href={`https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${item.record_b_id}`}
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link
+              to={`/match-rules/${item.rule_id}/review/${item.id}`}
               className="font-medium hover:text-primary hover:underline"
             >
               {getRecordName(recordB)}
-            </a>
-            {recordB.email && (
-              <div className="text-xs text-muted-foreground">{recordB.email}</div>
+            </Link>
+            {fieldValue && (
+              <a
+                href={ghlUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block text-xs text-muted-foreground hover:text-primary hover:underline"
+              >
+                {fieldValue}
+              </a>
             )}
           </div>
         );

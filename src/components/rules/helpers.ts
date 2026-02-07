@@ -43,3 +43,18 @@ export function getMatchFieldSubheading(
 
   return values.join(" • ");
 }
+
+/**
+ * Get FIRST match field value only (for clickable subheading links).
+ */
+export function getFirstMatchFieldValue(
+  record: Record<string, unknown>,
+  matchFields: Array<{ field: string; algorithm: string }>
+): string {
+  if (!matchFields || matchFields.length === 0) {
+    return record.email || record.phone || "";
+  }
+  const firstField = matchFields[0];
+  const value = getFieldValue(record, firstField.field);
+  return value || record.email || record.phone || "";
+}
