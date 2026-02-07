@@ -174,6 +174,10 @@ class ApiClient {
     return this.fetch<{ total: number }>('/v1/contacts/stats');
   }
 
+  async getObjectStats(objectType: string) {
+    return this.fetch<{ total: number }>(`/v1/fields/${objectType}/stats`);
+  }
+
   async getContact(id: string) {
     return this.fetch<Contact>(`/v1/contacts/${id}`);
   }

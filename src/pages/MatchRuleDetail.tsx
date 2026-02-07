@@ -85,11 +85,11 @@ export default function MatchRuleDetail() {
     gcTime: 0, // No cache - always fresh
   });
 
-  // Fetch total contacts count
-  const { data: contactsStats, isLoading: contactsStatsLoading } = useQuery({
-    queryKey: ["contacts-stats", locationId],
-    queryFn: () => api.getContactsStats(),
-    enabled: !!locationId,
+  // Fetch total record count for the object type (contacts, companies, or custom objects)
+  const { data: objectStats, isLoading: objectStatsLoading } = useQuery({
+    queryKey: ["object-stats", locationId, rule?.source_object],
+    queryFn: () => api.getObjectStats(rule!.source_object),
+    enabled: !!locationId && !!rule?.source_object,
     gcTime: 0, // No cache - always fresh
   });
 
@@ -548,7 +548,7 @@ export default function MatchRuleDetail() {
           </h1>
           <div className="hidden sm:flex items-center gap-2 text-sm text-muted-foreground border-l pl-3">
             <span className="font-medium text-foreground">
-              {contactsStatsLoading ? "..." : contactsStats?.total?.toLocaleString() ?? "—"}
+              {objectStatsLoading ? "..." : objectStats?.total?.toLocaleString() ?? "—"}
             </span>
             <span className="capitalize">{rule.source_object.endsWith('s') ? rule.source_object : `${rule.source_object}s`}</span>
             <span className="text-muted-foreground/50">•</span>
@@ -634,7 +634,7 @@ export default function MatchRuleDetail() {
       {/* Mobile Stats Row (visible only on small screens) */}
       <div className="flex sm:hidden flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <Badge variant="secondary">
-          {contactsStatsLoading ? "..." : contactsStats?.total?.toLocaleString() ?? "—"} {rule.source_object.endsWith('s') ? rule.source_object : `${rule.source_object}s`}
+          {objectStatsLoading ? "..." : objectStats?.total?.toLocaleString() ?? "—"} {rule.source_object.endsWith('s') ? rule.source_object : `${rule.source_object}s`}
         </Badge>
         <Badge variant="outline">
           Last Scanned: {formatInlineDate(rule.last_scan_at) || "Never"}

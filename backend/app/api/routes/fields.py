@@ -8,6 +8,38 @@ from app.core.deps import get_auth_context, AuthContext
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+
+@router.get("/{object_type}/stats")
+async def get_object_stats(
+    object_type: str,
+    ctx: AuthContext = Depends(get_auth_context),
+) -> Dict[str, Any]:
+    """
+    Get record count for any object type (contacts, companies, custom objects).
+
+    Returns: {"total": int}
+    """
+    async with GHLClient(ctx.access_token, ctx.ghl_location_id) as client:
+        try:
+            if object_type == "contacts":
+                total = await client.get_contacts_count()
+            elif object_type == "companies":
+                result = await client.get_companies()
+                total = len(result.get("businesses", []))
+            elif object_type.startswith("custom_objects."):
+                # Use search endpoint to get count
+                result = await client.search_custom_objects(object_type, page=1, page_limit=1)
+                total = result.get("total", 0)
+            else:
+                raise HTTPException(status_code=400, detail=f"Unknown object type: {object_type}")
+
+            return {"total": total}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to get stats for {object_type}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to get stats: {str(e)}")
+
 # Standard fields for each object type (fallback if API fails)
 STANDARD_FIELDS = {
     "contacts": [
@@ -56,12 +88,30 @@ def normalize_custom_field(field: Dict[str, Any], object_type: str) -> Dict[str,
     }
 
 
-def normalize_object_field(field: Dict[str, Any]) -> Dict[str, Any]:
-    """Normalize a field from object schema response."""
+def normalize_object_field(field: Dict[str, Any], use_key_as_id: bool = False) -> Dict[str, Any]:
+    """Normalize a field from object schema response.
+
+    Args:
+        field: The field definition from GHL API
+        use_key_as_id: If True, extract the field key from fieldKey (e.g., 'transaction_id'
+                       from 'custom_objects.transactions.transaction_id') instead of using
+                       the GHL field ID. This is needed for custom objects where records
+                       store data with the key, not the ID.
+    """
+    field_key = field.get("fieldKey", "")
+
+    if use_key_as_id and field_key:
+        # For custom objects, use the last segment of fieldKey as the ID
+        # e.g., 'custom_objects.transactions.transaction_id' -> 'transaction_id'
+        field_id = field_key.split(".")[-1]
+    else:
+        # For standard objects, use the GHL ID
+        field_id = field.get("id") or field_key.split(".")[-1]
+
     return {
-        "id": field.get("id") or field.get("fieldKey", "").split(".")[-1],
+        "id": field_id,
         "name": field.get("name", "Unknown Field"),
-        "fieldKey": field.get("fieldKey", ""),
+        "fieldKey": field_key,
         "dataType": field.get("dataType", "TEXT"),
         "isCustom": not field.get("standard", True),  # Assume custom if not marked standard
     }
@@ -130,9 +180,10 @@ async def get_object_fields(
 
             elif object_type.startswith("custom_objects."):
                 # Fetch custom object schema
+                # Use key-based IDs for custom objects (records use fieldKey, not ID)
                 schema = await client.get_object_schema(object_type, fetch_properties=True)
                 fields = schema.get("fields", [])
-                return [normalize_object_field(f) for f in fields]
+                return [normalize_object_field(f, use_key_as_id=True) for f in fields]
 
             else:
                 raise HTTPException(
