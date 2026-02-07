@@ -237,6 +237,20 @@ async def execute_merge(
     record_b_id = match.data["record_b_id"]
     rule_id = match.data.get("rule_id")
 
+    # Determine source object type from rule
+    source_object = "contacts"  # default
+    is_custom_object = False
+    schema_key = None
+    if rule_id:
+        rule_check = supabase.table("match_rules").select("source_object").eq("id", rule_id).single().execute()
+        if rule_check.data:
+            source_object = rule_check.data.get("source_object", "contacts")
+            if source_object.startswith("custom_objects."):
+                is_custom_object = True
+                schema_key = source_object.replace("custom_objects.", "")
+
+    logger.info(f"Merge source_object: {source_object}, is_custom_object: {is_custom_object}")
+
     # ── Re-fetch both records from GHL as a safety net ────────────────────
     # This ensures we merge using the latest data, not a stale snapshot.
     try:
@@ -244,30 +258,71 @@ async def execute_merge(
             fresh_a = None
             fresh_b = None
 
-            try:
-                fresh_a_resp = await prefetch_client.get_contact(record_a_id)
-                fresh_a = fresh_a_resp.get("contact", fresh_a_resp)
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code == 404:
-                    # Contact A was deleted — mark pair stale and abort
-                    supabase.table("match_pairs").update({"status": "stale"}).eq("id", match_id).execute()
-                    raise ValueError(
-                        f"Contact {record_a_id} no longer exists in GHL. "
-                        "The match has been marked as stale."
-                    )
-                raise
+            if is_custom_object:
+                # Fetch custom object records
+                try:
+                    fresh_a_resp = await prefetch_client.get_custom_object_record(schema_key, record_a_id)
+                    # Normalize: flatten properties for merge logic
+                    props = fresh_a_resp.get("properties") or {}
+                    fresh_a = {
+                        "id": fresh_a_resp.get("id"),
+                        "dateAdded": fresh_a_resp.get("createdAt"),
+                        "dateUpdated": fresh_a_resp.get("updatedAt"),
+                        "_raw": fresh_a_resp,
+                        **props
+                    }
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code == 404:
+                        supabase.table("match_pairs").update({"status": "stale"}).eq("id", match_id).execute()
+                        raise ValueError(
+                            f"Custom object record {record_a_id} no longer exists in GHL. "
+                            "The match has been marked as stale."
+                        )
+                    raise
 
-            try:
-                fresh_b_resp = await prefetch_client.get_contact(record_b_id)
-                fresh_b = fresh_b_resp.get("contact", fresh_b_resp)
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code == 404:
-                    supabase.table("match_pairs").update({"status": "stale"}).eq("id", match_id).execute()
-                    raise ValueError(
-                        f"Contact {record_b_id} no longer exists in GHL. "
-                        "The match has been marked as stale."
-                    )
-                raise
+                try:
+                    fresh_b_resp = await prefetch_client.get_custom_object_record(schema_key, record_b_id)
+                    props = fresh_b_resp.get("properties") or {}
+                    fresh_b = {
+                        "id": fresh_b_resp.get("id"),
+                        "dateAdded": fresh_b_resp.get("createdAt"),
+                        "dateUpdated": fresh_b_resp.get("updatedAt"),
+                        "_raw": fresh_b_resp,
+                        **props
+                    }
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code == 404:
+                        supabase.table("match_pairs").update({"status": "stale"}).eq("id", match_id).execute()
+                        raise ValueError(
+                            f"Custom object record {record_b_id} no longer exists in GHL. "
+                            "The match has been marked as stale."
+                        )
+                    raise
+            else:
+                # Fetch contacts (existing logic)
+                try:
+                    fresh_a_resp = await prefetch_client.get_contact(record_a_id)
+                    fresh_a = fresh_a_resp.get("contact", fresh_a_resp)
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code == 404:
+                        supabase.table("match_pairs").update({"status": "stale"}).eq("id", match_id).execute()
+                        raise ValueError(
+                            f"Contact {record_a_id} no longer exists in GHL. "
+                            "The match has been marked as stale."
+                        )
+                    raise
+
+                try:
+                    fresh_b_resp = await prefetch_client.get_contact(record_b_id)
+                    fresh_b = fresh_b_resp.get("contact", fresh_b_resp)
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code == 404:
+                        supabase.table("match_pairs").update({"status": "stale"}).eq("id", match_id).execute()
+                        raise ValueError(
+                            f"Contact {record_b_id} no longer exists in GHL. "
+                            "The match has been marked as stale."
+                        )
+                    raise
 
             # Update snapshots in the match_pair with fresh data
             if fresh_a and fresh_b:
@@ -484,36 +539,37 @@ async def execute_merge(
 
     try:
         async with GHLClient(access_token, ghl_location_id) as client:
-            # Fetch and snapshot duplicate's related records BEFORE any modifications
+            # Custom objects don't have related records (notes, tasks, opportunities)
+            # Only fetch/snapshot related records for contacts
             duplicate_notes = []
             duplicate_tasks = []
             duplicate_opps = []
-
-            try:
-                duplicate_notes = await client.get_contact_notes(duplicate_id)
-                logger.info(f"Snapshotted {len(duplicate_notes)} notes from duplicate")
-            except Exception as e:
-                logger.warning(f"Failed to snapshot notes: {e}")
-
-            try:
-                duplicate_tasks = await client.get_contact_tasks(duplicate_id)
-                logger.info(f"Snapshotted {len(duplicate_tasks)} tasks from duplicate")
-            except Exception as e:
-                logger.warning(f"Failed to snapshot tasks: {e}")
-
-            try:
-                duplicate_opps = await client.get_contact_opportunities(duplicate_id)
-                logger.info(f"Snapshotted {len(duplicate_opps)} opportunities from duplicate")
-            except Exception as e:
-                logger.warning(f"Failed to snapshot opportunities: {e}")
-
-            # Snapshot appointments
             duplicate_appointments = []
-            try:
-                duplicate_appointments = await client.get_contact_appointments(duplicate_id)
-                logger.info(f"Snapshotted {len(duplicate_appointments)} appointments from duplicate")
-            except Exception as e:
-                logger.warning(f"Failed to snapshot appointments: {e}")
+
+            if not is_custom_object:
+                try:
+                    duplicate_notes = await client.get_contact_notes(duplicate_id)
+                    logger.info(f"Snapshotted {len(duplicate_notes)} notes from duplicate")
+                except Exception as e:
+                    logger.warning(f"Failed to snapshot notes: {e}")
+
+                try:
+                    duplicate_tasks = await client.get_contact_tasks(duplicate_id)
+                    logger.info(f"Snapshotted {len(duplicate_tasks)} tasks from duplicate")
+                except Exception as e:
+                    logger.warning(f"Failed to snapshot tasks: {e}")
+
+                try:
+                    duplicate_opps = await client.get_contact_opportunities(duplicate_id)
+                    logger.info(f"Snapshotted {len(duplicate_opps)} opportunities from duplicate")
+                except Exception as e:
+                    logger.warning(f"Failed to snapshot opportunities: {e}")
+
+                try:
+                    duplicate_appointments = await client.get_contact_appointments(duplicate_id)
+                    logger.info(f"Snapshotted {len(duplicate_appointments)} appointments from duplicate")
+                except Exception as e:
+                    logger.warning(f"Failed to snapshot appointments: {e}")
 
             # Store related record snapshots (same 30-day expiration)
             related_snapshots = []
@@ -558,31 +614,53 @@ async def execute_merge(
                 supabase.table("snapshots").insert(related_snapshots).execute()
                 logger.info(f"Saved {len(related_snapshots)} related record snapshots")
 
-            # Update master record with merged fields (only allowed fields)
-            update_payload = {}
-            for field, value in merged_fields.items():
-                if field not in ALLOWED_UPDATE_FIELDS:
-                    continue
-                if overwrite_blanks:
-                    # When overwrite_blanks is enabled, include empty values to clear fields
-                    if value is None:
-                        update_payload[field] = ""
+            # Update master record with merged fields
+            if is_custom_object:
+                # For custom objects, merge all properties (no field restrictions)
+                update_properties = {}
+                for field, value in merged_fields.items():
+                    # Skip internal fields
+                    if field.startswith("_") or field in ("id", "dateAdded", "dateUpdated"):
+                        continue
+                    if overwrite_blanks:
+                        if value is None:
+                            update_properties[field] = ""
+                        else:
+                            update_properties[field] = value
                     else:
+                        if value is None:
+                            continue
+                        if isinstance(value, (list, dict, str)) and len(value) == 0:
+                            continue
+                        update_properties[field] = value
+
+                if update_properties:
+                    logger.info(f"Updating master custom object {master_record_id} with: {update_properties}")
+                    await client.update_custom_object_record(schema_key, master_record_id, update_properties)
+            else:
+                # For contacts, use allowed fields filter
+                update_payload = {}
+                for field, value in merged_fields.items():
+                    if field not in ALLOWED_UPDATE_FIELDS:
+                        continue
+                    if overwrite_blanks:
+                        if value is None:
+                            update_payload[field] = ""
+                        else:
+                            update_payload[field] = value
+                    else:
+                        if value is None:
+                            continue
+                        if isinstance(value, (list, dict, str)) and len(value) == 0:
+                            continue
                         update_payload[field] = value
-                else:
-                    # Skip empty/falsy values, but keep False for booleans
-                    if value is None:
-                        continue
-                    if isinstance(value, (list, dict, str)) and len(value) == 0:
-                        continue
-                    update_payload[field] = value
 
-            if update_payload:
-                logger.info(f"Updating master contact {master_record_id} with: {update_payload}")
-                await client.update_contact(master_record_id, update_payload)
+                if update_payload:
+                    logger.info(f"Updating master contact {master_record_id} with: {update_payload}")
+                    await client.update_contact(master_record_id, update_payload)
 
-            # Handle related records BEFORE deleting duplicate
-            if related_records_config:
+            # Handle related records BEFORE deleting duplicate (contacts only)
+            if not is_custom_object and related_records_config:
                 logger.info(f"Processing related records: {related_records_config}")
 
                 # Handle Notes
@@ -608,7 +686,6 @@ async def execute_merge(
                 if opps_handling and opps_handling != "dont_copy":
                     try:
                         if opps_handling == "custom_logic":
-                            # Custom logic filtering
                             custom_logic = related_records_config.get("opportunities_custom_logic", {})
                             opps_reassigned = await reassign_opportunities_with_custom_logic(
                                 client, duplicate_id, master_record_id, custom_logic
@@ -622,8 +699,12 @@ async def execute_merge(
                         logger.warning(f"Failed to reassign opportunities: {e}")
 
             # Delete the duplicate record
-            logger.info(f"Deleting duplicate contact {duplicate_id}")
-            await client.delete_contact(duplicate_id)
+            if is_custom_object:
+                logger.info(f"Deleting duplicate custom object {duplicate_id}")
+                await client.delete_custom_object_record(schema_key, duplicate_id)
+            else:
+                logger.info(f"Deleting duplicate contact {duplicate_id}")
+                await client.delete_contact(duplicate_id)
 
         # Update merge status to completed
         supabase.table("merges").update({"status": "completed"}).eq("id", merge_id).execute()
@@ -767,109 +848,161 @@ async def rollback_merge(
                 pass
             break  # Only need to check one snapshot
 
-    logger.info(f"Rolling back merge {merge_id}")
-    logger.info(f"Restoring duplicate contact from snapshot")
-    logger.info(f"Related records to restore: {len(notes_snapshot or [])} notes, {len(tasks_snapshot or [])} tasks, {len(opps_snapshot or [])} opportunities, {len(appointments_snapshot or [])} appointments")
+    # Determine if this was a custom object merge from the match pair's rule
+    match_pair_id = merge.data.get("match_pair_id")
+    is_custom_object = False
+    schema_key = None
+    source_object = "contacts"
+
+    if match_pair_id:
+        match_pair = supabase.table("match_pairs").select("rule_id").eq("id", match_pair_id).single().execute()
+        if match_pair.data and match_pair.data.get("rule_id"):
+            rule_check = supabase.table("match_rules").select("source_object").eq("id", match_pair.data["rule_id"]).single().execute()
+            if rule_check.data:
+                source_object = rule_check.data.get("source_object", "contacts")
+                if source_object.startswith("custom_objects."):
+                    is_custom_object = True
+                    schema_key = source_object.replace("custom_objects.", "")
+
+    logger.info(f"Rolling back merge {merge_id} (source_object: {source_object})")
+    logger.info(f"Restoring duplicate record from snapshot")
+    if not is_custom_object:
+        logger.info(f"Related records to restore: {len(notes_snapshot or [])} notes, {len(tasks_snapshot or [])} tasks, {len(opps_snapshot or [])} opportunities, {len(appointments_snapshot or [])} appointments")
 
     try:
         async with GHLClient(access_token, ghl_location_id) as client:
-            # Only include fields that GHL accepts for contact creation
-            restore_data = {
-                k: v for k, v in duplicate_snapshot.items()
-                if k in ALLOWED_CREATE_FIELDS and v is not None
-            }
+            if is_custom_object:
+                # Restore custom object record
+                # Extract properties from snapshot (which may have been flattened)
+                raw_data = duplicate_snapshot.get("_raw")
+                if raw_data:
+                    # If we have the raw GHL response, use its properties
+                    restore_properties = raw_data.get("properties") or {}
+                else:
+                    # Otherwise, extract properties from the flattened data
+                    restore_properties = {
+                        k: v for k, v in duplicate_snapshot.items()
+                        if k not in ("id", "dateAdded", "dateUpdated", "_raw") and v is not None
+                    }
 
-            # locationId is required and must be added
-            restore_data["locationId"] = ghl_location_id
+                logger.info(f"Creating custom object record with properties: {restore_properties}")
+                restored_record = await client.create_custom_object_record(schema_key, restore_properties)
+                restored_id = restored_record.get("id")
+                logger.info(f"Restored custom object record created with ID: {restored_id}")
+            else:
+                # Restore contact (existing logic)
+                restore_data = {
+                    k: v for k, v in duplicate_snapshot.items()
+                    if k in ALLOWED_CREATE_FIELDS and v is not None
+                }
 
-            logger.info(f"Creating contact with data: {restore_data}")
-            restored_contact = await client.create_contact(restore_data)
-            restored_id = restored_contact.get("contact", {}).get("id")
+                restore_data["locationId"] = ghl_location_id
 
-            logger.info(f"Restored contact created with ID: {restored_id}")
+                logger.info(f"Creating contact with data: {restore_data}")
+                restored_contact = await client.create_contact(restore_data)
+                restored_id = restored_contact.get("contact", {}).get("id")
+                logger.info(f"Restored contact created with ID: {restored_id}")
 
-            # Restore related records on the recreated contact
+            # Restore related records on the recreated contact (contacts only)
             notes_restored = 0
             tasks_restored = 0
             opps_restored = 0
-
-            # Restore notes
-            if notes_snapshot and restored_id:
-                for note in notes_snapshot:
-                    body = note.get("body", "")
-                    if body:
-                        try:
-                            await client.create_contact_note(restored_id, body)
-                            notes_restored += 1
-                        except Exception as e:
-                            logger.warning(f"Failed to restore note: {e}")
-                logger.info(f"Restored {notes_restored}/{len(notes_snapshot)} notes")
-
-            # Restore tasks
-            if tasks_snapshot and restored_id:
-                for task in tasks_snapshot:
-                    title = task.get("title", "")
-                    if title:
-                        try:
-                            await client.create_contact_task(
-                                restored_id,
-                                title=title,
-                                body=task.get("body"),
-                                due_date=task.get("dueDate"),
-                                completed=task.get("completed", False),
-                            )
-                            tasks_restored += 1
-                        except Exception as e:
-                            logger.warning(f"Failed to restore task: {e}")
-                logger.info(f"Restored {tasks_restored}/{len(tasks_snapshot)} tasks")
-
-            # Restore opportunities by reassigning them back from master
-            if opps_snapshot and restored_id:
-                master_record_id = merge.data.get("master_record_id")
-                for opp in opps_snapshot:
-                    opp_id = opp.get("id")
-                    if opp_id:
-                        try:
-                            await client.update_opportunity(opp_id, {"contactId": restored_id})
-                            opps_restored += 1
-                        except Exception as e:
-                            logger.warning(f"Failed to restore opportunity {opp_id}: {e}")
-                logger.info(f"Restored {opps_restored}/{len(opps_snapshot)} opportunities")
-
-            # Restore appointments by reassigning them back to restored contact
             appointments_restored = 0
-            if appointments_snapshot and restored_id:
-                for appt in appointments_snapshot:
-                    appt_id = appt.get("id")
-                    if appt_id:
-                        try:
-                            await client.update_appointment(appt_id, {"contactId": restored_id})
-                            appointments_restored += 1
-                        except Exception as e:
-                            logger.warning(f"Failed to restore appointment {appt_id}: {e}")
-                logger.info(f"Restored {appointments_restored}/{len(appointments_snapshot)} appointments")
+
+            if not is_custom_object:
+                # Restore notes
+                if notes_snapshot and restored_id:
+                    for note in notes_snapshot:
+                        body = note.get("body", "")
+                        if body:
+                            try:
+                                await client.create_contact_note(restored_id, body)
+                                notes_restored += 1
+                            except Exception as e:
+                                logger.warning(f"Failed to restore note: {e}")
+                    logger.info(f"Restored {notes_restored}/{len(notes_snapshot)} notes")
+
+                # Restore tasks
+                if tasks_snapshot and restored_id:
+                    for task in tasks_snapshot:
+                        title = task.get("title", "")
+                        if title:
+                            try:
+                                await client.create_contact_task(
+                                    restored_id,
+                                    title=title,
+                                    body=task.get("body"),
+                                    due_date=task.get("dueDate"),
+                                    completed=task.get("completed", False),
+                                )
+                                tasks_restored += 1
+                            except Exception as e:
+                                logger.warning(f"Failed to restore task: {e}")
+                    logger.info(f"Restored {tasks_restored}/{len(tasks_snapshot)} tasks")
+
+                # Restore opportunities by reassigning them back from master
+                if opps_snapshot and restored_id:
+                    master_record_id = merge.data.get("master_record_id")
+                    for opp in opps_snapshot:
+                        opp_id = opp.get("id")
+                        if opp_id:
+                            try:
+                                await client.update_opportunity(opp_id, {"contactId": restored_id})
+                                opps_restored += 1
+                            except Exception as e:
+                                logger.warning(f"Failed to restore opportunity {opp_id}: {e}")
+                    logger.info(f"Restored {opps_restored}/{len(opps_snapshot)} opportunities")
+
+                # Restore appointments by reassigning them back to restored contact
+                if appointments_snapshot and restored_id:
+                    for appt in appointments_snapshot:
+                        appt_id = appt.get("id")
+                        if appt_id:
+                            try:
+                                await client.update_appointment(appt_id, {"contactId": restored_id})
+                                appointments_restored += 1
+                            except Exception as e:
+                                logger.warning(f"Failed to restore appointment {appt_id}: {e}")
+                    logger.info(f"Restored {appointments_restored}/{len(appointments_snapshot)} appointments")
 
             # Restore master record to its original state
             if master_snapshot:
                 master_record_id = merge.data.get("master_record_id")
                 if master_record_id:
-                    # Filter to only fields GHL accepts for update
-                    ALLOWED_UPDATE_FIELDS = {
-                        "firstName", "lastName", "name", "email", "phone",
-                        "address1", "city", "state", "postalCode", "website", "timezone",
-                        "dnd", "dndSettings", "inboundDndSettings", "tags", "customFields",
-                        "source", "country", "assignedTo",
-                    }
-                    restore_master_data = {
-                        k: v for k, v in master_snapshot.items()
-                        if k in ALLOWED_UPDATE_FIELDS and v is not None
-                    }
-                    if restore_master_data:
-                        try:
-                            await client.update_contact(master_record_id, restore_master_data)
-                            logger.info(f"Restored master record {master_record_id} to original state")
-                        except Exception as e:
-                            logger.warning(f"Failed to restore master record: {e}")
+                    if is_custom_object:
+                        # Restore custom object master
+                        raw_data = master_snapshot.get("_raw")
+                        if raw_data:
+                            restore_properties = raw_data.get("properties") or {}
+                        else:
+                            restore_properties = {
+                                k: v for k, v in master_snapshot.items()
+                                if k not in ("id", "dateAdded", "dateUpdated", "_raw") and v is not None
+                            }
+                        if restore_properties:
+                            try:
+                                await client.update_custom_object_record(schema_key, master_record_id, restore_properties)
+                                logger.info(f"Restored master custom object {master_record_id} to original state")
+                            except Exception as e:
+                                logger.warning(f"Failed to restore master record: {e}")
+                    else:
+                        # Restore contact master
+                        ALLOWED_UPDATE_FIELDS = {
+                            "firstName", "lastName", "name", "email", "phone",
+                            "address1", "city", "state", "postalCode", "website", "timezone",
+                            "dnd", "dndSettings", "inboundDndSettings", "tags", "customFields",
+                            "source", "country", "assignedTo",
+                        }
+                        restore_master_data = {
+                            k: v for k, v in master_snapshot.items()
+                            if k in ALLOWED_UPDATE_FIELDS and v is not None
+                        }
+                        if restore_master_data:
+                            try:
+                                await client.update_contact(master_record_id, restore_master_data)
+                                logger.info(f"Restored master record {master_record_id} to original state")
+                            except Exception as e:
+                                logger.warning(f"Failed to restore master record: {e}")
 
         # Update merge status and store the new restored record ID
         supabase.table("merges").update({

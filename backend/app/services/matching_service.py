@@ -384,6 +384,58 @@ async def run_scan(
                 if use_blocking:
                     stream_contacts_to_blocks(internal_location_id, page_records)
 
+            # Custom objects (schema_key extracted from source_object like "custom_objects.transactions")
+            elif source_object.startswith("custom_objects."):
+                schema_key = source_object.replace("custom_objects.", "")
+                logger.info(f"Scanning custom object: {schema_key}")
+
+                page_num = 0
+                while True:
+                    page_num += 1
+                    result = await client.search_custom_objects(schema_key, page=page_num, page_limit=100)
+                    page_records = result.get("records", [])
+                    total = result.get("total", 0)
+
+                    if not page_records:
+                        break
+
+                    # Normalize custom object records for matching
+                    # Custom objects store fields in "properties" object
+                    for record in page_records:
+                        props = record.get("properties") or {}
+                        normalized = {
+                            "id": record.get("id"),
+                            "dateAdded": record.get("createdAt"),
+                            "dateUpdated": record.get("updatedAt"),
+                            "_raw": record,  # Keep raw data for merge operations
+                            **props  # Flatten properties into record
+                        }
+                        record_id = normalized.get("id")
+                        if record_id:
+                            valid_contact_ids.add(record_id)
+                            all_contacts.append(normalized)
+
+                    records_scanned += len(page_records)
+
+                    # Stream to blocking table if blocking is enabled
+                    if use_blocking:
+                        stream_contacts_to_blocks(internal_location_id, [
+                            {"id": r.get("id"), **(r.get("properties") or {})}
+                            for r in page_records
+                        ])
+
+                    logger.info(f"Fetched page {page_num}: {len(page_records)} custom object records (total: {records_scanned})")
+
+                    # GC for large scans
+                    if page_num % 10 == 0:
+                        gc.collect()
+
+                    # Stop if we got fewer than requested (last page)
+                    if len(page_records) < 100 or records_scanned >= total:
+                        break
+
+                logger.info(f"Fetched {records_scanned} custom object records total")
+
     except Exception as e:
         error_msg = str(e)
         if hasattr(e, 'last_attempt') and e.last_attempt.exception():

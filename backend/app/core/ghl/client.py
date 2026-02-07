@@ -356,6 +356,112 @@ class GHLClient:
         response.raise_for_status()
         return response.json()
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.TimeoutException)),
+    )
+    async def search_custom_objects(
+        self,
+        schema_key: str,
+        page: int = 1,
+        page_limit: int = 100,
+        query: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Search custom object records with pagination.
+
+        Uses POST /objects/{schemaKey}/records/search endpoint.
+        Returns: { records: [...], total: int }
+        """
+        body = {
+            "locationId": self.location_id,
+            "page": page,
+            "pageLimit": page_limit,
+        }
+        if query:
+            body["query"] = query
+
+        logger.info(f"[GHL] POST /objects/{schema_key}/records/search page={page}")
+        response = await self._client.post(
+            f"/objects/{schema_key}/records/search",
+            json=body
+        )
+        if response.status_code >= 400:
+            logger.error(f"[GHL] Search custom objects failed: {response.status_code} - {response.text[:500]}")
+        response.raise_for_status()
+        data = response.json()
+        return {
+            "records": data.get("records", []),
+            "total": data.get("total", 0)
+        }
+
+    async def get_custom_object_record(
+        self,
+        schema_key: str,
+        record_id: str,
+    ) -> Dict[str, Any]:
+        """Fetch a single custom object record by ID."""
+        response = await self._client.get(
+            f"/objects/{schema_key}/records/{record_id}",
+            params={"locationId": self.location_id}
+        )
+        response.raise_for_status()
+        return response.json()
+
+    async def update_custom_object_record(
+        self,
+        schema_key: str,
+        record_id: str,
+        properties: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Update a custom object record."""
+        logger.info(f"[GHL] PUT /objects/{schema_key}/records/{record_id}")
+        response = await self._client.put(
+            f"/objects/{schema_key}/records/{record_id}",
+            params={"locationId": self.location_id},
+            json={"properties": properties}
+        )
+        if response.status_code >= 400:
+            error_detail = response.text
+            logger.error(f"[GHL] Update custom object failed: {response.status_code} - {error_detail}")
+            raise Exception(f"GHL API error ({response.status_code}): {error_detail}")
+        return response.json()
+
+    async def delete_custom_object_record(
+        self,
+        schema_key: str,
+        record_id: str,
+    ) -> bool:
+        """Delete a custom object record."""
+        logger.info(f"[GHL] DELETE /objects/{schema_key}/records/{record_id}")
+        response = await self._client.delete(
+            f"/objects/{schema_key}/records/{record_id}",
+            params={"locationId": self.location_id}
+        )
+        if response.status_code >= 400:
+            error_detail = response.text
+            logger.error(f"[GHL] Delete custom object failed: {response.status_code} - {error_detail}")
+            raise Exception(f"GHL API error ({response.status_code}): {error_detail}")
+        return True
+
+    async def create_custom_object_record(
+        self,
+        schema_key: str,
+        properties: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Create a custom object record (for rollback)."""
+        logger.info(f"[GHL] POST /objects/{schema_key}/records")
+        response = await self._client.post(
+            f"/objects/{schema_key}/records",
+            params={"locationId": self.location_id},
+            json={"properties": properties}
+        )
+        if response.status_code >= 400:
+            error_detail = response.text
+            logger.error(f"[GHL] Create custom object failed: {response.status_code} - {error_detail}")
+            raise Exception(f"GHL API error ({response.status_code}): {error_detail}")
+        return response.json()
+
     # ==================== NOTES & TASKS (for reassignment) ====================
 
     async def get_contact_notes(self, contact_id: str) -> List[Dict[str, Any]]:

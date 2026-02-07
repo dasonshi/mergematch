@@ -43,12 +43,21 @@ def compute_merge_selections(
     record_b: Dict,
     strategy: str,
     overwrite_blanks: bool = False,
+    is_custom_object: bool = False,
 ) -> tuple:
     """Compute master record ID and field selections based on merge strategy."""
-    fields = [
-        "firstName", "lastName", "email", "phone", "tags",
-        "address1", "city", "state", "postalCode", "companyName",
-    ]
+    # For custom objects, derive fields from both records dynamically
+    # For contacts, use the standard field list
+    if is_custom_object:
+        # Get all non-internal fields from both records
+        internal_fields = {"id", "dateAdded", "dateUpdated", "_raw"}
+        all_fields = set(record_a.keys()) | set(record_b.keys())
+        fields = [f for f in all_fields if f not in internal_fields]
+    else:
+        fields = [
+            "firstName", "lastName", "email", "phone", "tags",
+            "address1", "city", "state", "postalCode", "companyName",
+        ]
 
     id_a = record_a.get("id", "")
     id_b = record_b.get("id", "")
@@ -125,8 +134,12 @@ async def process_single_merge_async(
         merge_settings = rule.get("merge_settings") or {}
         overwrite_blanks = merge_settings.get("overwrite_blanks", False)
 
+        # Check if this is a custom object merge
+        source_object = rule.get("source_object", "contacts")
+        is_custom_object = source_object.startswith("custom_objects.")
+
         master_id, selections = compute_merge_selections(
-            record_a, record_b, strategy, overwrite_blanks
+            record_a, record_b, strategy, overwrite_blanks, is_custom_object
         )
 
         # Get field preservation mappings
