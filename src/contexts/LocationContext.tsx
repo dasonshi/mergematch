@@ -248,6 +248,14 @@ export function LocationProvider({ children }: { children: ReactNode }) {
             if (data.location_id) {
               localStorage.setItem('ghl_location_id', data.location_id);
             }
+
+            // If we're in an iframe (OAuth happened inside GHL iframe),
+            // refresh the top/parent window to reload the app properly
+            if (window.parent !== window && window.top) {
+              console.log('🔄 Refreshing parent window after OAuth...');
+              window.top.location.reload();
+              return; // Stop execution, parent will reload
+            }
           } else {
             console.error('❌ Token exchange failed:', response.status);
             setError('Authentication failed. Please try again.');

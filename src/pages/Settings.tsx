@@ -97,9 +97,9 @@ export default function Settings() {
         description: "MergeMatch access has been revoked. Reinstall from Marketplace to reconnect.",
         variant: "destructive",
       });
-      // Clear local storage and reload to force re-auth
+      // Clear local storage and navigate to root to show disconnected state
       localStorage.clear();
-      window.location.reload();
+      window.location.href = '/';
     } catch (error) {
       console.error("Disconnect failed:", error);
       toast({
