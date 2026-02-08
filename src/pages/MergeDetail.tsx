@@ -64,7 +64,7 @@ interface RuleData {
   merge_settings?: {
     field_preservation?: {
       enabled: boolean;
-      mappings: Array<{ sourceField: string; targetField: string }>;
+      mappings: Array<{ source: string; target: string }>;
     };
   };
 }
@@ -79,8 +79,8 @@ const getRuleFields = (rule?: RuleData): Set<string> => {
 
   // Field preservation mappings
   rule.merge_settings?.field_preservation?.mappings?.forEach(m => {
-    fields.add(m.sourceField);
-    fields.add(m.targetField);
+    fields.add(m.source);
+    fields.add(m.target);
   });
 
   return fields;
@@ -469,18 +469,18 @@ export default function MergeDetail() {
                       </td>
                     </tr>
                     {rule.merge_settings.field_preservation.mappings.map((mapping, idx) => {
-                      const preservedValue = duplicateSnapshot?.[mapping.sourceField];
+                      const preservedValue = duplicateSnapshot?.[mapping.source];
                       return (
                         <tr key={`preserve-${idx}`} className="bg-primary/5 hover:bg-primary/10 transition-colors">
                           <td className="py-3 px-4 font-medium text-muted-foreground">
                             <div className="flex items-center gap-2">
-                              {getFieldLabel(mapping.targetField)}
+                              {getFieldLabel(mapping.target)}
                               <Badge variant="outline" className="text-xs px-1.5 py-0 border-primary/50 text-primary">
                                 Preserve
                               </Badge>
                             </div>
                             <div className="text-xs text-muted-foreground mt-0.5">
-                              ← from {getFieldLabel(mapping.sourceField)}
+                              ← from {getFieldLabel(mapping.source)}
                             </div>
                           </td>
                           <td className="py-3 px-4 text-muted-foreground italic">(source field)</td>
