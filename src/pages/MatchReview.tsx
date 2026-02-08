@@ -382,21 +382,18 @@ export default function MatchReview() {
     return fieldPreservationMappings
       .filter(m => m.source && m.target)
       .map(mapping => {
-        const sourceField = preservableFields.find(f => f.id === mapping.source);
-        const targetField = preservableFields.find(f => f.id === mapping.target);
-
         // For this specific field, which value is selected to keep?
         const selectedSource = selections[mapping.source] || masterId;
         // The opposite value is the one being overwritten - that's what we preserve
         const valueToPreserve = selectedSource === "a" ? recordB[mapping.source] : recordA[mapping.source];
 
         return {
-          sourceLabel: sourceField?.name || getFieldLabel(mapping.source),
-          targetLabel: targetField?.name || getFieldLabel(mapping.target),
+          sourceLabel: getFieldLabel(mapping.source),
+          targetLabel: getFieldLabel(mapping.target),
           value: formatDisplayValue(valueToPreserve),
         };
       });
-  }, [fieldPreservationMappings, selections, masterId, recordA, recordB, preservableFields, getFieldLabel, formatDisplayValue]);
+  }, [fieldPreservationMappings, selections, masterId, recordA, recordB, getFieldLabel, formatDisplayValue]);
 
   const handleMerge = () => {
     // Only require acknowledgment if warning is enabled
@@ -686,8 +683,9 @@ export default function MatchReview() {
                       </TableCell>
                     </TableRow>
                     {fieldPreservationMappings.filter(m => m.source && m.target).map((mapping, idx) => {
-                      const sourceField = preservableFields.find(f => f.id === mapping.source);
-                      const targetField = preservableFields.find(f => f.id === mapping.target);
+                      // Use getFieldLabel for consistent name resolution (checks both id and fieldKey)
+                      const sourceLabel = getFieldLabel(mapping.source);
+                      const targetLabel = getFieldLabel(mapping.target);
 
                       // Get values from A and B (fixed positions)
                       const valueA = formatDisplayValue(recordA[mapping.source]);
@@ -703,13 +701,13 @@ export default function MatchReview() {
                         <TableRow key={`preserve-${idx}`} className="bg-primary/5">
                           <TableCell className="font-medium text-muted-foreground">
                             <div className="flex items-center gap-2">
-                              {targetField?.name || mapping.target}
+                              {targetLabel}
                               <Badge variant="outline" className="text-xs px-1.5 py-0 border-primary/50 text-primary">
                                 Preserve
                               </Badge>
                             </div>
                             <div className="text-xs text-muted-foreground mt-0.5">
-                              ← from {sourceField?.name || mapping.source}
+                              ← from {sourceLabel}
                             </div>
                           </TableCell>
                           <TableCell
