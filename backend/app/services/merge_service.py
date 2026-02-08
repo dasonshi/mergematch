@@ -262,18 +262,17 @@ async def execute_merge(
                 # Fetch custom object records
                 try:
                     fresh_a_resp = await prefetch_client.get_custom_object_record(schema_key, record_a_id)
-                    logger.info(f"Custom object A raw response keys: {list(fresh_a_resp.keys())}")
-                    logger.info(f"Custom object A properties: {fresh_a_resp.get('properties')}")
+                    # GHL API returns {"record": {...}, "traceId": "..."} - extract the record
+                    record_data = fresh_a_resp.get("record", fresh_a_resp)
                     # Normalize: flatten properties for merge logic
-                    props = fresh_a_resp.get("properties") or {}
+                    props = record_data.get("properties") or {}
                     fresh_a = {
-                        "id": fresh_a_resp.get("id"),
-                        "dateAdded": fresh_a_resp.get("createdAt"),
-                        "dateUpdated": fresh_a_resp.get("updatedAt"),
-                        "_raw": fresh_a_resp,
+                        "id": record_data.get("id"),
+                        "dateAdded": record_data.get("createdAt"),
+                        "dateUpdated": record_data.get("updatedAt"),
+                        "_raw": record_data,
                         **props
                     }
-                    logger.info(f"Custom object A normalized keys: {list(fresh_a.keys())}")
                 except httpx.HTTPStatusError as e:
                     if e.response.status_code == 404:
                         supabase.table("match_pairs").update({"status": "stale"}).eq("id", match_id).execute()
@@ -285,12 +284,14 @@ async def execute_merge(
 
                 try:
                     fresh_b_resp = await prefetch_client.get_custom_object_record(schema_key, record_b_id)
-                    props = fresh_b_resp.get("properties") or {}
+                    # GHL API returns {"record": {...}, "traceId": "..."} - extract the record
+                    record_data = fresh_b_resp.get("record", fresh_b_resp)
+                    props = record_data.get("properties") or {}
                     fresh_b = {
-                        "id": fresh_b_resp.get("id"),
-                        "dateAdded": fresh_b_resp.get("createdAt"),
-                        "dateUpdated": fresh_b_resp.get("updatedAt"),
-                        "_raw": fresh_b_resp,
+                        "id": record_data.get("id"),
+                        "dateAdded": record_data.get("createdAt"),
+                        "dateUpdated": record_data.get("updatedAt"),
+                        "_raw": record_data,
                         **props
                     }
                 except httpx.HTTPStatusError as e:
