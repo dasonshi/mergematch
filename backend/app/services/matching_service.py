@@ -141,6 +141,19 @@ def get_field_value(record: dict, field: str) -> str:
             return str(value[0])
         return str(value)
 
+    # For custom objects: check _raw.properties if available
+    # This handles cases where the record was re-fetched and properties
+    # might be nested differently than during the original scan
+    raw_record = record.get("_raw")
+    if raw_record and isinstance(raw_record, dict):
+        props = raw_record.get("properties") or {}
+        if field in props:
+            value = props[field]
+            if value:
+                if isinstance(value, list) and len(value) > 0:
+                    return str(value[0])
+                return str(value)
+
     # Handle custom fields - GHL stores them in customFields array
     # Each custom field has: {id: "xxx", value: "yyy"} or {key: "xxx", value: "yyy"}
     custom_fields = record.get("customFields", []) or record.get("customField", [])

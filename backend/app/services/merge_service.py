@@ -346,16 +346,27 @@ async def execute_merge(
                         review_threshold = float(rule_check.data.get("review_threshold", 0.70)) * 100
 
                         if match_fields:
-                            is_match, confidence, _ = compare_records(
+                            # Debug: log what we're comparing
+                            logger.info(f"Re-validation: match_fields={match_fields}")
+                            logger.info(f"Re-validation: record_a keys={list(record_a_data.keys())[:20]}")
+                            logger.info(f"Re-validation: record_b keys={list(record_b_data.keys())[:20]}")
+                            for mf in match_fields:
+                                field_name = mf.get("field", "")
+                                val_a = record_a_data.get(field_name)
+                                val_b = record_b_data.get(field_name)
+                                logger.info(f"Re-validation: field={field_name}, val_a={val_a}, val_b={val_b}")
+
+                            is_match, confidence, field_scores = compare_records(
                                 record_a_data, record_b_data, match_fields
                             )
+                            logger.info(f"Re-validation result: is_match={is_match}, confidence={confidence}, field_scores={field_scores}")
                             if not is_match or confidence < review_threshold:
                                 supabase.table("match_pairs").update({
                                     "status": "stale",
                                     "confidence_score": confidence / 100,
                                 }).eq("id", match_id).execute()
                                 raise ValueError(
-                                    f"These contacts no longer match after re-validation "
+                                    f"These records no longer match after re-validation "
                                     f"(confidence: {confidence:.0f}%, threshold: {review_threshold:.0f}%). "
                                     "The match has been marked as stale."
                                 )
