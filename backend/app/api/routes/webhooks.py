@@ -15,7 +15,7 @@ from app.services.billing_service import (
     handle_plan_change,
     get_plan_features,
 )
-from app.services.matching_service import compare_records, run_scan
+from app.services.matching_service import compare_records, check_single_contact
 from app.services.auth_service import get_location_tokens_with_refresh
 from app.core.rate_limit import limiter, RATE_LIMIT_WEBHOOK
 
@@ -25,8 +25,9 @@ router = APIRouter()
 # Maximum age for webhook timestamps (5 minutes)
 MAX_WEBHOOK_AGE_SECONDS = 300
 
-# Cooldown between webhook-triggered scans per location (5 minutes)
-WEBHOOK_SCAN_COOLDOWN_SECONDS = 300
+# Cooldown between webhook-triggered duplicate checks per contact (10 seconds)
+# Short cooldown since check_single_contact is fast (seconds, not minutes)
+WEBHOOK_CHECK_COOLDOWN_SECONDS = 10
 
 # Events grouped by action type
 _CREATE_EVENTS = {
@@ -53,11 +54,16 @@ _TRACKING_ONLY_EVENTS = {
     "RelationCreate", "RelationDelete",
 }
 
-# Map event types to their source_object for auto-scan
+# Map event types to their source_object for duplicate checks
 _EVENT_SOURCE_OBJECT = {
+    # CREATE events
     "ContactCreate": "contacts", "contact.created": "contacts",
     "RecordCreate": "companies", "company.created": "companies",
     "OpportunityCreate": "opportunities",
+    # UPDATE events (edited contacts may now match others)
+    "ContactUpdate": "contacts", "contact.updated": "contacts",
+    "RecordUpdate": "companies", "company.updated": "companies",
+    "OpportunityUpdate": "opportunities",
 }
 
 
@@ -312,20 +318,28 @@ async def _revalidate_pairs(pair_ids: list):
             logger.warning(f"Failed to revalidate pair {pair_id}: {e}")
 
 
-async def _trigger_webhook_scan(ghl_location_id: str, source_object: str):
-    """Trigger an auto-scan for a location if allowed by plan and cooldown.
+async def _check_contact_for_duplicates(
+    ghl_location_id: str,
+    source_object: str,
+    contact_id: str,
+    record_data: dict,
+):
+    """Check a single contact for duplicates when created/updated.
 
-    Pro+ only. 5-minute cooldown per location to avoid excessive scanning.
-    Runs in the background — errors are logged, not raised.
+    Uses check_single_contact() for fast, targeted duplicate detection instead
+    of full run_scan(). Completes in seconds, not minutes.
+
+    Pro+ only. 10-second cooldown per contact to prevent duplicate processing.
+    Stores matches as pending in match_pairs table (no auto-merge).
     """
-    if not ghl_location_id:
+    if not ghl_location_id or not contact_id:
         return
 
     try:
         # Get location tokens (includes plan info)
         tokens = await get_location_tokens_with_refresh(ghl_location_id)
         if not tokens:
-            logger.debug(f"No tokens for location {ghl_location_id}, skipping webhook scan")
+            logger.debug(f"No tokens for location {ghl_location_id}, skipping duplicate check")
             return
 
         plan = tokens.get("plan", "free")
@@ -333,7 +347,7 @@ async def _trigger_webhook_scan(ghl_location_id: str, source_object: str):
 
         # Gate: webhook_triggers must be enabled (Pro+ only)
         if not features.webhook_triggers:
-            logger.debug(f"Webhook triggers not enabled for plan '{plan}', skipping auto-scan")
+            logger.debug(f"Webhook triggers not enabled for plan '{plan}', skipping duplicate check")
             return
 
         tenant_id = tokens["tenant_id"]
@@ -342,20 +356,20 @@ async def _trigger_webhook_scan(ghl_location_id: str, source_object: str):
 
         supabase = get_supabase()
 
-        # Check cooldown: look for recent webhook-triggered job for this location
-        cooldown_cutoff = (datetime.utcnow() - timedelta(seconds=WEBHOOK_SCAN_COOLDOWN_SECONDS)).isoformat()
-        recent_jobs = supabase.table("job_executions").select("id").eq(
+        # Check per-contact cooldown to prevent duplicate webhook processing
+        cooldown_cutoff = (datetime.utcnow() - timedelta(seconds=WEBHOOK_CHECK_COOLDOWN_SECONDS)).isoformat()
+        recent_checks = supabase.table("job_executions").select("id").eq(
             "location_id", internal_location_id
-        ).eq("trigger_type", "webhook").gte(
-            "started_at", cooldown_cutoff
-        ).limit(1).execute()
+        ).eq("trigger_type", "webhook").eq(
+            "metadata->>contact_id", contact_id
+        ).gte("started_at", cooldown_cutoff).limit(1).execute()
 
-        if recent_jobs.data:
-            logger.debug(f"Webhook scan cooldown active for location {ghl_location_id}, skipping")
+        if recent_checks.data:
+            logger.debug(f"Duplicate check cooldown active for contact {contact_id}, skipping")
             return
 
         # Find active rules matching this source_object
-        rules = supabase.table("match_rules").select("id, name, source_object").eq(
+        rules = supabase.table("match_rules").select("id, name, source_object, review_threshold").eq(
             "location_id", internal_location_id
         ).eq("is_active", True).execute()
 
@@ -368,11 +382,13 @@ async def _trigger_webhook_scan(ghl_location_id: str, source_object: str):
             logger.debug(f"No active rules for source_object '{source_object}' at location {ghl_location_id}")
             return
 
+        total_matches_stored = 0
+
         for rule in matching_rules:
             rule_id = rule["id"]
             rule_name = rule.get("name", "Unknown")
 
-            # Create job execution record
+            # Create job execution record for tracking
             job_id = str(uuid.uuid4())
             job_data = {
                 "id": job_id,
@@ -382,37 +398,77 @@ async def _trigger_webhook_scan(ghl_location_id: str, source_object: str):
                 "status": "running",
                 "trigger_type": "webhook",
                 "started_at": datetime.utcnow().isoformat(),
+                "metadata": {"contact_id": contact_id},
             }
             supabase.table("job_executions").insert(job_data).execute()
 
             try:
-                result = await run_scan(
+                # Use check_single_contact for fast, targeted duplicate detection
+                result = await check_single_contact(
+                    contact_id=contact_id,
                     ghl_location_id=ghl_location_id,
-                    rule_id=rule_id,
                     access_token=access_token,
                     tenant_id=tenant_id,
                     internal_location_id=internal_location_id,
+                    rule_id=rule_id,
                     plan=plan,
                 )
+
+                matches_found = len(result.get("matches", []))
+                matches_stored = 0
+
+                # Store matches as pending match_pairs (NO auto-merge from webhooks)
+                if result.get("is_duplicate"):
+                    contact_data = result.get("contact_data", record_data)
+
+                    for match in result.get("matches", []):
+                        match_pair_data = {
+                            "id": str(uuid.uuid4()),
+                            "tenant_id": tenant_id,
+                            "location_id": internal_location_id,
+                            "rule_id": match.get("rule_id", rule_id),
+                            "record_a_id": contact_id,
+                            "record_a_type": source_object,
+                            "record_a_data": contact_data,
+                            "record_b_id": match["matched_contact_id"],
+                            "record_b_type": source_object,
+                            "record_b_data": match["matched_contact_data"],
+                            "confidence_score": match["confidence_score"] / 100,  # Store as 0.0-1.0
+                            "field_scores": match.get("field_scores", {}),
+                            "status": "pending",  # Always pending, NO auto-merge
+                            "created_at": datetime.utcnow().isoformat(),
+                        }
+
+                        try:
+                            # Insert (skip if pair already exists via unique constraint)
+                            supabase.table("match_pairs").insert(match_pair_data).execute()
+                            matches_stored += 1
+                        except Exception as insert_err:
+                            # Likely duplicate pair - skip silently
+                            if "duplicate" not in str(insert_err).lower():
+                                logger.warning(f"Failed to store match pair: {insert_err}")
+
+                total_matches_stored += matches_stored
 
                 supabase.table("job_executions").update({
                     "status": "completed",
                     "completed_at": datetime.utcnow().isoformat(),
-                    "records_scanned": result.get("records_scanned", 0),
-                    "matches_found": result.get("matches_found", 0),
-                    "matches_stored": result.get("matches_stored", 0),
-                    "auto_merged": result.get("auto_merged", 0),
+                    "records_scanned": result.get("contacts_scanned", 0),
+                    "matches_found": matches_found,
+                    "matches_stored": matches_stored,
+                    "auto_merged": 0,  # Never auto-merge from webhooks
                 }).eq("id", job_id).execute()
 
-                # Update last_scan_at on the rule
-                supabase.table("match_rules").update({
-                    "last_scan_at": datetime.utcnow().isoformat()
-                }).eq("id", rule_id).execute()
-
-                logger.info(
-                    f"Webhook-triggered scan completed for rule '{rule_name}': "
-                    f"{result.get('matches_found', 0)} matches found"
-                )
+                if matches_found > 0:
+                    logger.info(
+                        f"Webhook duplicate check for contact {contact_id}: "
+                        f"rule '{rule_name}' found {matches_found} matches, stored {matches_stored}"
+                    )
+                else:
+                    logger.debug(
+                        f"Webhook duplicate check for contact {contact_id}: "
+                        f"rule '{rule_name}' - no duplicates found"
+                    )
 
             except Exception as e:
                 error_msg = str(e)[:500]
@@ -421,10 +477,16 @@ async def _trigger_webhook_scan(ghl_location_id: str, source_object: str):
                     "completed_at": datetime.utcnow().isoformat(),
                     "error_message": error_msg,
                 }).eq("id", job_id).execute()
-                logger.error(f"Webhook-triggered scan failed for rule '{rule_name}': {e}")
+                logger.error(f"Webhook duplicate check failed for rule '{rule_name}': {e}")
+
+        if total_matches_stored > 0:
+            logger.info(
+                f"Webhook duplicate check complete for {contact_id}: "
+                f"{total_matches_stored} new pending matches stored"
+            )
 
     except Exception as e:
-        logger.error(f"Failed to trigger webhook scan for {ghl_location_id}: {e}")
+        logger.error(f"Failed to check duplicates for {contact_id} at {ghl_location_id}: {e}")
 
 
 @router.post("/ghl")
@@ -518,24 +580,48 @@ async def ghl_webhook(
     # ── Data webhooks ─────────────────────────────────────────────────────
     location_id = payload.get("locationId") or (data.get("locationId") if isinstance(data, dict) else None)
 
-    # CREATE events: update timestamp + trigger auto-scan
+    # CREATE events: update timestamp + check for duplicates
     if event_type in _CREATE_EVENTS:
         await update_last_webhook_at(location_id)
         source_object = _EVENT_SOURCE_OBJECT.get(event_type)
-        if location_id and source_object:
-            # Fire-and-forget background auto-scan
-            asyncio.ensure_future(_trigger_webhook_scan(location_id, source_object))
+        record_id, record_data = _extract_record_id_and_data(payload)
+
+        if location_id and source_object and record_id:
+            # Fire-and-forget background duplicate check (fast, single-contact)
+            asyncio.ensure_future(
+                _check_contact_for_duplicates(
+                    ghl_location_id=location_id,
+                    source_object=source_object,
+                    contact_id=record_id,
+                    record_data=record_data or {},
+                )
+            )
         return {"received": True, "event": event_type, "location_id": location_id}
 
-    # UPDATE events: update timestamp + refresh snapshots + revalidate pairs
+    # UPDATE events: update timestamp + refresh snapshots + revalidate pairs + check for new duplicates
     if event_type in _UPDATE_EVENTS:
         await update_last_webhook_at(location_id)
         record_id, record_data = _extract_record_id_and_data(payload)
+
         if record_id and record_data:
+            # Update snapshots in existing pending match_pairs
             affected_pair_ids = await _update_match_pair_snapshots(record_id, record_data)
             if affected_pair_ids:
                 # Fire-and-forget background revalidation
                 asyncio.ensure_future(_revalidate_pairs(affected_pair_ids))
+
+            # Also check if update created NEW duplicates (edited contact may now match others)
+            source_object = _EVENT_SOURCE_OBJECT.get(event_type)
+            if location_id and source_object:
+                asyncio.ensure_future(
+                    _check_contact_for_duplicates(
+                        ghl_location_id=location_id,
+                        source_object=source_object,
+                        contact_id=record_id,
+                        record_data=record_data,
+                    )
+                )
+
         return {"received": True, "event": event_type, "location_id": location_id}
 
     # DELETE events: update timestamp + mark affected pairs stale
