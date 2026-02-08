@@ -63,7 +63,7 @@ class MergeSettings(BaseModel):
 
 class MatchRuleCreate(BaseModel):
     name: str = Field(..., max_length=200)
-    source_object: str = Field(..., max_length=50)  # contacts, companies, opportunities
+    source_object: str = Field(..., max_length=50)  # contacts, custom_objects.* (companies/opportunities not supported)
     match_fields: List[MatchField]
     auto_merge_threshold: float = 95.0
     review_threshold: float = 70.0
@@ -94,6 +94,22 @@ async def create_rule(
     user: AuthenticatedUser = Depends(get_user),
 ):
     """Create a new match rule."""
+    # Validate source_object - only contacts and custom_objects supported
+    SUPPORTED_SOURCE_OBJECTS = {"contacts"}
+    is_custom_object = rule.source_object.startswith("custom_objects.")
+
+    if not is_custom_object and rule.source_object not in SUPPORTED_SOURCE_OBJECTS:
+        unsupported_reason = {
+            "companies": "GHL API does not support company updates/deletions",
+            "opportunities": "Opportunity merging is not yet implemented"
+        }.get(rule.source_object, "Unsupported object type")
+
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot create rule for '{rule.source_object}': {unsupported_reason}. "
+                   f"Supported types: contacts, custom_objects.*"
+        )
+
     supabase = get_supabase()
 
     # Free tier: limit to 1 rule
@@ -158,6 +174,22 @@ async def update_rule(
     user: AuthenticatedUser = Depends(get_user),
 ):
     """Update a match rule."""
+    # Validate source_object - only contacts and custom_objects supported
+    SUPPORTED_SOURCE_OBJECTS = {"contacts"}
+    is_custom_object = rule.source_object.startswith("custom_objects.")
+
+    if not is_custom_object and rule.source_object not in SUPPORTED_SOURCE_OBJECTS:
+        unsupported_reason = {
+            "companies": "GHL API does not support company updates/deletions",
+            "opportunities": "Opportunity merging is not yet implemented"
+        }.get(rule.source_object, "Unsupported object type")
+
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot create rule for '{rule.source_object}': {unsupported_reason}. "
+                   f"Supported types: contacts, custom_objects.*"
+        )
+
     # Free tier: cannot edit rules
     if user.plan == "free":
         raise HTTPException(
