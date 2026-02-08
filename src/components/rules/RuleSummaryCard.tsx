@@ -1,6 +1,9 @@
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent } from "@/components/ui/card";
 import { ArrowRight } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { api, ObjectField } from "@/lib/api";
+import { useLocation } from "@/contexts/LocationContext";
 
 interface MatchField {
   field: string;
@@ -132,11 +135,25 @@ export function RuleSummaryCard({
   isTogglePending,
   objectDisplayName,
 }: RuleSummaryCardProps) {
+  const { locationId } = useLocation();
   const mergeSettings = rule.merge_settings;
   const fieldPreservation = mergeSettings?.field_preservation;
   const hasPreservationMappings = fieldPreservation?.mappings && fieldPreservation.mappings.length > 0;
   const relatedRecords = mergeSettings?.related_records;
   const overwriteBlanks = mergeSettings?.overwrite_blanks;
+
+  // Fetch field metadata for resolving field IDs to names
+  const { data: fieldOptions = [] } = useQuery<ObjectField[]>({
+    queryKey: ["fields", rule.source_object, locationId],
+    queryFn: () => api.getObjectFields(rule.source_object),
+    enabled: !!locationId && !!rule.source_object && hasPreservationMappings,
+  });
+
+  // Helper to resolve field ID to display name
+  const getFieldName = (fieldId: string): string => {
+    const field = fieldOptions.find(f => f.id === fieldId || f.fieldKey === fieldId);
+    return field?.name || fieldId;
+  };
 
   return (
     <Card>
@@ -211,9 +228,9 @@ export function RuleSummaryCard({
               <div className="mt-1 flex flex-wrap gap-2">
                 {fieldPreservation!.mappings!.map((mapping, i) => (
                   <span key={i} className="inline-flex items-center gap-1 text-sm font-medium bg-muted px-2 py-0.5 rounded">
-                    {mapping.source}
+                    {getFieldName(mapping.source)}
                     <ArrowRight className="h-3 w-3 text-muted-foreground" />
-                    {mapping.target}
+                    {getFieldName(mapping.target)}
                   </span>
                 ))}
               </div>

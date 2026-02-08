@@ -540,11 +540,14 @@ export default function MatchRuleForm() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Filter out empty field preservation mappings (where source or target is blank)
+    const validMappings = fieldPreservationMappings.filter(m => m.source && m.target);
+
     // Build merge_settings
     const mergeSettings: RuleMergeSettings = {
       overwrite_blanks: overwriteBlanks,
-      field_preservation: fieldPreservationMappings.length > 0
-        ? { enabled: true, auto_create_fields: false, mappings: fieldPreservationMappings }
+      field_preservation: validMappings.length > 0
+        ? { enabled: true, auto_create_fields: false, mappings: validMappings }
         : undefined,
     };
     if (objectType === "contacts") {

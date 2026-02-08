@@ -134,10 +134,11 @@ export default function MatchReview() {
   }, [rule?.source_object, availableObjects]);
 
   // Fetch available fields for field preservation dropdowns (use rule's source_object)
+  // Always fetch fields for proper label resolution, regardless of plan tier
   const { data: fieldOptions = [] } = useQuery<ObjectField[]>({
     queryKey: ["fields", rule?.source_object, locationId],
     queryFn: () => api.getObjectFields(rule!.source_object),
-    enabled: !!locationId && hasFieldPreservation && !!rule?.source_object,
+    enabled: !!locationId && !!rule?.source_object,
   });
 
   // Filter out synthetic fields (like emailDomain) that aren't real GHL fields
@@ -364,8 +365,8 @@ export default function MatchReview() {
     // Check if we have field metadata from the API
     const fieldMeta = fieldOptions.find(f => f.id === field || f.fieldKey === field);
     if (fieldMeta?.name) return fieldMeta.name;
-    // Fall back to static labels or formatting
-    return fieldLabels[field] || field.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
+    // Fall back to static labels, or return raw field key (don't mangle it with regex)
+    return fieldLabels[field] || field;
   };
 
   const getResultValue = (field: string): string => {
