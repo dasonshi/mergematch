@@ -434,9 +434,9 @@ class GHLClient:
     ) -> bool:
         """Delete a custom object record."""
         logger.info(f"[GHL] DELETE /objects/{schema_key}/records/{record_id}")
+        # Note: GHL API does not accept locationId for DELETE - it's inferred from the token
         response = await self._client.delete(
-            f"/objects/{schema_key}/records/{record_id}",
-            params={"locationId": self.location_id}
+            f"/objects/{schema_key}/records/{record_id}"
         )
         if response.status_code >= 400:
             error_detail = response.text
