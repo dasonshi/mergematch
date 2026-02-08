@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { DataTable, DataTableColumn } from "@/components/ui/data-table";
 import { MergeStatusBadge } from "@/components/ui/merge-status-badge";
 import { useLocation } from "@/contexts/LocationContext";
+import { getGhlRecordUrl } from "@/lib/utils";
 
 interface Merge {
   id: string;
@@ -31,8 +32,9 @@ export function MergeHistoryCard({
 }: MergeHistoryCardProps) {
   const { locationId } = useLocation();
 
+  // Build CRM contact URL (assumes contacts since source_object isn't stored in merge record)
   const getCrmContactUrl = (contactId: string) => {
-    return `https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${contactId}`;
+    return getGhlRecordUrl(locationId!, "contacts", contactId);
   };
 
   const columns: DataTableColumn<Merge>[] = [

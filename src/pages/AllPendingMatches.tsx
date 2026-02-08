@@ -29,7 +29,8 @@ import { useLocation } from "@/contexts/LocationContext";
 import { useUpgradeModal } from "@/components/ui/upgrade-modal";
 import { useToast } from "@/hooks/use-toast";
 import { api, MatchRule, MatchPair } from "@/lib/api";
-import { getRecordName, getFirstMatchFieldValue } from "@/components/rules/helpers";
+import { getRecordName, getFirstMatchFieldValue, recordMatchesSearch } from "@/components/rules/helpers";
+import { getGhlRecordUrl } from "@/lib/utils";
 
 export default function AllPendingMatches() {
   const navigate = useNavigate();
@@ -116,22 +117,17 @@ export default function AllPendingMatches() {
   // Filter matches (rule filter is now server-side; search is client-side on current page)
   const filteredMatches = useMemo(() => {
     if (!searchQuery) return allMatches;
-    const query = searchQuery.toLowerCase();
     return allMatches.filter((item: MatchPair) => {
       const recordA = item.record_a_data || {};
       const recordB = item.record_b_data || {};
       const rule = rulesMap.get(item.rule_id);
-      return (
-        recordA.firstName?.toLowerCase().includes(query) ||
-        recordA.lastName?.toLowerCase().includes(query) ||
-        recordA.email?.toLowerCase().includes(query) ||
-        recordA.phone?.toLowerCase().includes(query) ||
-        recordB.firstName?.toLowerCase().includes(query) ||
-        recordB.lastName?.toLowerCase().includes(query) ||
-        recordB.email?.toLowerCase().includes(query) ||
-        recordB.phone?.toLowerCase().includes(query) ||
-        rule?.name?.toLowerCase().includes(query)
-      );
+      const matchFields = rule?.match_fields || [];
+      // Search records dynamically based on their fields
+      const matchesSearchA = recordMatchesSearch(recordA, searchQuery, matchFields);
+      const matchesSearchB = recordMatchesSearch(recordB, searchQuery, matchFields);
+      // Also allow searching by rule name
+      const matchesRuleName = rule?.name?.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesSearchA || matchesSearchB || matchesRuleName;
     });
   }, [allMatches, searchQuery, rulesMap]);
 
@@ -309,9 +305,10 @@ export default function AllPendingMatches() {
         const recordA = item.record_a_data || {};
         const rule = rulesMap.get(item.rule_id);
         const matchFields = rule?.match_fields || [];
+        const sourceObject = rule?.source_object || "contacts";
         const name = getRecordName(recordA, matchFields);
         const fieldValue = getFirstMatchFieldValue(recordA, matchFields);
-        const ghlUrl = `https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${item.record_a_id}`;
+        const ghlUrl = getGhlRecordUrl(locationId!, sourceObject, item.record_a_id);
         // Don't show subheading if it matches the name (used as title)
         const showFieldValue = fieldValue && fieldValue !== name;
         return (
@@ -322,7 +319,7 @@ export default function AllPendingMatches() {
             >
               {name}
             </Link>
-            {showFieldValue && (
+            {showFieldValue && ghlUrl && (
               <a
                 href={ghlUrl}
                 target="_blank"
@@ -331,6 +328,9 @@ export default function AllPendingMatches() {
               >
                 {fieldValue}
               </a>
+            )}
+            {showFieldValue && !ghlUrl && (
+              <span className="block text-xs text-muted-foreground">{fieldValue}</span>
             )}
           </div>
         );
@@ -342,9 +342,10 @@ export default function AllPendingMatches() {
         const recordB = item.record_b_data || {};
         const rule = rulesMap.get(item.rule_id);
         const matchFields = rule?.match_fields || [];
+        const sourceObject = rule?.source_object || "contacts";
         const name = getRecordName(recordB, matchFields);
         const fieldValue = getFirstMatchFieldValue(recordB, matchFields);
-        const ghlUrl = `https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${item.record_b_id}`;
+        const ghlUrl = getGhlRecordUrl(locationId!, sourceObject, item.record_b_id);
         // Don't show subheading if it matches the name (used as title)
         const showFieldValue = fieldValue && fieldValue !== name;
         return (
@@ -355,7 +356,7 @@ export default function AllPendingMatches() {
             >
               {name}
             </Link>
-            {showFieldValue && (
+            {showFieldValue && ghlUrl && (
               <a
                 href={ghlUrl}
                 target="_blank"
@@ -364,6 +365,9 @@ export default function AllPendingMatches() {
               >
                 {fieldValue}
               </a>
+            )}
+            {showFieldValue && !ghlUrl && (
+              <span className="block text-xs text-muted-foreground">{fieldValue}</span>
             )}
           </div>
         );

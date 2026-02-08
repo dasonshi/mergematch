@@ -85,9 +85,50 @@ export function getFirstMatchFieldValue(
   matchFields: Array<{ field: string; algorithm: string }>
 ): string {
   if (!matchFields || matchFields.length === 0) {
-    return record.email || record.phone || "";
+    return String(record.email || record.phone || "");
   }
   const firstField = matchFields[0];
   const value = getFieldValue(record, firstField.field);
-  return value || record.email || record.phone || "";
+  return value || String(record.email || record.phone || "");
+}
+
+/**
+ * Search a record's fields to see if any value contains the search query.
+ * Uses match fields if provided, otherwise searches common fields and all string values.
+ */
+export function recordMatchesSearch(
+  record: Record<string, unknown>,
+  query: string,
+  matchFields?: Array<{ field: string; algorithm: string }>
+): boolean {
+  if (!query) return true;
+  const lowerQuery = query.toLowerCase();
+
+  // If we have match fields, search those first
+  if (matchFields && matchFields.length > 0) {
+    for (const mf of matchFields) {
+      const value = getFieldValue(record, mf.field);
+      if (value && String(value).toLowerCase().includes(lowerQuery)) {
+        return true;
+      }
+    }
+  }
+
+  // Also search common display fields
+  const commonFields = ["firstName", "lastName", "email", "phone", "name", "title", "companyName"];
+  for (const field of commonFields) {
+    const value = record[field];
+    if (value && String(value).toLowerCase().includes(lowerQuery)) {
+      return true;
+    }
+  }
+
+  // Fallback: search any string values in the record
+  for (const [key, value] of Object.entries(record)) {
+    if (typeof value === "string" && value.toLowerCase().includes(lowerQuery)) {
+      return true;
+    }
+  }
+
+  return false;
 }

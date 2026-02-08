@@ -24,7 +24,7 @@ import { api, MatchPair } from "@/lib/api";
 import { DataTable, DataTableColumn } from "@/components/ui/data-table";
 import { ConfidenceBadge } from "@/components/ui/confidence-badge";
 import { TablePagination } from "@/components/ui/table-pagination";
-import { MergeHistoryCard, RuleSummaryCard, getRecordName, getMatchFieldSubheading } from "@/components/rules";
+import { MergeHistoryCard, RuleSummaryCard, getRecordName, getMatchFieldSubheading, recordMatchesSearch } from "@/components/rules";
 
 export default function MatchRuleDetail() {
   const { id } = useParams();
@@ -431,20 +431,15 @@ export default function MatchRuleDetail() {
   const mergeHistory = mergesData?.data || [];
 
   // Filter pending matches by search query (applies to current page)
+  const matchFields = rule?.match_fields || [];
   const filteredPendingMatches = pendingMatches.filter((match: MatchPair) => {
     if (!matchSearchQuery) return true;
-    const query = matchSearchQuery.toLowerCase();
     const recordA = match.record_a_data || {};
     const recordB = match.record_b_data || {};
+    // Use dynamic search that works with any object type
     return (
-      recordA.firstName?.toLowerCase().includes(query) ||
-      recordA.lastName?.toLowerCase().includes(query) ||
-      recordA.email?.toLowerCase().includes(query) ||
-      recordA.phone?.toLowerCase().includes(query) ||
-      recordB.firstName?.toLowerCase().includes(query) ||
-      recordB.lastName?.toLowerCase().includes(query) ||
-      recordB.email?.toLowerCase().includes(query) ||
-      recordB.phone?.toLowerCase().includes(query)
+      recordMatchesSearch(recordA, matchSearchQuery, matchFields) ||
+      recordMatchesSearch(recordB, matchSearchQuery, matchFields)
     );
   });
 

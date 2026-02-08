@@ -196,8 +196,8 @@ export function RuleSummaryCard({
             <p className="font-medium mt-1">{overwriteBlanks ? "Yes" : "No"}</p>
           </div>
 
-          {/* Row 4: Related Records (contacts only) */}
-          {rule.source_object === "contacts" && (
+          {/* Row 4: Related Records (contacts and companies) */}
+          {(rule.source_object === "contacts" || rule.source_object === "companies") && (
             <div className="col-span-2 sm:col-span-3">
               <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Related Records</span>
               <p className="font-medium mt-1">{formatRelatedRecords(relatedRecords)}</p>

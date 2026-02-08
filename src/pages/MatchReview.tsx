@@ -21,16 +21,22 @@ import { cn } from "@/lib/utils";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 import { useWarningPreferences } from "@/hooks/use-warning-preferences";
-import { api, FieldPreservationMapping, ObjectField } from "@/lib/api";
+import { api, FieldPreservationMapping, ObjectField, ObjectType } from "@/lib/api";
 import { computeStrategySelections, computeMasterId, StrategyId } from "@/lib/merge-strategies";
 import { LockedFeatureOverlay, UpgradeBadge } from "@/components/ui/upgrade-badge";
 import { useUpgradeModal } from "@/components/ui/upgrade-modal";
 import { isTypeCompatible, getIncompatibilityReason } from "@/lib/field-compatibility";
+import { getRecordName } from "@/components/rules/helpers";
 
-// Standard fields always shown
-const STANDARD_FIELDS = [
+// Standard fields for contacts
+const CONTACT_STANDARD_FIELDS = [
   "firstName", "lastName", "email", "phone", "companyName",
   "tags", "address1", "city", "state", "postalCode", "country"
+];
+
+// Standard fields for companies
+const COMPANY_STANDARD_FIELDS = [
+  "name", "email", "phone", "website", "address1", "city", "state", "postalCode", "country"
 ];
 
 // Fields to exclude from display (internal/system fields)
@@ -113,11 +119,25 @@ export default function MatchReview() {
     enabled: !!locationId,
   });
 
-  // Fetch available fields for field preservation dropdowns
+  // Fetch available objects to get displayField for custom objects
+  const { data: availableObjects = [] } = useQuery<ObjectType[]>({
+    queryKey: ["availableObjects", locationId],
+    queryFn: () => api.getAvailableObjects(),
+    enabled: !!locationId,
+  });
+
+  // Get the displayField for the current object type
+  const objectDisplayField = useMemo(() => {
+    if (!rule?.source_object) return undefined;
+    const objectType = availableObjects.find(o => o.id === rule.source_object);
+    return objectType?.displayField;
+  }, [rule?.source_object, availableObjects]);
+
+  // Fetch available fields for field preservation dropdowns (use rule's source_object)
   const { data: fieldOptions = [] } = useQuery<ObjectField[]>({
-    queryKey: ["fields", "contacts", locationId],
-    queryFn: () => api.getObjectFields("contacts"),
-    enabled: !!locationId && hasFieldPreservation,
+    queryKey: ["fields", rule?.source_object, locationId],
+    queryFn: () => api.getObjectFields(rule!.source_object),
+    enabled: !!locationId && hasFieldPreservation && !!rule?.source_object,
   });
 
   // Filter out synthetic fields (like emailDomain) that aren't real GHL fields
@@ -163,7 +183,7 @@ export default function MatchReview() {
     onSuccess: () => {
       toast({
         title: "Merge Successful",
-        description: "The contacts have been merged successfully.",
+        description: "The records have been merged successfully.",
       });
       queryClient.invalidateQueries({ queryKey: ["matches"] });
       queryClient.invalidateQueries({ queryKey: ["merges"] });
@@ -197,16 +217,39 @@ export default function MatchReview() {
   // Categorize fields
   const ruleFieldSet = useMemo(() => getRuleFields(rule), [rule]);
 
+  // Get standard fields based on object type
+  const standardFieldsForObject = useMemo(() => {
+    const objectType = rule?.source_object;
+    if (objectType === "contacts") return CONTACT_STANDARD_FIELDS;
+    if (objectType === "companies") return COMPANY_STANDARD_FIELDS;
+    // For custom objects, use match fields as "standard" if no standard fields exist
+    // This ensures custom object fields are shown prominently
+    return [];
+  }, [rule?.source_object]);
+
   const { standardFields, ruleFields, otherFields } = useMemo(() => {
-    const standard = STANDARD_FIELDS.filter(f => allFields.has(f));
+    const isCustomObject = rule?.source_object && !["contacts", "companies"].includes(rule.source_object);
+
+    // For custom objects, match fields become the "standard" (primary) fields
+    if (isCustomObject) {
+      const matchFieldNames = rule?.match_fields?.map(f => f.field) || [];
+      const ruleSpecific = matchFieldNames.filter(f => allFields.has(f));
+      const other = [...allFields].filter(f =>
+        !matchFieldNames.includes(f) && !metadataFields.includes(f)
+      );
+      return { standardFields: ruleSpecific, ruleFields: [], otherFields: other };
+    }
+
+    // For standard objects (contacts, companies)
+    const standard = standardFieldsForObject.filter(f => allFields.has(f));
     const ruleSpecific = [...ruleFieldSet].filter(f =>
-      allFields.has(f) && !STANDARD_FIELDS.includes(f)
+      allFields.has(f) && !standardFieldsForObject.includes(f)
     );
     const other = [...allFields].filter(f =>
-      !STANDARD_FIELDS.includes(f) && !ruleFieldSet.has(f) && !metadataFields.includes(f)
+      !standardFieldsForObject.includes(f) && !ruleFieldSet.has(f) && !metadataFields.includes(f)
     );
     return { standardFields: standard, ruleFields: ruleSpecific, otherFields: other };
-  }, [allFields, ruleFieldSet]);
+  }, [allFields, ruleFieldSet, standardFieldsForObject, rule]);
 
   // Fields to display (for selection logic)
   const displayFields = useMemo(() => {
@@ -309,8 +352,12 @@ export default function MatchReview() {
     return String(value);
   };
 
-  // Helper to get field label
+  // Helper to get field label - check fieldOptions first for custom object fields
   const getFieldLabel = (field: string) => {
+    // Check if we have field metadata from the API
+    const fieldMeta = fieldOptions.find(f => f.id === field || f.fieldKey === field);
+    if (fieldMeta?.name) return fieldMeta.name;
+    // Fall back to static labels or formatting
     return fieldLabels[field] || field.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
   };
 
@@ -467,9 +514,7 @@ export default function MatchReview() {
     );
   }
 
-  const duplicateName = masterId === "a"
-    ? `${recordB.firstName || ''} ${recordB.lastName || ''}`.trim() || "Record B"
-    : `${recordA.firstName || ''} ${recordA.lastName || ''}`.trim() || "Record A";
+  const duplicateName = getRecordName(duplicateRecord, rule?.match_fields, objectDisplayField);
 
   return (
     <div className="space-y-6 ">
@@ -511,7 +556,7 @@ export default function MatchReview() {
               className="flex-1"
             >
               <Star className="h-4 w-4 mr-2 fill-current" />
-              {String(masterRecord.firstName || '')} {String(masterRecord.lastName || '')}
+              {getRecordName(masterRecord, rule?.match_fields, objectDisplayField)}
             </Button>
             {/* Duplicate button (right) - click to make this the master */}
             <Button
@@ -520,7 +565,7 @@ export default function MatchReview() {
               className="flex-1"
             >
               <Star className="h-4 w-4 mr-2" />
-              {String(duplicateRecord.firstName || '')} {String(duplicateRecord.lastName || '')}
+              {getRecordName(duplicateRecord, rule?.match_fields, objectDisplayField)}
             </Button>
           </div>
           <p className="text-sm text-muted-foreground mt-2">
@@ -549,7 +594,7 @@ export default function MatchReview() {
                       <span className="font-semibold">MASTER</span>
                     </div>
                     <div className="text-sm font-normal text-muted-foreground mt-1">
-                      {String(masterRecord.firstName || '')} {String(masterRecord.lastName || '')}
+                      {getRecordName(masterRecord, rule?.match_fields, objectDisplayField)}
                     </div>
                   </TableHead>
                   <TableHead className="min-w-40">
@@ -557,7 +602,7 @@ export default function MatchReview() {
                       <span>DUPLICATE</span>
                     </div>
                     <div className="text-sm font-normal text-muted-foreground mt-1">
-                      {String(duplicateRecord.firstName || '')} {String(duplicateRecord.lastName || '')}
+                      {getRecordName(duplicateRecord, rule?.match_fields, objectDisplayField)}
                     </div>
                   </TableHead>
                   <TableHead className="min-w-40 bg-muted/50">

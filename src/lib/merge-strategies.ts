@@ -3,11 +3,16 @@
  *
  * Used by MatchReview, PendingMatches, and MatchRuleDetail to apply
  * strategy-aware field selections and master record choice.
+ *
+ * Works with any object type (contacts, companies, custom objects).
+ * When fields are not provided, defaults to common contact fields.
+ * For custom objects, callers should pass the match fields from the rule.
  */
 
 type RecordData = Record<string, unknown>;
 
-const MERGE_FIELDS = [
+// Default fields for contacts when no specific fields are provided
+const DEFAULT_CONTACT_FIELDS = [
   "firstName",
   "lastName",
   "email",
@@ -59,7 +64,7 @@ export function computeStrategySelections(
   opts: StrategySelectionOpts,
 ): Record<string, "a" | "b"> {
   const { strategy, recordA, recordB, overwriteBlanks = false } = opts;
-  const fields = opts.fields ?? MERGE_FIELDS;
+  const fields = opts.fields ?? DEFAULT_CONTACT_FIELDS;
 
   if (strategy === "manual") {
     return {};
@@ -128,7 +133,7 @@ export function computeMasterId(
   recordAId: string,
   recordBId: string,
 ): string {
-  const resolvedFields = fields ?? MERGE_FIELDS;
+  const resolvedFields = fields ?? DEFAULT_CONTACT_FIELDS;
 
   if (strategy === "manual" || strategy === "standard") {
     // standard: more complete record is master

@@ -7,14 +7,20 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ResponsiveTable, ResponsiveTableContent } from "@/components/ui/responsive-table";
 import { MergeStatusBadge, getMergeStatusLabel } from "@/components/ui/merge-status-badge";
-import { cn } from "@/lib/utils";
+import { cn, getGhlRecordUrl } from "@/lib/utils";
 import { useLocation } from "@/contexts/LocationContext";
 import { api } from "@/lib/api";
+import { getRecordName } from "@/components/rules/helpers";
 
-// Standard fields always shown
-const STANDARD_FIELDS = [
+// Standard fields for contacts
+const CONTACT_STANDARD_FIELDS = [
   "firstName", "lastName", "email", "phone", "companyName",
   "tags", "address1", "city", "state", "postalCode", "country"
+];
+
+// Standard fields for companies
+const COMPANY_STANDARD_FIELDS = [
+  "name", "email", "phone", "website", "address1", "city", "state", "postalCode", "country"
 ];
 
 // Human-readable labels for fields
@@ -52,6 +58,7 @@ const EXCLUDED_FIELDS = [
 
 interface RuleData {
   name?: string;
+  source_object?: string;
   match_fields?: Array<{ field: string; algorithm: string; operator: string }>;
   merge_strategy?: string;
   merge_settings?: {
@@ -105,9 +112,9 @@ export default function MergeDetail() {
   const crmLocationId = merge.ghl_location_id || locationId;
   const rule = merge.rule as RuleData | undefined;
 
-  // Build CRM contact URL
+  // Build CRM contact URL (assumes contacts since source_object isn't stored in merge record)
   const getCrmContactUrl = (contactId: string) => {
-    return `https://app.gohighlevel.com/v2/location/${crmLocationId}/contacts/detail/${contactId}`;
+    return getGhlRecordUrl(crmLocationId!, "contacts", contactId);
   };
 
   // Determine which record was master/duplicate based on IDs
@@ -121,16 +128,34 @@ export default function MergeDetail() {
     ...Object.keys(recordB || {})
   ].filter(f => !EXCLUDED_FIELDS.includes(f)));
 
-  // Categorize fields
+  // Categorize fields - handle custom objects differently
   const ruleFieldSet = getRuleFields(rule);
+  const isCustomObject = rule?.source_object && !["contacts", "companies"].includes(rule.source_object);
 
-  const standardFields = STANDARD_FIELDS.filter(f => allFields.has(f));
-  const ruleFields = [...ruleFieldSet].filter(f =>
-    allFields.has(f) && !STANDARD_FIELDS.includes(f)
-  );
-  const otherFields = [...allFields].filter(f =>
-    !STANDARD_FIELDS.includes(f) && !ruleFieldSet.has(f)
-  );
+  // Get standard fields based on object type
+  const standardFieldsForObject = rule?.source_object === "companies"
+    ? COMPANY_STANDARD_FIELDS
+    : CONTACT_STANDARD_FIELDS;
+
+  // For custom objects, use match fields as the "standard" (primary) display fields
+  let standardFields: string[];
+  let ruleFields: string[];
+  let otherFields: string[];
+
+  if (isCustomObject) {
+    const matchFieldNames = rule?.match_fields?.map(f => f.field) || [];
+    standardFields = matchFieldNames.filter(f => allFields.has(f));
+    ruleFields = [];
+    otherFields = [...allFields].filter(f => !matchFieldNames.includes(f));
+  } else {
+    standardFields = standardFieldsForObject.filter(f => allFields.has(f));
+    ruleFields = [...ruleFieldSet].filter(f =>
+      allFields.has(f) && !standardFieldsForObject.includes(f)
+    );
+    otherFields = [...allFields].filter(f =>
+      !standardFieldsForObject.includes(f) && !ruleFieldSet.has(f)
+    );
+  }
 
   const getDisplayValue = (value: unknown) => {
     if (value === null || value === undefined) return "(empty)";
@@ -246,16 +271,16 @@ export default function MergeDetail() {
               <div className="flex items-center gap-2 mt-1">
                 <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
                 <span className="font-medium">
-                  {String(masterSnapshot?.firstName || '')} {String(masterSnapshot?.lastName || '')}
+                  {getRecordName(masterSnapshot, rule?.match_fields)}
                 </span>
-                {merge.status === "completed" && (
+                {merge.status === "completed" && getCrmContactUrl(merge.master_record_id) && (
                   <a
-                    href={getCrmContactUrl(merge.master_record_id)}
+                    href={getCrmContactUrl(merge.master_record_id)!}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
                   >
-                    View Contact <ExternalLink className="h-3 w-3" />
+                    View Record <ExternalLink className="h-3 w-3" />
                   </a>
                 )}
               </div>
@@ -274,16 +299,16 @@ export default function MergeDetail() {
                   <X className="h-4 w-4 text-red-500" />
                 )}
                 <span className="font-medium">
-                  {String(duplicateSnapshot?.firstName || '')} {String(duplicateSnapshot?.lastName || '')}
+                  {getRecordName(duplicateSnapshot, rule?.match_fields)}
                 </span>
-                {merge.status === "rolled_back" && merge.restored_record_id && (
+                {merge.status === "rolled_back" && merge.restored_record_id && getCrmContactUrl(merge.restored_record_id) && (
                   <a
-                    href={getCrmContactUrl(merge.restored_record_id)}
+                    href={getCrmContactUrl(merge.restored_record_id)!}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
                   >
-                    View Contact <ExternalLink className="h-3 w-3" />
+                    View Record <ExternalLink className="h-3 w-3" />
                   </a>
                 )}
               </div>
@@ -361,7 +386,7 @@ export default function MergeDetail() {
                       <span className="font-semibold text-foreground">Master</span>
                     </div>
                     <div className="text-sm font-normal text-muted-foreground mt-1">
-                      {String(recordA?.firstName || '')} {String(recordA?.lastName || '')}
+                      {getRecordName(recordA || {}, rule?.match_fields)}
                     </div>
                   </th>
                   <th className="min-w-40 py-3 px-4 text-left">
@@ -369,7 +394,7 @@ export default function MergeDetail() {
                       <span className="font-semibold text-foreground">Duplicate</span>
                     </div>
                     <div className="text-sm font-normal text-muted-foreground mt-1">
-                      {String(recordB?.firstName || '')} {String(recordB?.lastName || '')}
+                      {getRecordName(recordB || {}, rule?.match_fields)}
                     </div>
                   </th>
                   <th className="min-w-40 py-3 px-4 text-left bg-muted/50">

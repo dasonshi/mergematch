@@ -41,10 +41,12 @@ import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
 import { MergeActionButtons } from "@/components/merge-action-buttons";
 import { PageHeader } from "@/components/ui/page-header";
+import { getGhlRecordUrl } from "@/lib/utils";
 
-// Build CRM contact URL
+// Build CRM contact URL (legacy - for merge history we assume contacts since source_object isn't stored)
 const getCrmContactUrl = (locationId: string, contactId: string) => {
-  return `https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${contactId}`;
+  // Use the utility which defaults to contacts for backward compatibility
+  return getGhlRecordUrl(locationId, "contacts", contactId);
 };
 
 interface MergeItem {

@@ -19,6 +19,7 @@ import { AnimatedCounter } from "@/components/ui/animated-counter";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatsRow } from "@/components/ui/achievement-badge";
 import { getRecordName, getFirstMatchFieldValue } from "@/components/rules/helpers";
+import { getGhlRecordUrl } from "@/lib/utils";
 import { RuleActionButtons } from "@/components/rule-action-buttons";
 import { MergeActionButtons } from "@/components/merge-action-buttons";
 import {
@@ -419,7 +420,7 @@ export default function Dashboard() {
         const matchFields = rule?.match_fields || [];
         const name = getRecordName(recordA, matchFields);
         const fieldValue = getFirstMatchFieldValue(recordA, matchFields);
-        const ghlUrl = `https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${item.record_a_id}`;
+        const ghlUrl = getGhlRecordUrl(locationId!, rule?.source_object || "contacts", item.record_a_id);
         // Don't show subheading if it matches the name (used as title)
         const showFieldValue = fieldValue && fieldValue !== name;
         return (
@@ -430,7 +431,7 @@ export default function Dashboard() {
             >
               {name}
             </Link>
-            {showFieldValue && (
+            {showFieldValue && ghlUrl && (
               <a
                 href={ghlUrl}
                 target="_blank"
@@ -439,6 +440,9 @@ export default function Dashboard() {
               >
                 {fieldValue}
               </a>
+            )}
+            {showFieldValue && !ghlUrl && (
+              <span className="block text-xs text-muted-foreground">{fieldValue}</span>
             )}
           </div>
         );
@@ -452,7 +456,7 @@ export default function Dashboard() {
         const matchFields = rule?.match_fields || [];
         const name = getRecordName(recordB, matchFields);
         const fieldValue = getFirstMatchFieldValue(recordB, matchFields);
-        const ghlUrl = `https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${item.record_b_id}`;
+        const ghlUrl = getGhlRecordUrl(locationId!, rule?.source_object || "contacts", item.record_b_id);
         // Don't show subheading if it matches the name (used as title)
         const showFieldValue = fieldValue && fieldValue !== name;
         return (
@@ -463,7 +467,7 @@ export default function Dashboard() {
             >
               {name}
             </Link>
-            {showFieldValue && (
+            {showFieldValue && ghlUrl && (
               <a
                 href={ghlUrl}
                 target="_blank"
@@ -472,6 +476,9 @@ export default function Dashboard() {
               >
                 {fieldValue}
               </a>
+            )}
+            {showFieldValue && !ghlUrl && (
+              <span className="block text-xs text-muted-foreground">{fieldValue}</span>
             )}
           </div>
         );
