@@ -101,9 +101,9 @@ def normalize_object_field(field: Dict[str, Any], use_key_as_id: bool = False) -
     field_key = field.get("fieldKey", "")
 
     if use_key_as_id and field_key:
-        # For custom objects, use the last segment of fieldKey as the ID
-        # e.g., 'custom_objects.transactions.transaction_id' -> 'transaction_id'
-        field_id = field_key.split(".")[-1]
+        # For custom objects, keep the full property key (supports dotted keys)
+        # e.g., 'custom_objects.pets.my_textbox_list.option_a' -> 'my_textbox_list.option_a'
+        field_id = extract_custom_object_field_key(field_key)
     else:
         # For standard objects, use the GHL ID
         field_id = field.get("id") or field_key.split(".")[-1]
@@ -115,6 +115,17 @@ def normalize_object_field(field: Dict[str, Any], use_key_as_id: bool = False) -
         "dataType": field.get("dataType", "TEXT"),
         "isCustom": not field.get("standard", True),  # Assume custom if not marked standard
     }
+
+
+def extract_custom_object_field_key(field_key: str) -> str:
+    """Extract the property key from a custom object field key."""
+    if not field_key:
+        return ""
+    if field_key.startswith("custom_objects."):
+        parts = field_key.split(".")
+        if len(parts) >= 3:
+            return ".".join(parts[2:])
+    return field_key
 
 
 @router.get("/{object_type}")
@@ -246,10 +257,7 @@ async def list_available_objects(
                     primary_display = obj.get("primaryDisplayProperty", "")
                     display_field = None
                     if primary_display:
-                        # Extract just the field name (last part after the last dot)
-                        parts = primary_display.split(".")
-                        if len(parts) >= 3:
-                            display_field = parts[-1]  # e.g., "name" from "custom_objects.pet.name"
+                        display_field = extract_custom_object_field_key(primary_display) or None
 
                     objects.append({
                         "id": key,

@@ -162,6 +162,19 @@ def get_field_value(record: dict, field: str) -> str:
     return ""
 
 
+def normalize_record_type(source_object: str) -> str:
+    """Normalize source object to a stable record type label."""
+    if source_object == "contacts":
+        return "contact"
+    if source_object == "companies":
+        return "company"
+    if source_object == "opportunities":
+        return "opportunity"
+    if source_object.startswith("custom_objects."):
+        return f"custom:{source_object.split('.', 1)[1]}"
+    return source_object
+
+
 def compare_records(
     record_a: dict,
     record_b: dict,
@@ -305,6 +318,7 @@ async def run_scan(
     source_object = rule.get("source_object", "contacts")
     review_threshold = float(rule.get("review_threshold", 0.70)) * 100
     auto_merge_threshold = float(rule.get("auto_merge_threshold", 0.95)) * 100
+    record_type = normalize_record_type(source_object)
 
     # Extract which fields we need for comparison
     needed_fields = {"id"}
@@ -543,10 +557,10 @@ async def run_scan(
                         "location_id": internal_location_id,
                         "rule_id": rule_id,
                         "record_a_id": id_a,
-                        "record_a_type": source_object[:-1],
+                        "record_a_type": record_type,
                         "record_a_data": record_a,
                         "record_b_id": id_b,
-                        "record_b_type": source_object[:-1],
+                        "record_b_type": record_type,
                         "record_b_data": record_b,
                         "confidence_score": round(confidence, 2) / 100,
                         "field_scores": field_scores,
@@ -611,10 +625,10 @@ async def run_scan(
                         "location_id": internal_location_id,
                         "rule_id": rule_id,
                         "record_a_id": id_a,
-                        "record_a_type": source_object[:-1],
+                        "record_a_type": record_type,
                         "record_a_data": contacts_by_id.get(id_a, record_a),
                         "record_b_id": id_b,
-                        "record_b_type": source_object[:-1],
+                        "record_b_type": record_type,
                         "record_b_data": contacts_by_id.get(id_b, record_b),
                         "confidence_score": round(confidence, 2) / 100,
                         "field_scores": field_scores,

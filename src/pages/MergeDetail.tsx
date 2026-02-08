@@ -53,7 +53,7 @@ const FIELD_LABELS: Record<string, string> = {
 const EXCLUDED_FIELDS = [
   "id", "locationId", "businessId", "contactName", "followers",
   "dndSettings", "inboundDndSettings", "customFields", "additionalEmails",
-  "firstNameRaw", "lastNameRaw", "profilePhoto"
+  "firstNameRaw", "lastNameRaw", "profilePhoto", "_raw"
 ];
 
 interface RuleData {

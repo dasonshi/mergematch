@@ -43,7 +43,7 @@ const COMPANY_STANDARD_FIELDS = [
 const EXCLUDED_FIELDS = [
   "id", "locationId", "businessId", "contactName", "followers",
   "dndSettings", "inboundDndSettings", "customFields", "additionalEmails",
-  "firstNameRaw", "lastNameRaw", "profilePhoto"
+  "firstNameRaw", "lastNameRaw", "profilePhoto", "_raw"
 ];
 
 // Human-readable labels for fields
