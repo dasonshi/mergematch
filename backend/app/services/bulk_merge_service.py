@@ -96,15 +96,24 @@ def compute_merge_selections(
     record_b: Dict,
     strategy: str,
     overwrite_blanks: bool = False,
+    is_custom_object: bool = False,
 ) -> tuple[str, Dict[str, str]]:
     """
     Compute master record ID and field selections based on merge strategy.
     Returns (master_id, field_selections).
     """
-    fields = [
-        "firstName", "lastName", "email", "phone", "tags",
-        "address1", "city", "state", "postalCode", "companyName",
-    ]
+    # For custom objects, derive fields from both records dynamically
+    # For contacts, use the standard field list
+    if is_custom_object:
+        # Get all non-internal fields from both records
+        internal_fields = {"id", "dateAdded", "dateUpdated", "_raw"}
+        all_fields = set(record_a.keys()) | set(record_b.keys())
+        fields = [f for f in all_fields if f not in internal_fields]
+    else:
+        fields = [
+            "firstName", "lastName", "email", "phone", "tags",
+            "address1", "city", "state", "postalCode", "companyName",
+        ]
 
     id_a = record_a.get("id", "")
     id_b = record_b.get("id", "")
@@ -154,7 +163,7 @@ def compute_merge_selections(
 
 async def process_single_merge(
     match_id: str,
-    rule: Dict,
+    rules_cache: Dict[str, Dict],
     access_token: str,
     ghl_location_id: str,
     tenant_id: str,
@@ -185,15 +194,33 @@ async def process_single_merge(
             if match.get("status") != "pending":
                 return {"match_id": match_id, "success": False, "error": f"Match status is {match.get('status')}"}
 
+            # Look up rule for this specific match
+            match_rule_id = match.get("rule_id")
+            if match_rule_id and match_rule_id not in rules_cache:
+                rule_result = (
+                    supabase.table("match_rules")
+                    .select("*")
+                    .eq("id", match_rule_id)
+                    .single()
+                    .execute()
+                )
+                rules_cache[match_rule_id] = rule_result.data if rule_result.data else {}
+
+            rule = rules_cache.get(match_rule_id, {}) if match_rule_id else {}
+
             record_a = match.get("record_a_data", {})
             record_b = match.get("record_b_data", {})
 
             strategy = rule.get("merge_strategy", "standard")
             overwrite_blanks = rule.get("merge_settings", {}).get("overwrite_blanks", False)
 
+            # Check if this is a custom object merge
+            source_object = rule.get("source_object", "contacts")
+            is_custom_object = source_object.startswith("custom_objects.")
+
             # Compute merge parameters
             master_id, selections = compute_merge_selections(
-                record_a, record_b, strategy, overwrite_blanks
+                record_a, record_b, strategy, overwrite_blanks, is_custom_object
             )
 
             # Get field preservation mappings from rule if available
@@ -267,8 +294,9 @@ async def execute_bulk_merge(
     except Exception as e:
         logger.warning(f"Bulk job {job_id}: Token fetch error ({e}), using provided token")
 
-    # Get rule configuration
-    rule = {}
+    # Create shared rules cache for per-match rule lookup
+    # If a specific rule_id was provided, pre-populate the cache with it
+    rules_cache: Dict[str, Dict] = {}
     if rule_id:
         rule_result = (
             supabase.table("match_rules")
@@ -279,7 +307,7 @@ async def execute_bulk_merge(
             .execute()
         )
         if rule_result.data:
-            rule = rule_result.data
+            rules_cache[rule_id] = rule_result.data
 
     # Create semaphore for rate limiting
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_MERGES)
@@ -342,7 +370,7 @@ async def execute_bulk_merge(
             tasks = [
                 process_single_merge(
                     match_id=mid,
-                    rule=rule,
+                    rules_cache=rules_cache,
                     access_token=access_token,
                     ghl_location_id=ghl_location_id,
                     tenant_id=tenant_id,
