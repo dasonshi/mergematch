@@ -350,28 +350,96 @@ async def disconnect(
     location_id: str = Query(None),
 ):
     """
-    Disconnect the location by clearing OAuth tokens.
+    Disconnect the location by clearing OAuth tokens and deleting all location data.
     User will need to re-authorize to reconnect.
     """
     from app.db.supabase import get_supabase
+    from datetime import datetime, timezone
+    import logging
+
+    logger = logging.getLogger(__name__)
 
     # Authenticate to verify the request is valid
     user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
 
     supabase = get_supabase()
 
-    # Clear tokens from the locations table
+    # Get the internal location ID
+    location_result = supabase.table("locations").select(
+        "id"
+    ).eq("ghl_location_id", user.ghl_location_id).single().execute()
+
+    if not location_result.data:
+        raise HTTPException(status_code=404, detail="Location not found")
+
+    internal_location_id = str(location_result.data["id"])
+    logger.info(f"Disconnecting location {user.ghl_location_id} (internal: {internal_location_id})")
+
+    # Delete all data in order (respecting FK constraints)
+    # 1. Delete snapshots (via merge_id)
+    merges_result = supabase.table("merges").select("id").eq(
+        "location_id", internal_location_id
+    ).execute()
+    merge_ids = [m["id"] for m in (merges_result.data or [])]
+
+    if merge_ids:
+        for merge_id in merge_ids:
+            supabase.table("snapshots").delete().eq("merge_id", merge_id).execute()
+        logger.info(f"Deleted snapshots for {len(merge_ids)} merges")
+
+    # 2. Delete merges
+    supabase.table("merges").delete().eq("location_id", internal_location_id).execute()
+    logger.info("Deleted merges")
+
+    # 3. Delete match_pairs
+    supabase.table("match_pairs").delete().eq("location_id", internal_location_id).execute()
+    logger.info("Deleted match_pairs")
+
+    # 4. Delete job_executions (FK to match_rules)
+    supabase.table("job_executions").delete().eq("location_id", internal_location_id).execute()
+    logger.info("Deleted job_executions")
+
+    # 5. Delete scheduled_jobs (FK to match_rules)
+    supabase.table("scheduled_jobs").delete().eq("location_id", internal_location_id).execute()
+    logger.info("Deleted scheduled_jobs")
+
+    # 6. Delete match_rules
+    supabase.table("match_rules").delete().eq("location_id", internal_location_id).execute()
+    logger.info("Deleted match_rules")
+
+    # 7. Delete bulk_jobs
+    supabase.table("bulk_jobs").delete().eq("location_id", internal_location_id).execute()
+    logger.info("Deleted bulk_jobs")
+
+    # 8. Delete contact_blocks
+    supabase.table("contact_blocks").delete().eq("location_id", internal_location_id).execute()
+    logger.info("Deleted contact_blocks")
+
+    # 9. Delete notifications
+    supabase.table("notifications").delete().eq("location_id", internal_location_id).execute()
+    logger.info("Deleted notifications")
+
+    # 10. Delete auth_exchange_codes
+    supabase.table("auth_exchange_codes").delete().eq("location_id", internal_location_id).execute()
+    logger.info("Deleted auth_exchange_codes")
+
+    # Clear tokens and mark location as inactive
+    now = datetime.now(timezone.utc).isoformat()
     result = supabase.table("locations").update({
         "access_token_encrypted": None,
         "refresh_token_encrypted": None,
         "token_expires_at": None,
-        "updated_at": "now()",
+        "is_active": False,
+        "uninstalled_at": now,
+        "updated_at": now,
     }).eq("ghl_location_id", user.ghl_location_id).execute()
 
     if not result.data:
         raise HTTPException(status_code=404, detail="Location not found")
 
-    return {"success": True, "message": "Account disconnected. Re-authorize from Marketplace to reconnect."}
+    logger.info(f"Location {user.ghl_location_id} disconnected and marked inactive")
+
+    return {"success": True, "message": "Account disconnected and all data deleted. Re-authorize from Marketplace to reconnect."}
 
 
 def decrypt_ghl_sso_data(encrypted_data: str, secret: str) -> dict:

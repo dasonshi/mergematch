@@ -9,7 +9,6 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import {
   RefreshCw,
-  Trash2,
   Unplug,
   Rocket,
   ExternalLink,
@@ -71,19 +70,26 @@ export default function Settings() {
     });
   };
 
-  const handleForceResync = () => {
-    toast({
-      title: "Resync started",
-      description: "Full resync initiated. This may take a few minutes.",
-    });
-  };
+  const [isResyncing, setIsResyncing] = useState(false);
 
-  const handleDeleteAllData = () => {
-    toast({
-      title: "Data deleted",
-      description: "All match rules, merge history, and settings have been removed.",
-      variant: "destructive",
-    });
+  const handleForceResync = async () => {
+    setIsResyncing(true);
+    try {
+      const result = await api.post("/sync/force-resync");
+      toast({
+        title: "Resync complete",
+        description: result.message || `Scanned ${result.rules_scanned} rule(s) and found ${result.total_matches_found} potential matches.`,
+      });
+    } catch (error) {
+      console.error("Force resync failed:", error);
+      toast({
+        title: "Resync failed",
+        description: "Could not complete the resync. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsResyncing(false);
+    }
   };
 
   const [isDisconnecting, setIsDisconnecting] = useState(false);
@@ -374,63 +380,23 @@ export default function Settings() {
               </div>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button variant="outline">Force Resync</Button>
+                  <Button variant="outline" disabled={isResyncing}>
+                    {isResyncing ? "Resyncing..." : "Force Resync"}
+                  </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
                     <AlertDialogTitle>Force Full Resync?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      This will clear all cached data and re-pull records from your CRM.
-                      This process may take several minutes depending on your data volume.
+                      This will re-pull all records from your CRM and run duplicate scans
+                      for all active match rules. This process may take several minutes
+                      depending on your data volume.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleForceResync}>
-                      Start Resync
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Delete All Data */}
-        <Card className="border-destructive/50 shadow-sm">
-          <CardContent className="pt-6">
-            <div className="flex items-start justify-between">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                  <span className="font-medium">Delete All Data</span>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Remove all match rules, merge history, and settings.
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Your CRM contacts will NOT be affected.
-                </p>
-              </div>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="destructive">Delete All Data</Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete All Data?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This will permanently delete all match rules, merge history, and settings.
-                      Your CRM contacts will not be affected. This action cannot be undone.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction 
-                      onClick={handleDeleteAllData}
-                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    >
-                      Delete All Data
+                    <AlertDialogCancel disabled={isResyncing}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleForceResync} disabled={isResyncing}>
+                      {isResyncing ? "Resyncing..." : "Start Resync"}
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
