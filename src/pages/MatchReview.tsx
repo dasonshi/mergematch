@@ -146,6 +146,16 @@ export default function MatchReview() {
     [fieldOptions]
   );
 
+  // Helper to find a field by id or fieldKey (handles different ID formats)
+  const findField = (fieldId: string) =>
+    preservableFields.find(f => f.id === fieldId || f.fieldKey === fieldId);
+
+  // Get display name for a field (used in dropdowns when value is set but no match in options)
+  const getFieldDisplayName = (fieldId: string) => {
+    const field = findField(fieldId);
+    return field?.name || getFieldLabel(fieldId);
+  };
+
   // State for editable field preservation mappings
   const [fieldPreservationMappings, setFieldPreservationMappings] = useState<FieldPreservationMapping[]>([]);
   const [mappingsInitialized, setMappingsInitialized] = useState(false);
@@ -671,99 +681,6 @@ export default function MatchReview() {
                   </>
                 )}
 
-                {/* Field Preservation Targets - show when mappings are configured */}
-                {fieldPreservationMappings.some(m => m.source && m.target) && (
-                  <>
-                    <TableRow className="bg-primary/10">
-                      <TableCell colSpan={4} className="py-2 text-xs font-semibold uppercase tracking-wide text-primary">
-                        <div className="flex items-center gap-2">
-                          <Save className="h-4 w-4" />
-                          Values to Preserve
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                    {fieldPreservationMappings.filter(m => m.source && m.target).map((mapping, idx) => {
-                      // Use getFieldLabel for consistent name resolution (checks both id and fieldKey)
-                      const sourceLabel = getFieldLabel(mapping.source);
-                      const targetLabel = getFieldLabel(mapping.target);
-
-                      // Get values from A and B (fixed positions)
-                      const valueA = formatDisplayValue(recordA[mapping.source]);
-                      const valueB = formatDisplayValue(recordB[mapping.source]);
-
-                      // The preserved value is the one NOT selected for this field
-                      const selectedForField = selections[mapping.source] || masterId;
-                      const isPreservingA = selectedForField === "b"; // If B is selected, A is preserved
-                      const isPreservingB = selectedForField === "a"; // If A is selected, B is preserved
-                      const valueToPreserve = isPreservingA ? valueA : valueB;
-
-                      return (
-                        <TableRow key={`preserve-${idx}`} className="bg-primary/5">
-                          <TableCell className="font-medium text-muted-foreground">
-                            <div className="flex items-center gap-2">
-                              {targetLabel}
-                              <Badge variant="outline" className="text-xs px-1.5 py-0 border-primary/50 text-primary">
-                                Preserve
-                              </Badge>
-                            </div>
-                            <div className="text-xs text-muted-foreground mt-0.5">
-                              ← from {sourceLabel}
-                            </div>
-                          </TableCell>
-                          <TableCell
-                            className={cn(
-                              "cursor-pointer hover:bg-muted/50 transition-colors",
-                              isPreservingA && "bg-primary/20 ring-2 ring-primary/50"
-                            )}
-                            onClick={() => handleCellClick(mapping.source, "b")}
-                          >
-                            <div className="flex items-center gap-2">
-                              {isPreservingA && (
-                                <span className="text-primary font-medium">[</span>
-                              )}
-                              <span className={cn(!valueA && "text-muted-foreground italic")}>
-                                {valueA || "(empty)"}
-                              </span>
-                              {isPreservingA && (
-                                <>
-                                  <span className="text-primary font-medium">]</span>
-                                  <span className="text-primary">✓</span>
-                                </>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell
-                            className={cn(
-                              "cursor-pointer hover:bg-muted/50 transition-colors",
-                              isPreservingB && "bg-primary/20 ring-2 ring-primary/50"
-                            )}
-                            onClick={() => handleCellClick(mapping.source, "a")}
-                          >
-                            <div className="flex items-center gap-2">
-                              {isPreservingB && (
-                                <span className="text-primary font-medium">[</span>
-                              )}
-                              <span className={cn(!valueB && "text-muted-foreground italic")}>
-                                {valueB || "(empty)"}
-                              </span>
-                              {isPreservingB && (
-                                <>
-                                  <span className="text-primary font-medium">]</span>
-                                  <span className="text-primary">✓</span>
-                                </>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell className="bg-primary/10 font-medium">
-                            <span className={cn(!valueToPreserve && "text-muted-foreground italic")}>
-                              {valueToPreserve || "(empty)"}
-                            </span>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </>
-                )}
               </TableBody>
             </Table>
           </div>
@@ -801,12 +718,17 @@ export default function MatchReview() {
             <div className="space-y-4">
               {/* Mapping list */}
               {fieldPreservationMappings.map((mapping, idx) => {
-                // Get source field's data type for compatibility check
-                const sourceField = preservableFields.find(f => f.id === mapping.source);
+                // Get source field's data type for compatibility check (check both id and fieldKey)
+                const sourceField = findField(mapping.source);
                 const sourceType = sourceField?.dataType || 'TEXT';
 
+                // Check if current source value exists in options (by id or fieldKey)
+                const sourceInOptions = mapping.source && findField(mapping.source);
+
                 // Only custom fields can be targets (standard fields can't receive values via customFields API)
-                const customFields = preservableFields.filter(f => f.id !== mapping.source && f.isCustom);
+                const customFields = preservableFields.filter(f =>
+                  f.id !== mapping.source && f.fieldKey !== mapping.source && f.isCustom
+                );
 
                 const compatibleCustom = customFields.filter(f =>
                   isTypeCompatible(sourceType, f.dataType || 'TEXT')
@@ -814,6 +736,9 @@ export default function MatchReview() {
                 const incompatibleCustom = customFields.filter(f =>
                   !isTypeCompatible(sourceType, f.dataType || 'TEXT')
                 );
+
+                // Check if current target value exists in options
+                const targetInOptions = mapping.target && findField(mapping.target);
 
                 return (
                   <div key={idx} className="flex items-center gap-2">
@@ -824,9 +749,9 @@ export default function MatchReview() {
                         const updated = [...fieldPreservationMappings];
                         updated[idx] = { ...updated[idx], source: val };
                         // Clear target if now incompatible or same as source
-                        const newSourceField = preservableFields.find(f => f.id === val);
+                        const newSourceField = findField(val);
                         const newSourceType = newSourceField?.dataType || 'TEXT';
-                        const currentTarget = preservableFields.find(f => f.id === mapping.target);
+                        const currentTarget = findField(mapping.target);
                         if (currentTarget && (mapping.target === val || !isTypeCompatible(newSourceType, currentTarget.dataType || 'TEXT'))) {
                           updated[idx].target = '';
                         }
@@ -834,9 +759,17 @@ export default function MatchReview() {
                       }}
                     >
                       <SelectTrigger className="flex-1 bg-background">
-                        <SelectValue placeholder="Source field..." />
+                        <SelectValue placeholder="Source field...">
+                          {mapping.source ? getFieldDisplayName(mapping.source) : "Source field..."}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
+                        {/* Show current value if not in standard options */}
+                        {mapping.source && !sourceInOptions && (
+                          <SelectItem key={mapping.source} value={mapping.source}>
+                            {getFieldDisplayName(mapping.source)}
+                          </SelectItem>
+                        )}
                         {preservableFields.filter(f => !f.isCustom).map((opt) => (
                           <SelectItem key={opt.id} value={opt.id}>
                             {opt.name}
@@ -870,9 +803,17 @@ export default function MatchReview() {
                       }}
                     >
                       <SelectTrigger className="flex-1 bg-background">
-                        <SelectValue placeholder="Target custom field..." />
+                        <SelectValue placeholder="Target custom field...">
+                          {mapping.target ? getFieldDisplayName(mapping.target) : "Target custom field..."}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
+                        {/* Show current value if not in options */}
+                        {mapping.target && !targetInOptions && (
+                          <SelectItem key={mapping.target} value={mapping.target}>
+                            {getFieldDisplayName(mapping.target)}
+                          </SelectItem>
+                        )}
                         {/* Custom Fields - Compatible */}
                         {compatibleCustom.map((opt) => (
                           <SelectItem key={opt.id} value={opt.id}>
