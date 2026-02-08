@@ -262,6 +262,8 @@ async def execute_merge(
                 # Fetch custom object records
                 try:
                     fresh_a_resp = await prefetch_client.get_custom_object_record(schema_key, record_a_id)
+                    logger.info(f"Custom object A raw response keys: {list(fresh_a_resp.keys())}")
+                    logger.info(f"Custom object A properties: {fresh_a_resp.get('properties')}")
                     # Normalize: flatten properties for merge logic
                     props = fresh_a_resp.get("properties") or {}
                     fresh_a = {
@@ -271,6 +273,7 @@ async def execute_merge(
                         "_raw": fresh_a_resp,
                         **props
                     }
+                    logger.info(f"Custom object A normalized keys: {list(fresh_a.keys())}")
                 except httpx.HTTPStatusError as e:
                     if e.response.status_code == 404:
                         supabase.table("match_pairs").update({"status": "stale"}).eq("id", match_id).execute()
