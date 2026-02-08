@@ -47,6 +47,52 @@ def _parse_date(value: Any) -> float:
         return 0
 
 
+def _stringify_value(value: Any) -> str:
+    """Convert a record value to a displayable string."""
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        if not value:
+            return ""
+        return ", ".join(str(item) for item in value if item is not None)
+    return str(value)
+
+
+def _build_record_name(
+    record: dict,
+    record_id: str,
+    match_fields: Optional[List[dict]] = None,
+) -> str:
+    """Build a display name for a record using common fields and match fields."""
+    logger.info(f"_build_record_name: record keys={list(record.keys())[:15]}, match_fields={match_fields}")
+
+    first_name = record.get("firstName")
+    last_name = record.get("lastName")
+    if first_name or last_name:
+        return f"{first_name or ''} {last_name or ''}".strip()
+
+    for key in ("name", "title", "label", "displayName"):
+        value = _stringify_value(record.get(key))
+        if value:
+            return value
+
+    email = _stringify_value(record.get("email"))
+    if email:
+        return email
+
+    if match_fields:
+        for field_config in match_fields:
+            field = field_config.get("field")
+            if not field:
+                continue
+            value = _stringify_value(record.get(field))
+            logger.info(f"_build_record_name: trying match field '{field}', value={value}")
+            if value:
+                return value
+
+    return record_id or "Unknown"
+
+
 def compute_strategy_selections(
     strategy: str,
     record_a: dict,
@@ -395,13 +441,15 @@ async def execute_merge(
     # Fetch rule settings once (used for strategy auto-compute, field preservation, and related records)
     rule_merge_settings: dict = {}
     rule_merge_strategy = "standard"
+    rule_match_fields: List[dict] = []
     if rule_id:
         rule_result = supabase.table("match_rules").select(
-            "merge_settings, merge_strategy"
+            "merge_settings, merge_strategy, match_fields"
         ).eq("id", rule_id).single().execute()
         if rule_result.data:
             rule_merge_settings = rule_result.data.get("merge_settings") or {}
             rule_merge_strategy = rule_result.data.get("merge_strategy") or "standard"
+            rule_match_fields = rule_result.data.get("match_fields") or []
 
     overwrite_blanks = rule_merge_settings.get("overwrite_blanks", False)
 
@@ -426,17 +474,11 @@ async def execute_merge(
         duplicate_id = record_a_id
 
     # Build master record name for display
-    master_record_name = ""
-    if master_data.get("firstName") or master_data.get("lastName"):
-        first_name = master_data.get("firstName") or ""
-        last_name = master_data.get("lastName") or ""
-        master_record_name = f"{first_name} {last_name}".strip()
-    elif master_data.get("name"):
-        master_record_name = master_data.get("name")
-    elif master_data.get("email"):
-        master_record_name = master_data.get("email")
-    else:
-        master_record_name = "Unknown"
+    master_record_name = _build_record_name(
+        master_data,
+        master_record_id,
+        match_fields=rule_match_fields,
+    )
 
     # Build the merged data based on field selections
     merged_fields = {}
