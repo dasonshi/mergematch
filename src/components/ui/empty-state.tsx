@@ -102,7 +102,7 @@ export function NoRulesEmpty({ className }: { className?: string }) {
     <EmptyState
       icon={FolderOpen}
       title="No match rules yet"
-      description="Create a rule to automatically find duplicate contacts in your account."
+      description="Create a rule to automatically find duplicate records in your account."
       action={{
         label: "Create Your First Rule",
         href: "/match-rules/new",

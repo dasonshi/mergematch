@@ -678,7 +678,7 @@ export default function Dashboard() {
                         <AnimatedCounter value={duplicatesToReview} />
                       </p>
                       <p className="text-sm text-muted-foreground mt-1">
-                        unique contacts with duplicates across <span className="font-semibold text-foreground">{rulesWithPending}</span> {rulesWithPending === 1 ? "rule" : "rules"}
+                        unique records with duplicates across <span className="font-semibold text-foreground">{rulesWithPending}</span> {rulesWithPending === 1 ? "rule" : "rules"}
                       </p>
                     </>
                   )}

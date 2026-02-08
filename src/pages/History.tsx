@@ -138,7 +138,7 @@ export default function History() {
     onSuccess: () => {
       toast({
         title: "Rollback Successful",
-        description: "The duplicate contact has been restored.",
+        description: "The duplicate record has been restored.",
       });
       queryClient.invalidateQueries({ queryKey: ["merges"] });
       queryClient.invalidateQueries({ queryKey: ["merge-stats"] });
@@ -349,7 +349,7 @@ export default function History() {
               target="_blank"
               rel="noopener noreferrer"
               className="text-primary hover:text-primary/80"
-              title="View restored contact"
+              title="View restored record"
             >
               <ExternalLink className="h-4 w-4" />
             </a>
@@ -554,7 +554,7 @@ export default function History() {
             <DialogTitle>Restore Merged Record</DialogTitle>
             <DialogDescription>
               Are you sure you want to restore the duplicate record that was merged?
-              This will recreate the deleted contact.
+              This will recreate the deleted record.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -585,7 +585,7 @@ export default function History() {
             <AlertDialogTitle>Restore Selected Merges?</AlertDialogTitle>
             <AlertDialogDescription>
               This will restore <span className="font-semibold">{displaySelectedCount.toLocaleString()}</span> merged records,
-              recreating the deleted duplicate contacts.
+              recreating the deleted duplicate records.
               <br /><br />
               This action cannot be undone.
             </AlertDialogDescription>

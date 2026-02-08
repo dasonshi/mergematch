@@ -31,7 +31,7 @@ export function getGhlRecordUrl(
     return `${baseUrl}/${locationId}/companies/detail/${recordId}`;
   }
 
-  // Custom objects don't have direct CRM URLs (yet)
-  // Return null so the UI can handle this gracefully
+  // Custom objects don't have direct CRM URLs readily available without more context
+  // Return null so the UI can handle this gracefully (e.g. unlinked text)
   return null;
 }

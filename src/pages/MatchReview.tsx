@@ -75,13 +75,13 @@ const fieldLabels: Record<string, string> = {
 const metadataFields = ["dateAdded", "dateUpdated"];
 
 // Extract fields used in rule logic
-const getRuleFields = (rule?: { match_fields?: Array<{ field: string }>; merge_settings?: { field_preservation?: { mappings?: Array<{ sourceField: string; targetField: string }> } } }): Set<string> => {
+const getRuleFields = (rule?: { match_fields?: Array<{ field: string }>; merge_settings?: { field_preservation?: { mappings?: Array<{ source: string; target: string }> } } }): Set<string> => {
   const fields = new Set<string>();
   if (!rule) return fields;
   rule.match_fields?.forEach(f => fields.add(f.field));
   rule.merge_settings?.field_preservation?.mappings?.forEach(m => {
-    fields.add(m.sourceField);
-    fields.add(m.targetField);
+    fields.add(m.source);
+    fields.add(m.target);
   });
   return fields;
 };
@@ -245,11 +245,23 @@ export default function MatchReview() {
     // For custom objects, match fields become the "standard" (primary) fields
     if (isCustomObject) {
       const matchFieldNames = rule?.match_fields?.map(f => f.field) || [];
-      const ruleSpecific = matchFieldNames.filter(f => allFields.has(f));
-      const other = [...allFields].filter(f =>
-        !matchFieldNames.includes(f) && !metadataFields.includes(f)
+      // Combine match fields with other fields to ensure we show something useful
+      // Limit to 10 fields total for the "Standard" view
+      const allAvailableFields = [...allFields];
+      const matchSpecific = matchFieldNames.filter(f => allFields.has(f));
+
+      // If we have few match fields, pull in other fields to populate the view
+      const extraFields = allAvailableFields
+        .filter(f => !matchFieldNames.includes(f) && !metadataFields.includes(f))
+        .slice(0, 10 - matchSpecific.length); // Fill up to 10 fields
+
+      const combinedStandard = [...matchSpecific, ...extraFields];
+
+      const other = allAvailableFields.filter(f =>
+        !combinedStandard.includes(f) && !metadataFields.includes(f)
       );
-      return { standardFields: ruleSpecific, ruleFields: [], otherFields: other };
+
+      return { standardFields: combinedStandard, ruleFields: [], otherFields: other };
     }
 
     // For standard objects (contacts, companies)
@@ -419,16 +431,16 @@ export default function MatchReview() {
     // For each mapping, the value to preserve is the one NOT selected for that field
     const mappingsWithValues = hasValidMappings
       ? fieldPreservationMappings
-          .filter(m => m.source && m.target)
-          .map(m => {
-            const selectedSource = selections[m.source] || masterId;
-            const valueToPreserve = selectedSource === "a" ? recordB[m.source] : recordA[m.source];
-            return {
-              source: m.source,
-              target: m.target,
-              value: valueToPreserve, // The actual value to preserve
-            };
-          })
+        .filter(m => m.source && m.target)
+        .map(m => {
+          const selectedSource = selections[m.source] || masterId;
+          const valueToPreserve = selectedSource === "a" ? recordB[m.source] : recordA[m.source];
+          return {
+            source: m.source,
+            target: m.target,
+            value: valueToPreserve, // The actual value to preserve
+          };
+        })
       : undefined;
 
     mergeMutation.mutate({

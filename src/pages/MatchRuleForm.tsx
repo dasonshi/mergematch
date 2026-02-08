@@ -507,7 +507,7 @@ export default function MatchRuleForm() {
         if (isEmailDomainOnly()) {
           toast({
             title: "Email Domain cannot be the only condition",
-            description: "Add another field (e.g., Name) to avoid matching all contacts at the same company.",
+            description: "Add another field (e.g., Name) to avoid matching all records at the same company.",
             variant: "destructive",
           });
           return false;
@@ -1088,7 +1088,7 @@ export default function MatchRuleForm() {
                       <div>
                         <p className="font-medium text-destructive">Email Domain alone is too broad</p>
                         <p className="text-sm text-destructive/80 mt-1">
-                          Add another condition (e.g., Name) to avoid matching all contacts at the same company.
+                          Add another condition (e.g., Name) to avoid matching all records at the same company.
                         </p>
                       </div>
                     </div>
