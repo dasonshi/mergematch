@@ -207,6 +207,7 @@ export default function MatchReview() {
   const recordAId = match?.record_a_id || "a";
   const recordBId = match?.record_b_id || "b";
   const confidence = Math.round((match?.confidence_score || 0) * 100);
+  const isCustomObject = rule?.source_object?.startsWith("custom_objects.") ?? false;
 
   // Get all fields from both records (excluding system fields)
   const allFields = useMemo(() => new Set([
@@ -322,6 +323,8 @@ export default function MatchReview() {
   // Swap display order based on who is master - master always on left
   const masterRecord = masterId === "a" ? recordA : recordB;
   const duplicateRecord = masterId === "a" ? recordB : recordA;
+  const masterRecordId = masterId === "a" ? recordAId : recordBId;
+  const duplicateRecordId = masterId === "a" ? recordBId : recordAId;
 
   // Initialize master and selections when match/rule load
   useEffect(() => {
@@ -366,6 +369,15 @@ export default function MatchReview() {
     const value = source === "a" ? recordA[field] : recordB[field];
     const formatted = formatDisplayValue(value);
     return formatted || "(empty)";
+  };
+
+  const formatRecordLabel = (record: Record<string, unknown>, recordId: string): string => {
+    const name = getRecordName(record, rule?.match_fields, objectDisplayField);
+    if (!isCustomObject) {
+      return name;
+    }
+    const shortId = recordId && recordId.length > 6 ? recordId.slice(-6) : "";
+    return shortId ? `${name} [${shortId}]` : name;
   };
 
   // Compute preservation preview based on current mappings and field selections
@@ -514,7 +526,7 @@ export default function MatchReview() {
     );
   }
 
-  const duplicateName = getRecordName(duplicateRecord, rule?.match_fields, objectDisplayField);
+  const duplicateName = formatRecordLabel(duplicateRecord, duplicateRecordId);
 
   return (
     <div className="space-y-6 ">
@@ -549,23 +561,25 @@ export default function MatchReview() {
         </CardHeader>
         <CardContent className="pt-6">
           <div className="flex gap-4">
-            {/* Master button (left) - currently selected master */}
+            {/* Record A button (always left) */}
             <Button
-              variant="default"
-              onClick={() => {}} // Already master, no action needed
+              variant={masterId === "a" ? "default" : "outline"}
+              onClick={() => handleMasterChange("a")}
               className="flex-1"
+              title={recordAId}
             >
-              <Star className="h-4 w-4 mr-2 fill-current" />
-              {getRecordName(masterRecord, rule?.match_fields, objectDisplayField)}
+              <Star className={cn("h-4 w-4 mr-2", masterId === "a" && "fill-current")} />
+              {formatRecordLabel(recordA, recordAId)}
             </Button>
-            {/* Duplicate button (right) - click to make this the master */}
+            {/* Record B button (always right) */}
             <Button
-              variant="outline"
-              onClick={() => handleMasterChange(masterId === "a" ? "b" : "a")}
+              variant={masterId === "b" ? "default" : "outline"}
+              onClick={() => handleMasterChange("b")}
               className="flex-1"
+              title={recordBId}
             >
-              <Star className="h-4 w-4 mr-2" />
-              {getRecordName(duplicateRecord, rule?.match_fields, objectDisplayField)}
+              <Star className={cn("h-4 w-4 mr-2", masterId === "b" && "fill-current")} />
+              {formatRecordLabel(recordB, recordBId)}
             </Button>
           </div>
           <p className="text-sm text-muted-foreground mt-2">
@@ -593,16 +607,16 @@ export default function MatchReview() {
                       <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
                       <span className="font-semibold">MASTER</span>
                     </div>
-                    <div className="text-sm font-normal text-muted-foreground mt-1">
-                      {getRecordName(masterRecord, rule?.match_fields, objectDisplayField)}
+                    <div className="text-sm font-normal text-muted-foreground mt-1" title={masterRecordId}>
+                      {formatRecordLabel(masterRecord, masterRecordId)}
                     </div>
                   </TableHead>
                   <TableHead className="min-w-40">
                     <div className="flex items-center gap-2">
                       <span>DUPLICATE</span>
                     </div>
-                    <div className="text-sm font-normal text-muted-foreground mt-1">
-                      {getRecordName(duplicateRecord, rule?.match_fields, objectDisplayField)}
+                    <div className="text-sm font-normal text-muted-foreground mt-1" title={duplicateRecordId}>
+                      {formatRecordLabel(duplicateRecord, duplicateRecordId)}
                     </div>
                   </TableHead>
                   <TableHead className="min-w-40 bg-muted/50">
