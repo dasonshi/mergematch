@@ -384,18 +384,18 @@ export default function MatchReview() {
     return shortId ? `${name} [${shortId}]` : name;
   };
 
-  // Compute preservation preview based on current mappings and field selections
-  // For each mapping, the value to preserve is the one NOT selected for that field
+  // Compute preservation preview - shows values from the DUPLICATE record that will be preserved
   const preservationPreview = useMemo(() => {
     if (fieldPreservationMappings.length === 0) return [];
+
+    // The duplicate record is the one being deleted (not the master)
+    const duplicateRecord = masterId === "a" ? recordB : recordA;
 
     return fieldPreservationMappings
       .filter(m => m.source && m.target)
       .map(mapping => {
-        // For this specific field, which value is selected to keep?
-        const selectedSource = selections[mapping.source] || masterId;
-        // The opposite value is the one being overwritten - that's what we preserve
-        const valueToPreserve = selectedSource === "a" ? recordB[mapping.source] : recordA[mapping.source];
+        // Value to preserve always comes from the duplicate record
+        const valueToPreserve = duplicateRecord[mapping.source];
 
         return {
           sourceLabel: getFieldLabel(mapping.source),
@@ -403,7 +403,7 @@ export default function MatchReview() {
           value: formatDisplayValue(valueToPreserve),
         };
       });
-  }, [fieldPreservationMappings, selections, masterId, recordA, recordB, getFieldLabel, formatDisplayValue]);
+  }, [fieldPreservationMappings, masterId, recordA, recordB, getFieldLabel, formatDisplayValue]);
 
   const handleMerge = () => {
     // Only require acknowledgment if warning is enabled
