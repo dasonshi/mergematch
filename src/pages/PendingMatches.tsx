@@ -28,8 +28,9 @@ import { TablePagination } from "@/components/ui/table-pagination";
 import { useLocation } from "@/contexts/LocationContext";
 import { useUpgradeModal } from "@/components/ui/upgrade-modal";
 import { useToast } from "@/hooks/use-toast";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { api } from "@/lib/api";
-import { getRecordName, getFirstMatchFieldValue, recordMatchesSearch } from "@/components/rules/helpers";
+import { getRecordName, getFirstMatchFieldValue } from "@/components/rules/helpers";
 import { getGhlRecordUrl } from "@/lib/utils";
 
 interface MatchPair {
@@ -58,6 +59,11 @@ export default function PendingMatches() {
     window.scrollTo(0, 0);
   }, []);
 
+  // Reset to page 1 when search changes
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearchQuery]);
+
   // Pagination state
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
@@ -65,6 +71,7 @@ export default function PendingMatches() {
   // Filter panel state
   const [filtersOpen, setFiltersOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const debouncedSearchQuery = useDebouncedValue(searchQuery, 300);
   const [confidenceFilter, setConfidenceFilter] = useState<string>("all");
 
   // Merge state - check localStorage on init to show correct button state immediately
@@ -88,10 +95,10 @@ export default function PendingMatches() {
     enabled: !!locationId && !!ruleId,
   });
 
-  // Fetch pending matches (paginated)
+  // Fetch pending matches (paginated, with server-side search)
   const { data: matchesData, isLoading: matchesLoading, isError: matchesError, refetch: refetchMatches } = useQuery({
-    queryKey: ["matches", ruleId, locationId, page, pageSize],
-    queryFn: () => api.getMatches("pending", ruleId, pageSize, (page - 1) * pageSize),
+    queryKey: ["matches", ruleId, locationId, page, pageSize, debouncedSearchQuery],
+    queryFn: () => api.getMatches("pending", ruleId, pageSize, (page - 1) * pageSize, debouncedSearchQuery || undefined),
     enabled: !!locationId && !!ruleId,
     gcTime: 0,
   });
@@ -105,31 +112,19 @@ export default function PendingMatches() {
 
   const allMatches = matchesData?.data || [];
   const totalCount = matchesData?.total ?? allMatches.length;
-
-  // Filter matches - use dynamic search that works with any object type
   const matchFields = rule?.match_fields || [];
+
+  // Filter matches - search is now server-side, only apply confidence filter client-side
   const filteredMatches = useMemo(() => {
+    if (confidenceFilter === "all") return allMatches;
     return allMatches.filter((item: MatchPair) => {
-      // Search filter - search both records using match fields
-      if (searchQuery) {
-        const recordA = item.record_a_data || {};
-        const recordB = item.record_b_data || {};
-        const matchesSearchA = recordMatchesSearch(recordA, searchQuery, matchFields);
-        const matchesSearchB = recordMatchesSearch(recordB, searchQuery, matchFields);
-        if (!matchesSearchA && !matchesSearchB) return false;
-      }
-
-      // Confidence filter
-      if (confidenceFilter !== "all") {
-        const score = item.confidence_score;
-        if (confidenceFilter === "high" && score < 0.9) return false;
-        if (confidenceFilter === "medium" && (score < 0.8 || score >= 0.9)) return false;
-        if (confidenceFilter === "low" && score >= 0.8) return false;
-      }
-
+      const score = item.confidence_score;
+      if (confidenceFilter === "high" && score < 0.9) return false;
+      if (confidenceFilter === "medium" && (score < 0.8 || score >= 0.9)) return false;
+      if (confidenceFilter === "low" && score >= 0.8) return false;
       return true;
     });
-  }, [allMatches, searchQuery, confidenceFilter, matchFields]);
+  }, [allMatches, confidenceFilter]);
 
   const hasActiveFilters = searchQuery || confidenceFilter !== "all";
   const activeFilterCount = [searchQuery, confidenceFilter !== "all"].filter(Boolean).length;

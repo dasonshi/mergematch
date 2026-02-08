@@ -258,12 +258,13 @@ class ApiClient {
   }
 
   // Matches
-  async getMatches(status?: string, ruleId?: string, limit?: number, offset?: number) {
+  async getMatches(status?: string, ruleId?: string, limit?: number, offset?: number, search?: string) {
     const params = new URLSearchParams();
     if (status) params.set('status', status);
     if (ruleId) params.set('rule_id', ruleId);
     if (limit) params.set('limit', limit.toString());
     if (offset) params.set('offset', offset.toString());
+    if (search) params.set('search', search);
     return this.fetch<{ data: MatchPair[]; total: number; unique_contacts?: number }>(`/v1/matches/?${params}`);
   }
 

@@ -20,11 +20,12 @@ import { Input } from "@/components/ui/input";
 import { useLocation } from "@/contexts/LocationContext";
 import { useUpgradeModal } from "@/components/ui/upgrade-modal";
 import { useToast } from "@/hooks/use-toast";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { api, MatchPair } from "@/lib/api";
 import { DataTable, DataTableColumn } from "@/components/ui/data-table";
 import { ConfidenceBadge } from "@/components/ui/confidence-badge";
 import { TablePagination } from "@/components/ui/table-pagination";
-import { MergeHistoryCard, RuleSummaryCard, getRecordName, getMatchFieldSubheading, recordMatchesSearch } from "@/components/rules";
+import { MergeHistoryCard, RuleSummaryCard, getRecordName, getMatchFieldSubheading } from "@/components/rules";
 
 export default function MatchRuleDetail() {
   const { id } = useParams();
@@ -36,6 +37,7 @@ export default function MatchRuleDetail() {
   const queryClient = useQueryClient();
   const [matchesExpanded, setMatchesExpanded] = useState(true);
   const [matchSearchQuery, setMatchSearchQuery] = useState("");
+  const debouncedSearchQuery = useDebouncedValue(matchSearchQuery, 300);
   const [showMergeAllDialog, setShowMergeAllDialog] = useState(false);
   const [bulkMergeProgress, setBulkMergeProgress] = useState({ current: 0, total: 0, inProgress: false });
   const [bulkJobId, setBulkJobId] = useState<string | null>(null);
@@ -48,6 +50,11 @@ export default function MatchRuleDetail() {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
+
+  // Reset to page 1 when search query changes
+  useEffect(() => {
+    setMatchPage(1);
+  }, [debouncedSearchQuery]);
 
   // Stale data validation state
   const [isValidating, setIsValidating] = useState(false);
@@ -62,10 +69,10 @@ export default function MatchRuleDetail() {
     enabled: !!locationId && !!id,
   });
 
-  // Fetch pending matches for this rule (paginated)
+  // Fetch pending matches for this rule (paginated, with server-side search)
   const { data: matchesData, isLoading: matchesLoading, isError: matchesError, refetch: refetchMatches } = useQuery({
-    queryKey: ["matches", id, locationId, matchPage, matchPageSize],
-    queryFn: () => api.getMatches("pending", id, matchPageSize, (matchPage - 1) * matchPageSize),
+    queryKey: ["matches", id, locationId, matchPage, matchPageSize, debouncedSearchQuery],
+    queryFn: () => api.getMatches("pending", id, matchPageSize, (matchPage - 1) * matchPageSize, debouncedSearchQuery || undefined),
     enabled: !!locationId && !!id,
     gcTime: 0,
   });
@@ -85,7 +92,7 @@ export default function MatchRuleDetail() {
     gcTime: 0, // No cache - always fresh
   });
 
-  // Fetch total record count for the object type (contacts, companies, or custom objects)
+  // Fetch total record count for the rule's object type
   const { data: objectStats, isLoading: objectStatsLoading } = useQuery({
     queryKey: ["object-stats", locationId, rule?.source_object],
     queryFn: () => api.getObjectStats(rule!.source_object),
@@ -225,7 +232,7 @@ export default function MatchRuleDetail() {
     },
   });
 
-  // Validate matches before merge - checks if contacts still exist in GHL
+  // Validate matches before merge - checks if records still exist in GHL
   // Validation now auto-cleans stale matches in the backend
   const handleMergeAllClick = async () => {
     if (!id) return;
@@ -242,7 +249,7 @@ export default function MatchRuleDetail() {
       if (result.stale_cleaned && result.stale_cleaned > 0) {
         toast({
           title: "Stale Matches Cleaned",
-          description: `Removed ${result.stale_cleaned} stale match(es) - contacts no longer exist.`,
+          description: `Removed ${result.stale_cleaned} stale match(es) - records no longer exist.`,
         });
       }
 
@@ -426,22 +433,11 @@ export default function MatchRuleDetail() {
     }
   };
 
+  // Data from server (search filtering is now server-side)
   const pendingMatches = matchesData?.data || [];
   const pendingTotal = matchesData?.total ?? 0;
   const mergeHistory = mergesData?.data || [];
-
-  // Filter pending matches by search query (applies to current page)
   const matchFields = rule?.match_fields || [];
-  const filteredPendingMatches = pendingMatches.filter((match: MatchPair) => {
-    if (!matchSearchQuery) return true;
-    const recordA = match.record_a_data || {};
-    const recordB = match.record_b_data || {};
-    // Use dynamic search that works with any object type
-    return (
-      recordMatchesSearch(recordA, matchSearchQuery, matchFields) ||
-      recordMatchesSearch(recordB, matchSearchQuery, matchFields)
-    );
-  });
 
   // Get display field for custom objects (from schema's primaryDisplayProperty)
   const displayField = rule?.source_object ? getObjectDisplayField(rule.source_object) : undefined;
@@ -719,19 +715,19 @@ export default function MatchRuleDetail() {
           <>
             <CardContent className="p-0">
               <DataTable
-                data={filteredPendingMatches}
+                data={pendingMatches}
                 columns={matchColumns}
                 keyField="id"
                 loading={matchesLoading}
                 minWidth="600px"
                 emptyState={
-                  pendingTotal === 0 ? (
+                  !debouncedSearchQuery ? (
                     <div className="p-8 text-center">
                       <p className="text-muted-foreground text-sm">No pending matches. Click "Scan Now" to search.</p>
                     </div>
                   ) : (
                     <div className="p-8 text-center">
-                      <p className="text-muted-foreground text-sm">No matches found for "{matchSearchQuery}"</p>
+                      <p className="text-muted-foreground text-sm">No matches found for "{debouncedSearchQuery}"</p>
                       <Button variant="link" size="sm" onClick={() => setMatchSearchQuery("")}>
                         Clear search
                       </Button>
@@ -788,7 +784,7 @@ export default function MatchRuleDetail() {
             <AlertDialogDescription className="space-y-2">
               <p>
                 <span className="font-semibold text-destructive">{staleMatchIds.length}</span> match pair(s)
-                reference contacts that no longer exist (already merged or deleted).
+                reference records that no longer exist (already merged or deleted).
               </p>
               {validMatchIds.length > 0 ? (
                 <p>

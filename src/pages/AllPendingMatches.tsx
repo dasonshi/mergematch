@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Loader2, Search, X, Play, Filter, AlertCircle, RefreshCw, Crown } from "lucide-react";
@@ -28,8 +28,9 @@ import { TablePagination } from "@/components/ui/table-pagination";
 import { useLocation } from "@/contexts/LocationContext";
 import { useUpgradeModal } from "@/components/ui/upgrade-modal";
 import { useToast } from "@/hooks/use-toast";
+import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { api, MatchRule, MatchPair } from "@/lib/api";
-import { getRecordName, getFirstMatchFieldValue, recordMatchesSearch } from "@/components/rules/helpers";
+import { getRecordName, getFirstMatchFieldValue } from "@/components/rules/helpers";
 import { getGhlRecordUrl } from "@/lib/utils";
 
 export default function AllPendingMatches() {
@@ -51,6 +52,7 @@ export default function AllPendingMatches() {
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState("");
+  const debouncedSearchQuery = useDebouncedValue(searchQuery, 300);
   const [ruleFilter, setRuleFilter] = useState<string>("all");
 
   // Selection state
@@ -80,10 +82,10 @@ export default function AllPendingMatches() {
   const rules = rulesData?.data || [];
   const rulesMap = new Map(rules.map((r: MatchRule) => [r.id, r]));
 
-  // Fetch all pending matches (paginated, with optional rule filter)
+  // Fetch all pending matches (paginated, with optional rule filter and server-side search)
   const { data: matchesData, isLoading: matchesLoading, isError: matchesError, refetch: refetchMatches } = useQuery({
-    queryKey: ["matches", "pending", "all", locationId, ruleFilter, page, pageSize],
-    queryFn: () => api.getMatches("pending", ruleFilter !== "all" ? ruleFilter : undefined, pageSize, (page - 1) * pageSize),
+    queryKey: ["matches", "pending", "all", locationId, ruleFilter, page, pageSize, debouncedSearchQuery],
+    queryFn: () => api.getMatches("pending", ruleFilter !== "all" ? ruleFilter : undefined, pageSize, (page - 1) * pageSize, debouncedSearchQuery || undefined),
     enabled: !!locationId,
     gcTime: 0,
   });
@@ -112,26 +114,12 @@ export default function AllPendingMatches() {
     setSelectedIds(new Set());
     setSelectAllMatching(false);
     setPage(1);
-  }, [searchQuery, ruleFilter]);
+  }, [debouncedSearchQuery, ruleFilter]);
 
-  // Filter matches (rule filter is now server-side; search is client-side on current page)
-  const filteredMatches = useMemo(() => {
-    if (!searchQuery) return allMatches;
-    return allMatches.filter((item: MatchPair) => {
-      const recordA = item.record_a_data || {};
-      const recordB = item.record_b_data || {};
-      const rule = rulesMap.get(item.rule_id);
-      const matchFields = rule?.match_fields || [];
-      // Search records dynamically based on their fields
-      const matchesSearchA = recordMatchesSearch(recordA, searchQuery, matchFields);
-      const matchesSearchB = recordMatchesSearch(recordB, searchQuery, matchFields);
-      // Also allow searching by rule name
-      const matchesRuleName = rule?.name?.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesSearchA || matchesSearchB || matchesRuleName;
-    });
-  }, [allMatches, searchQuery, rulesMap]);
+  // Filtering is now server-side - use data directly
+  const filteredMatches = allMatches;
 
-  const hasActiveFilters = !!searchQuery || ruleFilter !== "all";
+  const hasActiveFilters = !!debouncedSearchQuery || ruleFilter !== "all";
 
   const clearFilters = () => {
     setSearchQuery("");
@@ -277,11 +265,13 @@ export default function AllPendingMatches() {
 
   const handleMergeAll = async () => {
     setShowMergeAllDialog(false);
-    // Fetch all pending match IDs for the merge (not just the current page)
+    // Fetch all pending match IDs for the merge (not just the current page, respecting search filter)
     const allResult = await api.getMatches(
       "pending",
       ruleFilter !== "all" ? ruleFilter : undefined,
-      10000
+      10000,
+      0,
+      debouncedSearchQuery || undefined
     );
     const matchIds = (allResult.data || []).map((m: MatchPair) => m.id);
     startBulkMerge(matchIds, ruleFilter !== "all" ? ruleFilter : undefined);

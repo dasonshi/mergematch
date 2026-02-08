@@ -35,6 +35,7 @@ async def list_matches(
     user: AuthenticatedUser = Depends(get_user),
     status: Optional[str] = Query(None, description="Filter by status: pending, approved, rejected, merged"),
     rule_id: Optional[str] = Query(None, description="Filter by match rule ID"),
+    search: Optional[str] = Query(None, description="Search term to filter by record data"),
     limit: int = Query(50, le=1000),
     offset: int = Query(0),
 ):
@@ -51,6 +52,13 @@ async def list_matches(
         count_query = count_query.eq("status", status)
     if rule_id:
         count_query = count_query.eq("rule_id", rule_id)
+    if search:
+        # Search both record snapshots using JSONB text search (case-insensitive)
+        search_term = search.lower()
+        count_query = count_query.or_(
+            f"record_a_data::text.ilike.%{search_term}%,"
+            f"record_b_data::text.ilike.%{search_term}%"
+        )
     count_result = count_query.limit(1).execute()
     true_total = count_result.count if count_result.count is not None else 0
 
@@ -66,6 +74,12 @@ async def list_matches(
             ids_query = ids_query.eq("status", status)
         if rule_id:
             ids_query = ids_query.eq("rule_id", rule_id)
+        if search:
+            search_term = search.lower()
+            ids_query = ids_query.or_(
+                f"record_a_data::text.ilike.%{search_term}%,"
+                f"record_b_data::text.ilike.%{search_term}%"
+            )
         ids_result = ids_query.range(page_offset, page_offset + page_size - 1).execute()
         for row in ids_result.data:
             unique_contacts.add(row["record_a_id"])
@@ -80,6 +94,12 @@ async def list_matches(
         query = query.eq("status", status)
     if rule_id:
         query = query.eq("rule_id", rule_id)
+    if search:
+        search_term = search.lower()
+        query = query.or_(
+            f"record_a_data::text.ilike.%{search_term}%,"
+            f"record_b_data::text.ilike.%{search_term}%"
+        )
 
     query = query.range(offset, offset + limit - 1)
     result = query.execute()
