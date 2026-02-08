@@ -26,6 +26,9 @@ async def get_object_stats(
             elif object_type == "companies":
                 result = await client.get_companies()
                 total = len(result.get("businesses", []))
+            elif object_type == "opportunities":
+                result = await client.get_opportunities(limit=1)
+                total = result.get("meta", {}).get("total", 0)
             elif object_type.startswith("custom_objects."):
                 # Use search endpoint to get count
                 result = await client.search_custom_objects(object_type, page=1, page_limit=1)
@@ -126,6 +129,46 @@ def extract_custom_object_field_key(field_key: str) -> str:
         if len(parts) >= 3:
             return ".".join(parts[2:])
     return field_key
+
+
+@router.get("/pipelines")
+async def get_pipelines(
+    ctx: AuthContext = Depends(get_auth_context),
+) -> List[Dict[str, Any]]:
+    """
+    Get all pipelines and their stages for the location.
+
+    Returns list of pipelines with their stages for use in dropdown selectors.
+    """
+    async with GHLClient(ctx.access_token, ctx.ghl_location_id) as client:
+        try:
+            pipelines = await client.get_pipelines()
+            # Flatten stages from all pipelines for easy selection
+            result = []
+            for pipeline in pipelines:
+                pipeline_name = pipeline.get("name", "Unknown Pipeline")
+                pipeline_id = pipeline.get("id", "")
+                stages = pipeline.get("stages", [])
+
+                result.append({
+                    "id": pipeline_id,
+                    "name": pipeline_name,
+                    "stages": [
+                        {
+                            "id": stage.get("id", ""),
+                            "name": stage.get("name", "Unknown Stage"),
+                            "pipelineId": pipeline_id,
+                            "pipelineName": pipeline_name,
+                        }
+                        for stage in stages
+                    ]
+                })
+            return result
+        except Exception as e:
+            # Return empty array if pipelines can't be fetched (e.g., missing scope)
+            # This allows the form to work without pipeline filtering
+            logger.warning(f"Failed to fetch pipelines (may need opportunities.readonly scope): {str(e)}")
+            return []
 
 
 @router.get("/{object_type}")
@@ -348,43 +391,3 @@ async def get_object_associations(
                 status_code=500,
                 detail=f"Failed to fetch associations: {str(e)}"
             )
-
-
-@router.get("/pipelines")
-async def get_pipelines(
-    ctx: AuthContext = Depends(get_auth_context),
-) -> List[Dict[str, Any]]:
-    """
-    Get all pipelines and their stages for the location.
-
-    Returns list of pipelines with their stages for use in dropdown selectors.
-    """
-    async with GHLClient(ctx.access_token, ctx.ghl_location_id) as client:
-        try:
-            pipelines = await client.get_pipelines()
-            # Flatten stages from all pipelines for easy selection
-            result = []
-            for pipeline in pipelines:
-                pipeline_name = pipeline.get("name", "Unknown Pipeline")
-                pipeline_id = pipeline.get("id", "")
-                stages = pipeline.get("stages", [])
-
-                result.append({
-                    "id": pipeline_id,
-                    "name": pipeline_name,
-                    "stages": [
-                        {
-                            "id": stage.get("id", ""),
-                            "name": stage.get("name", "Unknown Stage"),
-                            "pipelineId": pipeline_id,
-                            "pipelineName": pipeline_name,
-                        }
-                        for stage in stages
-                    ]
-                })
-            return result
-        except Exception as e:
-            # Return empty array if pipelines can't be fetched (e.g., missing scope)
-            # This allows the form to work without pipeline filtering
-            logger.warning(f"Failed to fetch pipelines (may need opportunities.readonly scope): {str(e)}")
-            return []
