@@ -110,12 +110,12 @@ def compute_merge_selections(
     id_b = record_b.get("id", "")
 
     # Determine master based on strategy
-    if strategy == "most_recent":
+    if strategy == "recent":
         # Most recently created/updated is master
         date_a = record_a.get("dateUpdated") or record_a.get("dateAdded") or ""
         date_b = record_b.get("dateUpdated") or record_b.get("dateAdded") or ""
         master_id = id_a if date_a >= date_b else id_b
-    elif strategy == "most_complete":
+    elif strategy == "standard":
         # Record with more filled fields is master
         def count_filled(record: Dict) -> int:
             return sum(1 for f in fields if record.get(f))
@@ -142,7 +142,7 @@ def compute_merge_selections(
         master_empty = master_val is None or master_val == "" or master_val == []
         dup_empty = dup_val is None or dup_val == "" or dup_val == []
 
-        if master_empty and not dup_empty and overwrite_blanks:
+        if master_empty and not dup_empty and not overwrite_blanks:
             # Fill blank master field from duplicate
             selections[field] = "b" if master_id == id_a else "a"
         else:
