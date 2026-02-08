@@ -297,6 +297,13 @@ async def execute_merge(
 
     logger.info(f"Merge source_object: {source_object}, is_custom_object: {is_custom_object}")
 
+    # Block unsupported object types
+    if not is_custom_object and source_object not in ("contacts",):
+        raise ValueError(
+            f"Merging '{source_object}' is not supported. "
+            "Only contacts and custom_objects are supported."
+        )
+
     # ── Re-fetch both records from GHL as a safety net ────────────────────
     # This ensures we merge using the latest data, not a stale snapshot.
     try:
@@ -922,6 +929,14 @@ async def rollback_merge(
                     schema_key = source_object  # Use full key
 
     logger.info(f"Rolling back merge {merge_id} (source_object: {source_object})")
+
+    # Block unsupported object types
+    if not is_custom_object and source_object not in ("contacts",):
+        raise ValueError(
+            f"Rolling back '{source_object}' merges is not supported. "
+            "Only contacts and custom_objects are supported."
+        )
+
     logger.info(f"Restoring duplicate record from snapshot")
     if not is_custom_object:
         logger.info(f"Related records to restore: {len(notes_snapshot or [])} notes, {len(tasks_snapshot or [])} tasks, {len(opps_snapshot or [])} opportunities, {len(appointments_snapshot or [])} appointments")
