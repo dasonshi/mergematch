@@ -236,6 +236,33 @@ class GHLClient:
         response.raise_for_status()
         return response.json()
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.TimeoutException)),
+    )
+    async def search_opportunities(
+        self,
+        page: int = 1,
+        page_limit: int = 100,
+        pipeline_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Search opportunities with pagination."""
+        params = {
+            "location_id": self.location_id,
+            "page": page,
+            "limit": page_limit,
+        }
+        if pipeline_id:
+            params["pipeline_id"] = pipeline_id
+
+        logger.info(f"[GHL] GET /opportunities/search page={page}, limit={page_limit}")
+        response = await self._client.get("/opportunities/search", params=params)
+        if response.status_code >= 400:
+            logger.error(f"[GHL] Search opportunities failed: {response.status_code} - {response.text[:500]}")
+        response.raise_for_status()
+        return response.json()
+
     async def get_opportunity(self, opportunity_id: str) -> Dict[str, Any]:
         """Fetch a single opportunity."""
         response = await self._client.get(f"/opportunities/{opportunity_id}")

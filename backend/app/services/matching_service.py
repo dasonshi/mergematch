@@ -411,6 +411,39 @@ async def run_scan(
                 if use_blocking:
                     stream_contacts_to_blocks(internal_location_id, page_records)
 
+            elif source_object == "opportunities":
+                # Use Search API with page-based pagination
+                page_num = 0
+                while True:
+                    page_num += 1
+                    result = await client.search_opportunities(page=page_num, page_limit=100)
+                    page_records = result.get("opportunities", [])
+
+                    if not page_records:
+                        break
+
+                    records_scanned += len(page_records)
+
+                    for record in page_records:
+                        record_id = record.get("id")
+                        if record_id:
+                            valid_contact_ids.add(record_id)
+                            all_contacts.append(record)
+
+                    # Stream to blocking table during fetch if blocking is enabled
+                    if use_blocking:
+                        stream_contacts_to_blocks(internal_location_id, page_records)
+
+                    logger.info(f"Fetched page {page_num}: {len(page_records)} opportunities (total: {records_scanned})")
+
+                    # Periodic GC during fetch to manage memory
+                    if page_num % 10 == 0:
+                        gc.collect()
+
+                    # Stop if we got fewer than requested (last page)
+                    if len(page_records) < 100:
+                        break
+
             # Custom objects (use full key like "custom_objects.transactions")
             elif source_object.startswith("custom_objects."):
                 schema_key = source_object  # Use full key, not stripped
