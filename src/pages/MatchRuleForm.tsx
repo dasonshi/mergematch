@@ -43,8 +43,6 @@ import { isTypeCompatible, getIncompatibilityReason } from "@/lib/field-compatib
 // Standard object types with tier requirements
 const standardObjectTiers: Record<string, string> = {
   contacts: "free",
-  companies: "starter",
-  opportunities: "pro",
 };
 
 // Tier hierarchy for comparison
@@ -65,12 +63,6 @@ const fallbackFields: Record<string, { id: string; name: string }[]> = {
     { id: "phone", name: "Phone" },
     { id: "firstName", name: "First Name" },
     { id: "lastName", name: "Last Name" },
-  ],
-  companies: [
-    { id: "name", name: "Company Name" },
-    { id: "email", name: "Email" },
-    { id: "emailDomain", name: "Email Domain" },
-    { id: "phone", name: "Phone" },
   ],
 };
 
@@ -286,8 +278,6 @@ export default function MatchRuleForm() {
   // Build object types with tier requirements and availability
   const objectTypes = (fetchedObjects || [
     { id: "contacts", name: "Contacts", standard: true },
-    { id: "companies", name: "Companies", standard: true },
-    { id: "opportunities", name: "Opportunities", standard: true },
   ]).map(obj => {
     // Custom objects require pro tier
     const tier = obj.standard ? (standardObjectTiers[obj.id] || "pro") : "pro";
