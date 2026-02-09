@@ -603,12 +603,14 @@ async def execute_merge(
 
     try:
         async with GHLClient(access_token, ghl_location_id) as client:
-            # Custom objects don't have related records (notes, tasks, opportunities)
-            # Only fetch/snapshot related records for contacts
+            # Snapshot related data before deleting duplicate:
+            # - contacts: notes/tasks/opportunities/appointments
+            # - custom objects: associations
             duplicate_notes = []
             duplicate_tasks = []
             duplicate_opps = []
             duplicate_appointments = []
+            duplicate_associations = []
 
             if not is_custom_object:
                 try:
@@ -634,6 +636,14 @@ async def execute_merge(
                     logger.info(f"Snapshotted {len(duplicate_appointments)} appointments from duplicate")
                 except Exception as e:
                     logger.warning(f"Failed to snapshot appointments: {e}")
+            else:
+                try:
+                    duplicate_associations = await client.get_relations_for_record(duplicate_id)
+                    logger.info(
+                        f"Snapshotted {len(duplicate_associations)} associations from duplicate custom object"
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to snapshot custom object associations: {e}")
 
             # Store related record snapshots (same 30-day expiration)
             related_snapshots = []
@@ -671,6 +681,15 @@ async def execute_merge(
                     "record_id": duplicate_id,
                     "record_type": "duplicate_appointments",
                     "data": {"appointments": duplicate_appointments},
+                    "expires_at": expires_at,
+                })
+            if duplicate_associations:
+                related_snapshots.append({
+                    "id": str(uuid.uuid4()),
+                    "merge_id": merge_id,
+                    "record_id": duplicate_id,
+                    "record_type": "duplicate_associations",
+                    "data": {"associations": duplicate_associations},
                     "expires_at": expires_at,
                 })
 
@@ -878,6 +897,7 @@ async def rollback_merge(
     tasks_snapshot = None
     opps_snapshot = None
     appointments_snapshot = None
+    associations_snapshot = None
 
     for snapshot in snapshots.data or []:
         record_type = snapshot.get("record_type")
@@ -893,6 +913,13 @@ async def rollback_merge(
             opps_snapshot = snapshot.get("data", {}).get("opportunities", [])
         elif record_type == "duplicate_appointments":
             appointments_snapshot = snapshot.get("data", {}).get("appointments", [])
+        elif record_type == "duplicate_associations":
+            association_data = snapshot.get("data", {})
+            if isinstance(association_data, dict):
+                associations_snapshot = association_data.get("associations", [])
+            elif isinstance(association_data, list):
+                # Backward compatibility if associations were stored as a raw list
+                associations_snapshot = association_data
 
     if not duplicate_snapshot:
         raise ValueError("No snapshot available for rollback")
@@ -940,6 +967,8 @@ async def rollback_merge(
     logger.info(f"Restoring duplicate record from snapshot")
     if not is_custom_object:
         logger.info(f"Related records to restore: {len(notes_snapshot or [])} notes, {len(tasks_snapshot or [])} tasks, {len(opps_snapshot or [])} opportunities, {len(appointments_snapshot or [])} appointments")
+    else:
+        logger.info(f"Associations to restore: {len(associations_snapshot or [])}")
 
     try:
         async with GHLClient(access_token, ghl_location_id) as client:
@@ -1036,6 +1065,60 @@ async def rollback_merge(
                             except Exception as e:
                                 logger.warning(f"Failed to restore appointment {appt_id}: {e}")
                     logger.info(f"Restored {appointments_restored}/{len(appointments_snapshot)} appointments")
+            elif associations_snapshot and restored_id:
+                relations_restored = 0
+                old_duplicate_id = merge.data.get("duplicate_record_id")
+
+                for relation in associations_snapshot:
+                    if not isinstance(relation, dict):
+                        logger.warning(f"Skipping malformed association snapshot row: {relation}")
+                        continue
+
+                    source_object_key = relation.get("sourceObjectKey")
+                    source_record_id = relation.get("sourceRecordId")
+                    target_object_key = relation.get("targetObjectKey")
+                    target_record_id = relation.get("targetRecordId")
+                    association_id = relation.get("associationId")
+
+                    if old_duplicate_id:
+                        if source_record_id == old_duplicate_id:
+                            source_record_id = restored_id
+                        if target_record_id == old_duplicate_id:
+                            target_record_id = restored_id
+
+                    # Safety check: only restore relations tied to the recreated duplicate
+                    if restored_id not in (source_record_id, target_record_id):
+                        logger.warning(
+                            "Skipping association restore because duplicate ID was not found in relation payload: "
+                            f"{relation}"
+                        )
+                        continue
+
+                    if not all(
+                        [
+                            source_object_key,
+                            source_record_id,
+                            target_object_key,
+                            target_record_id,
+                            association_id,
+                        ]
+                    ):
+                        logger.warning(f"Skipping association restore due to missing required fields: {relation}")
+                        continue
+
+                    try:
+                        await client.create_relation(
+                            source_object_key=source_object_key,
+                            source_record_id=source_record_id,
+                            target_object_key=target_object_key,
+                            target_record_id=target_record_id,
+                            association_id=association_id,
+                        )
+                        relations_restored += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to restore custom object association: {e}")
+
+                logger.info(f"Restored {relations_restored}/{len(associations_snapshot)} associations")
 
             # Restore master record to its original state
             if master_snapshot:
