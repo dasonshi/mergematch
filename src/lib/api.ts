@@ -563,6 +563,8 @@ export interface Merge {
   id: string;
   master_record_id: string;
   master_record_name?: string;
+  master_record_display_name?: string;
+  master_pipeline_id?: string;
   master_record_type?: string;
   duplicate_record_id: string;
   status: string;

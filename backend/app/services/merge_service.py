@@ -81,6 +81,19 @@ NON_CONTACT_DYNAMIC_EXCLUDE_FIELDS = NON_MUTABLE_RECORD_FIELDS | {
 }
 
 
+def _extract_custom_object_field_key(field_key: str) -> Optional[str]:
+    """Extract custom object property key from schema field path."""
+    if not field_key:
+        return None
+
+    if field_key.startswith("custom_objects."):
+        parts = field_key.split(".")
+        if len(parts) >= 3:
+            return ".".join(parts[2:])
+
+    return field_key
+
+
 def _derive_dynamic_fields(record_a: dict, record_b: dict, exclude_fields: set[str]) -> List[str]:
     """Derive mergeable fields from two records, excluding metadata."""
     all_fields = set((record_a or {}).keys()) | set((record_b or {}).keys())
@@ -302,16 +315,22 @@ def _build_record_name(
     record: dict,
     record_id: str,
     match_fields: Optional[List[dict]] = None,
+    display_field: Optional[str] = None,
 ) -> str:
     """Build a display name for a record using common fields and match fields."""
     logger.info(f"_build_record_name: record keys={list(record.keys())[:15]}, match_fields={match_fields}")
+
+    if display_field:
+        value = _stringify_value(_get_field_value(record, display_field))
+        if value:
+            return value
 
     first_name = record.get("firstName")
     last_name = record.get("lastName")
     if first_name or last_name:
         return f"{first_name or ''} {last_name or ''}".strip()
 
-    for key in ("name", "title", "label", "displayName"):
+    for key in ("name", "title", "label", "displayName", "vin"):
         value = _stringify_value(_get_field_value(record, key))
         if value:
             return value
@@ -529,6 +548,7 @@ async def execute_merge(
     is_company = False
     is_opportunity = False
     schema_key = None
+    source_display_field: Optional[str] = None
     if rule_id:
         rule_check = supabase.table("match_rules").select("source_object").eq("id", rule_id).single().execute()
         if rule_check.data:
@@ -563,6 +583,15 @@ async def execute_merge(
             fresh_b = None
 
             if is_custom_object:
+                try:
+                    schema = await prefetch_client.get_object_schema(schema_key, fetch_properties=False)
+                    primary_display = schema.get("primaryDisplayProperty") or ""
+                    source_display_field = _extract_custom_object_field_key(primary_display)
+                    if source_display_field:
+                        logger.info(f"Resolved custom object display field: {source_display_field}")
+                except Exception as e:
+                    logger.warning(f"Could not resolve custom object display field for {schema_key}: {e}")
+
                 # Fetch custom object records
                 try:
                     fresh_a_resp = await prefetch_client.get_custom_object_record(schema_key, record_a_id)
@@ -790,6 +819,7 @@ async def execute_merge(
         master_data,
         master_record_id,
         match_fields=rule_match_fields,
+        display_field=source_display_field,
     )
 
     # Build the merged data based on field selections

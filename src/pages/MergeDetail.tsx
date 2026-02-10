@@ -123,10 +123,38 @@ export default function MergeDetail() {
   const fieldSelections = merge.field_selections || {};
   const crmLocationId = merge.ghl_location_id || locationId;
 
+  const getSnapshotPipelineId = (snapshot: Record<string, unknown>) => {
+    const directPipelineId = snapshot["pipelineId"];
+    if (typeof directPipelineId === "string" && directPipelineId) return directPipelineId;
+
+    const rawValue = snapshot["_raw"];
+    const raw = rawValue && typeof rawValue === "object"
+      ? rawValue as Record<string, unknown>
+      : undefined;
+    const rawPipelineId = raw?.pipelineId;
+    if (typeof rawPipelineId === "string" && rawPipelineId) return rawPipelineId;
+
+    const pipeline = snapshot["pipeline"];
+    if (pipeline && typeof pipeline === "object") {
+      const pipelineId = (pipeline as Record<string, unknown>).id;
+      if (typeof pipelineId === "string" && pipelineId) return pipelineId;
+    }
+
+    const rawPipeline = raw?.pipeline;
+    if (rawPipeline && typeof rawPipeline === "object") {
+      const pipelineId = (rawPipeline as Record<string, unknown>).id;
+      if (typeof pipelineId === "string" && pipelineId) return pipelineId;
+    }
+
+    return undefined;
+  };
+
   // Build CRM URL from the matched object type.
-  const getCrmUrl = (recordId: string) => {
+  const getCrmUrl = (recordId: string, snapshot?: Record<string, unknown>) => {
     if (!crmLocationId) return null;
-    return getGhlRecordUrl(crmLocationId, rule?.source_object || "contacts", recordId);
+    return getGhlRecordUrl(crmLocationId, rule?.source_object || "contacts", recordId, {
+      pipelineId: snapshot ? getSnapshotPipelineId(snapshot) : undefined,
+    });
   };
   // Fallback to any direct URL present in snapshots (best-effort for custom object records).
   const getSnapshotUrl = (snapshot: Record<string, unknown>) => {
@@ -151,10 +179,10 @@ export default function MergeDetail() {
   };
 
   const masterCrmUrl = merge.status === "completed"
-    ? (getCrmUrl(merge.master_record_id) || getSnapshotUrl(masterSnapshot))
+    ? (getCrmUrl(merge.master_record_id, masterSnapshot) || getSnapshotUrl(masterSnapshot))
     : null;
   const restoredCrmUrl = merge.status === "rolled_back" && merge.restored_record_id
-    ? getCrmUrl(merge.restored_record_id)
+    ? getCrmUrl(merge.restored_record_id, duplicateSnapshot)
     : null;
   const masterRecordName = merge.master_record_name
     || getRecordName(masterSnapshot, rule?.match_fields, objectDisplayField);

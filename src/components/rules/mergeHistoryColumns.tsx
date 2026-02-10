@@ -9,6 +9,8 @@ export interface MergeHistoryRow {
   id: string;
   master_record_id?: string;
   master_record_name?: string;
+  master_record_display_name?: string;
+  master_pipeline_id?: string;
   duplicate_record_id?: string;
   restored_record_id?: string;
   status: string;
@@ -31,14 +33,17 @@ interface MergeHistoryColumnOptions {
 }
 
 function getMasterRecordLabel(item: MergeHistoryRow) {
+  if (item.master_record_display_name) return item.master_record_display_name;
   if (item.master_record_name) return item.master_record_name;
   if (item.master_record_id) return `${item.master_record_id.slice(0, 8)}...`;
   return "Unknown";
 }
 
 function getMasterRecordUrl(item: MergeHistoryRow, locationId?: string) {
-  if (!locationId || !item.master_record_id || item.status === "failed") return null;
-  return getGhlRecordUrl(locationId, item.source_object || "contacts", item.master_record_id);
+  if (!locationId || !item.master_record_id) return null;
+  return getGhlRecordUrl(locationId, item.source_object || "contacts", item.master_record_id, {
+    pipelineId: item.master_pipeline_id,
+  });
 }
 
 export function createMergeHistoryColumns({
@@ -80,7 +85,9 @@ export function createMergeHistoryColumns({
       accessor: (item) => {
         const restoredUrl =
           item.status === "rolled_back" && item.restored_record_id && locationId
-            ? getGhlRecordUrl(locationId, item.source_object || "contacts", item.restored_record_id)
+            ? getGhlRecordUrl(locationId, item.source_object || "contacts", item.restored_record_id, {
+                pipelineId: item.master_pipeline_id,
+              })
             : null;
         const duplicateLabel =
           item.status === "rolled_back" && item.restored_record_id

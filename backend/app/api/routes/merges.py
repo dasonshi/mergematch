@@ -1,21 +1,63 @@
 from fastapi import APIRouter, HTTPException, Query, Header, Request, Depends
 from pydantic import BaseModel
-from typing import Dict, Optional, List
+from typing import Any, Dict, Optional, List
 from datetime import datetime, timedelta
 from collections import defaultdict
 import uuid
 import logging
 
 from app.db.supabase import get_supabase
-from app.services.merge_service import execute_merge, rollback_merge
+from app.services.merge_service import execute_merge, rollback_merge, _build_record_name
 from app.services.billing_service import check_merge_quota, get_plan_features
 from app.core.security import AuthenticatedUser
 from app.core.deps import get_user, get_auth_context, AuthContext
 from app.core.rate_limit import limiter, RATE_LIMIT_MERGE
+from app.core.ghl.client import GHLClient
+from app.services.auth_service import get_location_tokens_with_refresh
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _extract_custom_object_field_key(field_key: str) -> Optional[str]:
+    """Extract custom object property key from a schema field path."""
+    if not field_key:
+        return None
+    if field_key.startswith("custom_objects."):
+        parts = field_key.split(".")
+        if len(parts) >= 3:
+            return ".".join(parts[2:])
+    return field_key
+
+
+def _extract_pipeline_id(snapshot: Optional[Dict[str, Any]]) -> Optional[str]:
+    if not snapshot:
+        return None
+
+    direct_pipeline = snapshot.get("pipelineId")
+    if isinstance(direct_pipeline, str) and direct_pipeline:
+        return direct_pipeline
+
+    pipeline_obj = snapshot.get("pipeline")
+    if isinstance(pipeline_obj, dict):
+        pipeline_id = pipeline_obj.get("id")
+        if isinstance(pipeline_id, str) and pipeline_id:
+            return pipeline_id
+
+    raw = snapshot.get("_raw")
+    if isinstance(raw, dict):
+        raw_pipeline = raw.get("pipelineId")
+        if isinstance(raw_pipeline, str) and raw_pipeline:
+            return raw_pipeline
+
+        raw_pipeline_obj = raw.get("pipeline")
+        if isinstance(raw_pipeline_obj, dict):
+            raw_pipeline_id = raw_pipeline_obj.get("id")
+            if isinstance(raw_pipeline_id, str) and raw_pipeline_id:
+                return raw_pipeline_id
+
+    return None
 
 
 class FieldPreservationMapping(BaseModel):
@@ -163,10 +205,10 @@ async def list_merges(
 
     # Use inner join when filtering by rule_id for accurate results
     if rule_id:
-        select_str = "*, match_pairs!inner(rule_id, match_rules(id, name, source_object))"
+        select_str = "*, match_pairs!inner(rule_id, match_rules(id, name, source_object, match_fields))"
         count_select = "id, match_pairs!inner(rule_id)"
     else:
-        select_str = "*, match_pairs(rule_id, match_rules(id, name, source_object))"
+        select_str = "*, match_pairs(rule_id, match_rules(id, name, source_object, match_fields))"
         count_select = "id"
 
     query = supabase.table("merges").select(select_str).eq("location_id", user.location_id)
@@ -200,16 +242,110 @@ async def list_merges(
 
     # Execute data query with pagination
     result = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+    merge_rows = result.data or []
+
+    # Load master snapshots for current page so display names can be re-derived accurately.
+    master_snapshot_by_merge: Dict[str, Dict[str, Any]] = {}
+    merge_ids = [row.get("id") for row in merge_rows if row.get("id")]
+    if merge_ids:
+        snapshots_result = (
+            supabase.table("snapshots")
+            .select("merge_id, data")
+            .eq("record_type", "master")
+            .in_("merge_id", merge_ids)
+            .execute()
+        )
+        for snapshot in snapshots_result.data or []:
+            merge_id = snapshot.get("merge_id")
+            if isinstance(merge_id, str):
+                master_snapshot_by_merge[merge_id] = snapshot.get("data") or {}
+
+    # Resolve custom object display fields (primary display property) from GHL metadata.
+    custom_sources: set[str] = set()
+    for merge in merge_rows:
+        match_pair = merge.get("match_pairs")
+        if not isinstance(match_pair, dict):
+            continue
+        match_rule = match_pair.get("match_rules")
+        if not isinstance(match_rule, dict):
+            continue
+        source_object = match_rule.get("source_object")
+        if isinstance(source_object, str) and source_object.startswith("custom_objects."):
+            custom_sources.add(source_object)
+
+    custom_display_field_by_object: Dict[str, str] = {}
+    if custom_sources:
+        try:
+            tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
+            if not tokens or not tokens.get("access_token"):
+                raise ValueError("No valid GHL token available")
+
+            async with GHLClient(tokens["access_token"], user.ghl_location_id) as client:
+                object_defs = await client.list_objects()
+
+            for obj in object_defs:
+                key = obj.get("key")
+                if not isinstance(key, str) or not key:
+                    continue
+
+                normalized_key = key if key.startswith("custom_objects.") else f"custom_objects.{key}"
+                if normalized_key not in custom_sources:
+                    continue
+
+                primary_display = obj.get("primaryDisplayProperty") or ""
+                display_field = _extract_custom_object_field_key(primary_display)
+                if display_field:
+                    custom_display_field_by_object[normalized_key] = display_field
+        except Exception as e:
+            logger.warning(f"Failed to resolve custom object display fields for merge history: {e}")
 
     # Flatten the rule info for easier frontend consumption
     data = []
-    for merge in result.data:
+    for merge in merge_rows:
         merge_data = {**merge}
         match_pair = merge_data.pop("match_pairs", None)
+        rule_match_fields: List[Dict[str, Any]] = []
         if match_pair and match_pair.get("match_rules"):
-            merge_data["rule_id"] = match_pair["match_rules"]["id"]
-            merge_data["rule_name"] = match_pair["match_rules"]["name"]
-            merge_data["source_object"] = match_pair["match_rules"].get("source_object", "contacts")
+            match_rule = match_pair["match_rules"]
+            merge_data["rule_id"] = match_rule["id"]
+            merge_data["rule_name"] = match_rule["name"]
+            merge_data["source_object"] = match_rule.get("source_object", "contacts")
+            rule_match_fields = match_rule.get("match_fields") or []
+
+        merge_id = merge_data.get("id")
+        master_snapshot = (
+            master_snapshot_by_merge.get(merge_id)
+            if isinstance(merge_id, str)
+            else None
+        )
+        if isinstance(master_snapshot, dict) and master_snapshot:
+            source_object = merge_data.get("source_object")
+            if not isinstance(source_object, str) or not source_object:
+                raw = master_snapshot.get("_raw")
+                if isinstance(raw, dict):
+                    inferred_source = raw.get("objectKey")
+                    if isinstance(inferred_source, str) and inferred_source:
+                        merge_data["source_object"] = inferred_source
+                        source_object = inferred_source
+
+            display_field = (
+                custom_display_field_by_object.get(source_object, "")
+                if isinstance(source_object, str)
+                else ""
+            )
+            computed_name = _build_record_name(
+                master_snapshot,
+                merge_data.get("master_record_id", ""),
+                match_fields=rule_match_fields,
+                display_field=display_field or None,
+            )
+            if computed_name:
+                merge_data["master_record_display_name"] = computed_name
+
+            pipeline_id = _extract_pipeline_id(master_snapshot)
+            if pipeline_id:
+                merge_data["master_pipeline_id"] = pipeline_id
+
         data.append(merge_data)
 
     return {"data": data, "total": total}

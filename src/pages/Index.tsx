@@ -454,9 +454,12 @@ export default function Dashboard() {
     {
       header: "Record",
       accessor: (merge) => {
-        const url = merge.status !== "failed" && locationId
-          ? getGhlRecordUrl(locationId, merge.source_object || "contacts", merge.master_record_id)
+        const url = locationId
+          ? getGhlRecordUrl(locationId, merge.source_object || "contacts", merge.master_record_id, {
+              pipelineId: merge.master_pipeline_id,
+            })
           : null;
+        const label = merge.master_record_display_name || merge.master_record_name || 'Unknown';
         return (
           url ? (
             <a
@@ -465,10 +468,10 @@ export default function Dashboard() {
               rel="noopener noreferrer"
               className="font-medium text-foreground hover:text-primary hover:underline"
             >
-              {merge.master_record_name || 'Unknown'}
+              {label}
             </a>
           ) : (
-            <span className="font-medium">{merge.master_record_name || 'Unknown'}</span>
+            <span className="font-medium">{label}</span>
           )
         );
       },

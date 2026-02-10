@@ -46,6 +46,8 @@ interface MergeItem {
   id: string;
   master_record_id: string;
   master_record_name?: string;
+  master_record_display_name?: string;
+  master_pipeline_id?: string;
   duplicate_record_id: string;
   restored_record_id?: string;
   status: string;
@@ -251,7 +253,7 @@ export default function History() {
       const headers = ["Rule", "Master Record", "Master Record ID", "Duplicate ID", "Status", "Date"];
       const rows = allData.data.map((item: MergeItem) => [
         item.rule_name || "-",
-        item.master_record_name || "-",
+        item.master_record_display_name || item.master_record_name || "-",
         item.master_record_id,
         item.duplicate_record_id,
         item.status,
