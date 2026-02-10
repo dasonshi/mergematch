@@ -84,6 +84,19 @@ const TEXT_MATCH_TYPES = [
 
 const isFixedAlgorithmField = (fieldId: string) => fieldId in FIXED_ALGORITHM_FIELDS;
 
+function normalizeRuleFieldPath(fieldPath?: string): string {
+  if (!fieldPath) return "";
+
+  let normalized = fieldPath.trim();
+
+  // Legacy/custom prefixes from older rule payloads.
+  normalized = normalized.replace(/^customField\./, "");
+  normalized = normalized.replace(/^custom_objects\.[^.]+\./, "");
+  normalized = normalized.replace(/^(contact|business|opportunity)\./, "");
+
+  return normalized;
+}
+
 const strategies = [
   { id: "standard", name: "Standard Merge", description: "Prefer the record with the most complete data", prebuilt: true },
   { id: "recent", name: "Most Recent Wins", description: "Prefer values from the most recently updated record", prebuilt: true },
@@ -349,12 +362,14 @@ export default function MatchRuleForm() {
       setRuleName(existingRule.name);
       setObjectType(existingRule.source_object);
       setFields(existingRule.match_fields.map((f: MatchField) => {
-        const fixed = FIXED_ALGORITHM_FIELDS[f.field];
+        const normalizedField = normalizeRuleFieldPath(f.field);
+        const normalizedMatchAgainst = normalizeRuleFieldPath(f.match_against);
+        const fixed = FIXED_ALGORITHM_FIELDS[normalizedField] || FIXED_ALGORITHM_FIELDS[f.field];
         return {
-          name: f.field,
+          name: normalizedField,
           matchType: fixed ? fixed.algorithm : f.algorithm,
           operator: f.operator || "AND",
-          matchAgainst: f.match_against || undefined,
+          matchAgainst: normalizedMatchAgainst || undefined,
         };
       }));
       setStrategy(existingRule.merge_strategy || "standard");
@@ -1158,7 +1173,7 @@ export default function MatchRuleForm() {
                               <div className="p-4 rounded-lg border bg-background">
                                 <h4 className="text-sm font-semibold mb-1">Field Value Preservation</h4>
                                 <p className="text-xs text-muted-foreground mb-3">
-                                  Save the duplicate's value to another field before it's overwritten.
+                                  Save the duplicate's value to a custom field before it's overwritten.
                                 </p>
 
                                 {fieldPreservationMappings.map((mapping, idx) => {
@@ -1260,7 +1275,7 @@ export default function MatchRuleForm() {
                                         {/* Info about targets */}
                                         {compatibleCustom.length === 0 && incompatibleCustom.length === 0 && (
                                           <SelectItem value="_none_" disabled className="text-muted-foreground text-xs italic">
-                                            No custom fields available
+                                            No custom fields — create one in GHL to use this feature
                                           </SelectItem>
                                         )}
                                       </SelectContent>
