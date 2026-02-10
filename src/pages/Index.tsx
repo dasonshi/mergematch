@@ -419,7 +419,6 @@ export default function Dashboard() {
   );
 
   const pendingMatchesColumns = createPendingMatchColumns({
-    locationId,
     includeRuleColumn: true,
     includeFoundColumn: false,
     resolveRuleContext: (item) => {

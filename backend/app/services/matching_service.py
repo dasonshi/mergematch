@@ -845,6 +845,62 @@ async def generate_candidates(
     return candidates, False
 
 
+async def _fetch_all_records_for_object(
+    client,
+    source_object: str,
+    exclude_id: str,
+) -> List[dict]:
+    """
+    Fetch all records for a given object type, excluding the specified ID.
+    Used for real-time duplicate checking on non-contact objects.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    all_records = []
+
+    try:
+        if source_object == "companies":
+            result = await client.get_companies()
+            for record in result.get("businesses", []):
+                if record.get("id") and record["id"] != exclude_id:
+                    all_records.append(record)
+
+        elif source_object.startswith("custom_objects."):
+            schema_key = source_object
+            page_num = 0
+            while True:
+                page_num += 1
+                result = await client.search_custom_objects(schema_key, page=page_num, page_limit=100)
+                page_records = result.get("records", [])
+
+                if not page_records:
+                    break
+
+                for record in page_records:
+                    if record.get("id") and record["id"] != exclude_id:
+                        # Normalize: flatten properties
+                        props = record.get("properties") or {}
+                        normalized = {
+                            "id": record.get("id"),
+                            "dateAdded": record.get("createdAt"),
+                            "dateUpdated": record.get("updatedAt"),
+                            "_raw": record,
+                            **props
+                        }
+                        all_records.append(normalized)
+
+                if len(page_records) < 100:
+                    break
+
+        logger.info(f"Fetched {len(all_records)} {source_object} records for duplicate check")
+
+    except Exception as e:
+        logger.error(f"Failed to fetch {source_object} records: {e}")
+
+    return all_records
+
+
 async def check_single_contact(
     contact_id: str,
     ghl_location_id: str,
@@ -853,14 +909,18 @@ async def check_single_contact(
     internal_location_id: str,
     rule_id: Optional[str] = None,
     plan: str = "free",
+    source_object: str = "contacts",
 ) -> dict:
     """
-    Check a single contact for duplicates against all existing contacts.
+    Check a single record for duplicates against all existing records.
     Used for real-time duplicate detection in workflows.
+
+    Args:
+        source_object: The object type to check (contacts, companies, custom_objects.*)
 
     Returns dict with:
         - is_duplicate: bool
-        - matches: List of matched contacts with scores
+        - matches: List of matched records with scores
         - best_match: The highest confidence match (if any)
     """
     import logging
@@ -868,10 +928,10 @@ async def check_single_contact(
 
     supabase = get_supabase()
 
-    # Get rules to check against
+    # Get rules to check against - filter by source_object
     rules_query = supabase.table("match_rules").select("*").eq(
         "location_id", internal_location_id
-    ).eq("is_active", True).eq("source_object", "contacts")
+    ).eq("is_active", True).eq("source_object", source_object)
 
     if rule_id:
         rules_query = rules_query.eq("id", rule_id)
@@ -883,21 +943,45 @@ async def check_single_contact(
             "is_duplicate": False,
             "matches": [],
             "best_match": None,
-            "message": "No active rules found for contacts"
+            "message": f"No active rules found for {source_object}"
         }
 
-    # Fetch the new contact from GHL (fresh data)
+    # Fetch the record from GHL (fresh data)
     async with GHLClient(access_token, ghl_location_id) as client:
         try:
-            new_contact_result = await client.get_contact(contact_id)
-            new_contact = new_contact_result.get("contact", new_contact_result)
+            # Fetch based on source_object type
+            if source_object == "contacts":
+                new_record_result = await client.get_contact(contact_id)
+                new_record = new_record_result.get("contact", new_record_result)
+            elif source_object == "companies":
+                new_record = await client.get_company(contact_id)
+            elif source_object.startswith("custom_objects."):
+                schema_key = source_object
+                raw_record = await client.get_custom_object_record(schema_key, contact_id)
+                # Normalize custom object: flatten properties
+                props = raw_record.get("properties") or {}
+                new_record = {
+                    "id": raw_record.get("id"),
+                    "dateAdded": raw_record.get("createdAt"),
+                    "dateUpdated": raw_record.get("updatedAt"),
+                    "_raw": raw_record,
+                    **props
+                }
+            else:
+                # Unsupported type
+                return {
+                    "is_duplicate": False,
+                    "matches": [],
+                    "best_match": None,
+                    "error": f"Unsupported source object type: {source_object}"
+                }
         except Exception as e:
-            logger.error(f"Failed to fetch contact {contact_id}: {e}")
+            logger.error(f"Failed to fetch {source_object} record {contact_id}: {e}")
             return {
                 "is_duplicate": False,
                 "matches": [],
                 "best_match": None,
-                "error": f"Contact not found: {contact_id}"
+                "error": f"Record not found: {contact_id}"
             }
 
         all_matches = []
@@ -909,13 +993,23 @@ async def check_single_contact(
             review_threshold = float(rule.get("review_threshold", 0.70)) * 100
             auto_merge_threshold = float(rule.get("auto_merge_threshold", 0.95)) * 100
 
-            # Generate candidates targeted to this rule's fields
-            candidates, used_full_scan = await generate_candidates(
-                client=client,
-                new_contact=new_contact,
-                match_fields=match_fields,
-                contact_id=contact_id,
-            )
+            # Generate candidates - currently only supports contacts for targeted search
+            # Other object types will need full scan (not implemented for real-time yet)
+            if source_object == "contacts":
+                candidates, used_full_scan = await generate_candidates(
+                    client=client,
+                    new_contact=new_record,
+                    match_fields=match_fields,
+                    contact_id=contact_id,
+                )
+            else:
+                # For non-contact objects, we need to fetch all records and compare
+                # This is a full scan - may be slow for large datasets
+                candidates = await _fetch_all_records_for_object(
+                    client, source_object, contact_id
+                )
+                used_full_scan = True
+
             total_candidates += len(candidates)
 
             logger.info(
@@ -923,10 +1017,10 @@ async def check_single_contact(
                 f"{len(candidates)} candidates (full_scan={used_full_scan})"
             )
 
-            # Compare new contact against each candidate
+            # Compare new record against each candidate
             for existing in candidates:
                 is_match, confidence, field_scores = compare_records(
-                    new_contact, existing, match_fields
+                    new_record, existing, match_fields
                 )
 
                 if is_match and confidence >= review_threshold:
@@ -946,16 +1040,26 @@ async def check_single_contact(
     # Get the best match
     best_match = all_matches[0] if all_matches else None
 
+    # Build record summary based on object type
+    if source_object == "contacts":
+        record_checked = {
+            "id": contact_id,
+            "email": new_record.get("email"),
+            "phone": new_record.get("phone"),
+            "name": f"{new_record.get('firstName', '')} {new_record.get('lastName', '')}".strip(),
+        }
+    else:
+        # Generic summary for non-contact objects
+        record_checked = {
+            "id": contact_id,
+            "name": new_record.get("name") or new_record.get("id"),
+        }
+
     return {
         "is_duplicate": len(all_matches) > 0,
         "matches": all_matches,
         "best_match": best_match,
-        "contact_data": new_contact,  # Full contact data for merge
-        "contact_checked": {
-            "id": contact_id,
-            "email": new_contact.get("email"),
-            "phone": new_contact.get("phone"),
-            "name": f"{new_contact.get('firstName', '')} {new_contact.get('lastName', '')}".strip(),
-        },
+        "contact_data": new_record,  # Full record data for merge
+        "contact_checked": record_checked,
         "contacts_scanned": total_candidates,
     }

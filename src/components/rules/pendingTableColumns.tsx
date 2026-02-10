@@ -3,8 +3,7 @@ import { Button } from "@/components/ui/button";
 import { ConfidenceBadge } from "@/components/ui/confidence-badge";
 import { DataTableColumn } from "@/components/ui/data-table";
 import { MatchField } from "@/lib/api";
-import { getGhlRecordUrl } from "@/lib/utils";
-import { getMatchFieldSubheading, getRecordName } from "./helpers";
+import { getRecordName } from "./helpers";
 
 export interface PendingMatchRow {
   id: string;
@@ -26,66 +25,85 @@ export interface PendingRuleContext {
 }
 
 interface PendingTableColumnOptions {
-  locationId?: string;
   includeRuleColumn?: boolean;
   includeFoundColumn?: boolean;
+  columnDisplayField?: string;
   resolveRuleContext: (match: PendingMatchRow) => PendingRuleContext | undefined;
+}
+
+function formatFieldContextLabel(field: string): string {
+  const normalized = field.replace(/^customField\./, "");
+  const leaf = normalized.split(".").pop() || normalized;
+  const words = leaf
+    .replace(/_/g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (words.length === 0) return field;
+  if (words.length === 1 && words[0].length <= 4) return words[0].toUpperCase();
+
+  return words
+    .map((word) => word[0].toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function getMatchFieldsTooltip(matchFields: MatchField[]): string | undefined {
+  if (!matchFields.length) return undefined;
+  const fields = [
+    ...new Set(
+      matchFields
+        .map((field) => field.field)
+        .filter(Boolean)
+        .map((field) => formatFieldContextLabel(field))
+    ),
+  ];
+  if (!fields.length) return undefined;
+  return `Match fields: ${fields.join(", ")}`;
 }
 
 function renderRecordCell(
   match: PendingMatchRow,
   side: "a" | "b",
-  locationId: string | undefined,
   context: PendingRuleContext | undefined
 ) {
   const matchFields = context?.matchFields || [];
-  const sourceObject = context?.sourceObject || "contacts";
   const recordData = side === "a" ? match.record_a_data || {} : match.record_b_data || {};
-  const recordId = side === "a" ? match.record_a_id : match.record_b_id;
   const name = getRecordName(recordData, matchFields, context?.displayField);
-  const subheading = getMatchFieldSubheading(recordData, matchFields);
-  const showSubheading = Boolean(subheading && subheading !== name);
-  const ghlUrl = locationId ? getGhlRecordUrl(locationId, sourceObject, recordId) : null;
+  const matchTooltip = getMatchFieldsTooltip(matchFields);
 
   return (
     <div>
       <Link
         to={`/match-rules/${match.rule_id}/review/${match.id}`}
         className="font-medium hover:text-primary hover:underline"
+        title={matchTooltip}
       >
         {name}
       </Link>
-      {showSubheading && ghlUrl && (
-        <a
-          href={ghlUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block text-xs text-muted-foreground hover:text-primary hover:underline"
-        >
-          {subheading}
-        </a>
-      )}
-      {showSubheading && !ghlUrl && (
-        <span className="block text-xs text-muted-foreground">{subheading}</span>
-      )}
     </div>
   );
 }
 
 export function createPendingMatchColumns({
-  locationId,
   includeRuleColumn = false,
   includeFoundColumn = true,
+  columnDisplayField,
   resolveRuleContext,
 }: PendingTableColumnOptions): DataTableColumn<PendingMatchRow>[] {
+  const headerSuffix = columnDisplayField
+    ? ` (${formatFieldContextLabel(columnDisplayField)})`
+    : "";
+
   const columns: DataTableColumn<PendingMatchRow>[] = [
     {
-      header: "Record A",
-      accessor: (match) => renderRecordCell(match, "a", locationId, resolveRuleContext(match)),
+      header: `Record A${headerSuffix}`,
+      accessor: (match) => renderRecordCell(match, "a", resolveRuleContext(match)),
     },
     {
-      header: "Record B",
-      accessor: (match) => renderRecordCell(match, "b", locationId, resolveRuleContext(match)),
+      header: `Record B${headerSuffix}`,
+      accessor: (match) => renderRecordCell(match, "b", resolveRuleContext(match)),
     },
   ];
 

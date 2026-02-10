@@ -412,6 +412,7 @@ async def _check_contact_for_duplicates(
                     internal_location_id=internal_location_id,
                     rule_id=rule_id,
                     plan=plan,
+                    source_object=source_object,
                 )
 
                 matches_found = len(result.get("matches", []))

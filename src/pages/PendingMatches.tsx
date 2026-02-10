@@ -327,8 +327,8 @@ export default function PendingMatches() {
   const columns = useMemo(
     () =>
       createPendingMatchColumns({
-        locationId,
         includeFoundColumn: true,
+        columnDisplayField: displayField,
         resolveRuleContext: () => ({
           ruleId: ruleId || "",
           ruleName: rule?.name,
@@ -337,7 +337,7 @@ export default function PendingMatches() {
           displayField,
         }),
       }),
-    [displayField, locationId, matchFields, rule?.name, ruleId, sourceObject]
+    [displayField, matchFields, rule?.name, ruleId, sourceObject]
   );
 
   if (authLoading || ruleLoading || matchesLoading) {

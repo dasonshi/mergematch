@@ -120,10 +120,14 @@ class RuleOptionsResponse(BaseModel):
 async def get_rule_options(
     authorization: Optional[str] = Header(None, alias="Authorization"),
     location_id: Optional[str] = Query(None, description="GHL Location ID"),
+    source_object: Optional[str] = Query(None, description="Filter by source object type (contacts, companies, custom_objects.*)"),
 ):
     """
     Get available match rules for dropdown in GHL workflow action.
     Returns rules in GHL External API format for Select field.
+
+    Args:
+        source_object: Optional filter by object type. If not provided, returns all active rules.
     """
     # Authenticate: JWT or GHL location ID lookup
     user = await authenticate_ghl_action(
@@ -133,12 +137,16 @@ async def get_rule_options(
 
     supabase = get_supabase()
 
-    # Get active contact rules for this location
-    rules_result = supabase.table("match_rules").select(
+    # Get active rules for this location
+    rules_query = supabase.table("match_rules").select(
         "id, name"
-    ).eq("location_id", user.location_id).eq("is_active", True).eq(
-        "source_object", "contacts"
-    ).execute()
+    ).eq("location_id", user.location_id).eq("is_active", True)
+
+    # Filter by source_object if provided
+    if source_object:
+        rules_query = rules_query.eq("source_object", source_object)
+
+    rules_result = rules_query.execute()
 
     options = [
         RuleOption(label="All Active Rules", value="")

@@ -443,8 +443,8 @@ export default function MatchRuleDetail() {
   const matchColumns = useMemo(
     () =>
       createPendingMatchColumns({
-        locationId,
         includeFoundColumn: true,
+        columnDisplayField: displayField,
         resolveRuleContext: () => ({
           ruleId: id || "",
           ruleName: rule?.name,
@@ -453,7 +453,7 @@ export default function MatchRuleDetail() {
           displayField,
         }),
       }),
-    [displayField, id, locationId, rule?.match_fields, rule?.name, rule?.source_object]
+    [displayField, id, rule?.match_fields, rule?.name, rule?.source_object]
   );
 
   // Format date for inline display

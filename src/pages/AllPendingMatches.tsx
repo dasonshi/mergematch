@@ -302,12 +302,19 @@ export default function AllPendingMatches() {
     startBulkMerge(matchIds);
   };
 
+  const selectedRuleDisplayField = useMemo(() => {
+    if (ruleFilter === "all") return undefined;
+    const selectedRule = rulesMap.get(ruleFilter);
+    if (!selectedRule) return undefined;
+    return displayFieldByObject.get(selectedRule.source_object) || undefined;
+  }, [displayFieldByObject, ruleFilter, rulesMap]);
+
   const columns = useMemo(
     () =>
       createPendingMatchColumns({
-        locationId,
         includeRuleColumn: true,
         includeFoundColumn: true,
+        columnDisplayField: selectedRuleDisplayField,
         resolveRuleContext: (item) => {
           const rule = rulesMap.get(item.rule_id);
           if (!rule) {
@@ -328,7 +335,7 @@ export default function AllPendingMatches() {
           };
         },
       }),
-    [displayFieldByObject, locationId, rulesMap]
+    [displayFieldByObject, rulesMap, selectedRuleDisplayField]
   );
 
   // Selection display count

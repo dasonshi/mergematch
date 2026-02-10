@@ -85,7 +85,7 @@ const TEXT_MATCH_TYPES = [
 const isFixedAlgorithmField = (fieldId: string) => fieldId in FIXED_ALGORITHM_FIELDS;
 
 const strategies = [
-  { id: "standard", name: "Standard Contact Merge", description: "Prefer the record with the most complete data", prebuilt: true },
+  { id: "standard", name: "Standard Merge", description: "Prefer the record with the most complete data", prebuilt: true },
   { id: "recent", name: "Most Recent Wins", description: "Prefer values from the most recently updated record", prebuilt: true },
   { id: "oldest", name: "Original Record Priority", description: "Prefer the oldest record by creation date", prebuilt: true },
   { id: "manual", name: "Manual Review Required", description: "Require manual selection for every field", prebuilt: true },
