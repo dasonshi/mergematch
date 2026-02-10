@@ -508,10 +508,12 @@ class GHLClient:
     ) -> Dict[str, Any]:
         """Create a custom object record (for rollback)."""
         logger.info(f"[GHL] POST /objects/{schema_key}/records")
-        # Note: Location is determined by the Sub-Account Token, not passed in body
         response = await self._client.post(
             f"/objects/{schema_key}/records",
-            json={"properties": properties}
+            json={
+                "locationId": self.location_id,
+                "properties": properties
+            }
         )
         if response.status_code >= 400:
             error_detail = response.text
