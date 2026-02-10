@@ -14,6 +14,7 @@ from app.core.rate_limit import limiter
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+MERGEABLE_OBJECTS = {"contacts", "companies", "opportunities"}
 
 
 class MatchField(BaseModel):
@@ -95,25 +96,14 @@ async def create_rule(
 ):
     """Create a new match rule."""
     # Validate source_object
-    # Note: companies and opportunities are not fully supported for merging yet
-    MERGEABLE_OBJECTS = {"contacts"}
     is_custom_object = rule.source_object.startswith("custom_objects.")
-
-    if rule.source_object in ("companies", "opportunities"):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"'{rule.source_object}' rules are not yet supported. "
-                "Merging is currently available for contacts and custom objects."
-            ),
-        )
 
     if not is_custom_object and rule.source_object not in MERGEABLE_OBJECTS:
         raise HTTPException(
             status_code=400,
             detail=(
                 f"Cannot create rule for '{rule.source_object}'. "
-                "Supported types: contacts, custom_objects.*"
+                "Supported types: contacts, companies, opportunities, custom_objects.*"
             ),
         )
 
@@ -182,25 +172,14 @@ async def update_rule(
 ):
     """Update a match rule."""
     # Validate source_object
-    # Note: companies and opportunities are not fully supported for merging yet
-    MERGEABLE_OBJECTS = {"contacts"}
     is_custom_object = rule.source_object.startswith("custom_objects.")
-
-    if rule.source_object in ("companies", "opportunities"):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"'{rule.source_object}' rules are not yet supported. "
-                "Merging is currently available for contacts and custom objects."
-            ),
-        )
 
     if not is_custom_object and rule.source_object not in MERGEABLE_OBJECTS:
         raise HTTPException(
             status_code=400,
             detail=(
                 f"Cannot update rule for '{rule.source_object}'. "
-                "Supported types: contacts, custom_objects.*"
+                "Supported types: contacts, companies, opportunities, custom_objects.*"
             ),
         )
 
