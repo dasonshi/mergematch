@@ -7,18 +7,17 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { RefreshCw, ArrowRight, Plus, Check, ClipboardList, FolderOpen, Building2, Users, Loader2, TrendingUp, GitMerge, AlertCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api, MatchRule, Merge, MatchPair } from "@/lib/api";
+import { api, MatchRule, Merge, MatchPair, ObjectType } from "@/lib/api";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 import { DataTable, DataTableColumn } from "@/components/ui/data-table";
-import { ConfidenceBadge } from "@/components/ui/confidence-badge";
 import { MergeStatusBadge } from "@/components/ui/merge-status-badge";
 import { NoRulesEmpty, NoMergesEmpty } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { AnimatedCounter } from "@/components/ui/animated-counter";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatsRow } from "@/components/ui/achievement-badge";
-import { getRecordName, getFirstMatchFieldValue } from "@/components/rules/helpers";
+import { createPendingMatchColumns } from "@/components/rules/pendingTableColumns";
 import { getGhlRecordUrl } from "@/lib/utils";
 import { RuleActionButtons } from "@/components/rule-action-buttons";
 import { MergeActionButtons } from "@/components/merge-action-buttons";
@@ -154,6 +153,13 @@ export default function Dashboard() {
     staleTime: 0,
   });
 
+  // Fetch object schema metadata for display-field aware record titles.
+  const { data: availableObjects = [] } = useQuery<ObjectType[]>({
+    queryKey: ["availableObjects", locationId],
+    queryFn: () => api.getAvailableObjects(),
+    enabled: isAuthenticated && !!locationId,
+  });
+
   // Fetch pending match counts (lightweight - no row data)
   const { data: matchCountsData, isLoading: matchCountsLoading, isError: matchCountsError, refetch: refetchMatchCounts } = useQuery({
     queryKey: ['match-counts', 'pending', locationId],
@@ -209,11 +215,10 @@ export default function Dashboard() {
   // Rollback mutation
   const rollbackMutation = useMutation({
     mutationFn: (mergeId: string) => api.rollbackMerge(mergeId),
-    onSuccess: (data) => {
-      const restoredId = data.restored_record_id;
+    onSuccess: () => {
       toast({
         title: "Merge Rolled Back",
-        description: "The merge has been undone and the duplicate contact restored.",
+        description: "The merge has been undone and the duplicate record restored.",
       });
       queryClient.invalidateQueries({ queryKey: ["merges"] });
       queryClient.invalidateQueries({ queryKey: ["matches"] });
@@ -407,112 +412,35 @@ export default function Dashboard() {
     },
   ];
 
-  // Create a map of rule IDs to rules for quick lookup
-  const rulesMap = new Map(rules.map((r: MatchRule) => [r.id, r]));
+  // Create maps for quick rule/object metadata lookup.
+  const rulesMap = new Map(rules.map((rule) => [rule.id, rule]));
+  const displayFieldByObject = new Map(
+    availableObjects.map((objectType) => [objectType.id, objectType.displayField] as const)
+  );
 
-  // Define columns for Pending Matches table
-  const pendingMatchesColumns: DataTableColumn<MatchPair>[] = [
-    {
-      header: "Record A",
-      accessor: (item) => {
-        const recordA = item.record_a_data || {};
-        const rule = rulesMap.get(item.rule_id);
-        const matchFields = rule?.match_fields || [];
-        const name = getRecordName(recordA, matchFields);
-        const fieldValue = getFirstMatchFieldValue(recordA, matchFields);
-        const ghlUrl = getGhlRecordUrl(locationId!, rule?.source_object || "contacts", item.record_a_id);
-        // Don't show subheading if it matches the name (used as title)
-        const showFieldValue = fieldValue && fieldValue !== name;
-        return (
-          <div>
-            <Link
-              to={`/match-rules/${item.rule_id}/review/${item.id}`}
-              className="font-medium hover:text-primary hover:underline"
-            >
-              {name}
-            </Link>
-            {showFieldValue && ghlUrl && (
-              <a
-                href={ghlUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block text-xs text-muted-foreground hover:text-primary hover:underline"
-              >
-                {fieldValue}
-              </a>
-            )}
-            {showFieldValue && !ghlUrl && (
-              <span className="block text-xs text-muted-foreground">{fieldValue}</span>
-            )}
-          </div>
-        );
-      },
+  const pendingMatchesColumns = createPendingMatchColumns({
+    locationId,
+    includeRuleColumn: true,
+    includeFoundColumn: false,
+    resolveRuleContext: (item) => {
+      const rule = rulesMap.get(item.rule_id);
+      if (!rule) {
+        return {
+          ruleId: item.rule_id,
+          ruleName: "Unknown",
+          sourceObject: "contacts",
+          matchFields: [],
+        };
+      }
+      return {
+        ruleId: rule.id,
+        ruleName: rule.name,
+        sourceObject: rule.source_object || "contacts",
+        matchFields: rule.match_fields || [],
+        displayField: displayFieldByObject.get(rule.source_object),
+      };
     },
-    {
-      header: "Record B",
-      accessor: (item) => {
-        const recordB = item.record_b_data || {};
-        const rule = rulesMap.get(item.rule_id);
-        const matchFields = rule?.match_fields || [];
-        const name = getRecordName(recordB, matchFields);
-        const fieldValue = getFirstMatchFieldValue(recordB, matchFields);
-        const ghlUrl = getGhlRecordUrl(locationId!, rule?.source_object || "contacts", item.record_b_id);
-        // Don't show subheading if it matches the name (used as title)
-        const showFieldValue = fieldValue && fieldValue !== name;
-        return (
-          <div>
-            <Link
-              to={`/match-rules/${item.rule_id}/review/${item.id}`}
-              className="font-medium hover:text-primary hover:underline"
-            >
-              {name}
-            </Link>
-            {showFieldValue && ghlUrl && (
-              <a
-                href={ghlUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block text-xs text-muted-foreground hover:text-primary hover:underline"
-              >
-                {fieldValue}
-              </a>
-            )}
-            {showFieldValue && !ghlUrl && (
-              <span className="block text-xs text-muted-foreground">{fieldValue}</span>
-            )}
-          </div>
-        );
-      },
-    },
-    {
-      header: "Rule",
-      hideOnMobile: true,
-      accessor: (item) => {
-        const rule = rulesMap.get(item.rule_id);
-        return (
-          <Link
-            to={`/match-rules/${item.rule_id}`}
-            className="text-sm text-muted-foreground hover:text-primary"
-          >
-            {rule?.name || "Unknown"}
-          </Link>
-        );
-      },
-    },
-    {
-      header: "Confidence",
-      accessor: (item) => <ConfidenceBadge score={item.confidence_score || 0} />,
-    },
-    {
-      header: "Actions",
-      align: "right",
-      accessor: (item) => (
-        <Button size="sm" asChild>
-          <Link to={`/match-rules/${item.rule_id}/review/${item.id}`}>Merge</Link>
-        </Button>
-      ),
-    },
-  ];
+  });
 
   // Define columns for Recent Activity table
   const activityColumns: DataTableColumn<Merge>[] = [
@@ -526,20 +454,25 @@ export default function Dashboard() {
     },
     {
       header: "Record",
-      accessor: (merge) => (
-        merge.status !== 'failed' && locationId ? (
-          <a
-            href={`https://app.gohighlevel.com/v2/location/${locationId}/contacts/detail/${merge.master_record_id}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-medium text-foreground hover:text-primary hover:underline"
-          >
-            {merge.master_record_name || 'Unknown'}
-          </a>
-        ) : (
-          <span className="font-medium">{merge.master_record_name || 'Unknown'}</span>
-        )
-      ),
+      accessor: (merge) => {
+        const url = merge.status !== "failed" && locationId
+          ? getGhlRecordUrl(locationId, merge.source_object || "contacts", merge.master_record_id)
+          : null;
+        return (
+          url ? (
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-foreground hover:text-primary hover:underline"
+            >
+              {merge.master_record_name || 'Unknown'}
+            </a>
+          ) : (
+            <span className="font-medium">{merge.master_record_name || 'Unknown'}</span>
+          )
+        );
+      },
     },
     {
       header: "Status",

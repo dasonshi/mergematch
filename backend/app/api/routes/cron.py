@@ -125,9 +125,7 @@ async def process_scheduled_scans(
     # Join with locations to get ghl_location_id and tenant plan
     rules_result = supabase.table("match_rules").select(
         "*, locations!inner(id, ghl_location_id, tenant_id, tenants!inner(plan))"
-    ).eq("is_active", True).neq("schedule_frequency", "manual").neq(
-        "source_object", "companies"
-    ).neq("source_object", "opportunities").execute()
+    ).eq("is_active", True).neq("schedule_frequency", "manual").execute()
 
     rules = rules_result.data or []
     logger.info(f"Found {len(rules)} scheduled rules to check")

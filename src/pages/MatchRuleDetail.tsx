@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -21,11 +21,10 @@ import { useLocation } from "@/contexts/LocationContext";
 import { useUpgradeModal } from "@/components/ui/upgrade-modal";
 import { useToast } from "@/hooks/use-toast";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
-import { api, MatchPair } from "@/lib/api";
-import { DataTable, DataTableColumn } from "@/components/ui/data-table";
-import { ConfidenceBadge } from "@/components/ui/confidence-badge";
+import { api } from "@/lib/api";
+import { DataTable } from "@/components/ui/data-table";
 import { TablePagination } from "@/components/ui/table-pagination";
-import { MergeHistoryCard, RuleSummaryCard, getRecordName, getMatchFieldSubheading } from "@/components/rules";
+import { MergeHistoryCard, RuleSummaryCard, createPendingMatchColumns } from "@/components/rules";
 
 export default function MatchRuleDetail() {
   const { id } = useParams();
@@ -437,77 +436,25 @@ export default function MatchRuleDetail() {
   const pendingMatches = matchesData?.data || [];
   const pendingTotal = matchesData?.total ?? 0;
   const mergeHistory = mergesData?.data || [];
-  const matchFields = rule?.match_fields || [];
 
   // Get display field for custom objects (from schema's primaryDisplayProperty)
   const displayField = rule?.source_object ? getObjectDisplayField(rule.source_object) : undefined;
 
-  // Define columns for the pending matches table
-  const matchColumns: DataTableColumn<MatchPair>[] = [
-    {
-      header: "Record A",
-      accessor: (match) => {
-        const recordA = match.record_a_data || {};
-        const matchFields = rule?.match_fields || [];
-        const name = getRecordName(recordA, matchFields, displayField);
-        const subheading = getMatchFieldSubheading(recordA, matchFields);
-        // Always show subheading if we have match fields (shows what fields matched)
-        return (
-          <div>
-            <Link
-              to={`/match-rules/${id}/review/${match.id}`}
-              className="font-medium hover:text-primary hover:underline"
-            >
-              {name}
-            </Link>
-            {subheading && (
-              <div className="text-xs text-muted-foreground">
-                {subheading}
-              </div>
-            )}
-          </div>
-        );
-      },
-    },
-    {
-      header: "Record B",
-      accessor: (match) => {
-        const recordB = match.record_b_data || {};
-        const matchFields = rule?.match_fields || [];
-        const name = getRecordName(recordB, matchFields, displayField);
-        const subheading = getMatchFieldSubheading(recordB, matchFields);
-        // Always show subheading if we have match fields (shows what fields matched)
-        return (
-          <div>
-            <Link
-              to={`/match-rules/${id}/review/${match.id}`}
-              className="font-medium hover:text-primary hover:underline"
-            >
-              {name}
-            </Link>
-            {subheading && (
-              <div className="text-xs text-muted-foreground">
-                {subheading}
-              </div>
-            )}
-          </div>
-        );
-      },
-    },
-    {
-      header: "Confidence",
-      accessor: (match) => <ConfidenceBadge score={match.confidence_score || 0} />,
-    },
-    {
-      header: "Actions",
-      align: "right" as const,
-      accessor: (match) => (
-        <Button size="sm" asChild>
-          <Link to={`/match-rules/${id}/review/${match.id}`}>Merge</Link>
-        </Button>
-      ),
-    },
-  ];
+  const matchColumns = useMemo(
+    () =>
+      createPendingMatchColumns({
+        locationId,
+        includeFoundColumn: true,
+        resolveRuleContext: () => ({
+          ruleId: id || "",
+          ruleName: rule?.name,
+          sourceObject: rule?.source_object || "contacts",
+          matchFields: rule?.match_fields || [],
+          displayField,
+        }),
+      }),
+    [displayField, id, locationId, rule?.match_fields, rule?.name, rule?.source_object]
+  );
 
   // Format date for inline display
   const formatInlineDate = (dateStr: string | null | undefined) => {

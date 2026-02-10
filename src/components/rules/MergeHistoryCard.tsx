@@ -1,21 +1,13 @@
 import { Link } from "react-router-dom";
-import { RotateCcw, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { DataTable, DataTableColumn } from "@/components/ui/data-table";
-import { MergeStatusBadge } from "@/components/ui/merge-status-badge";
+import { DataTable } from "@/components/ui/data-table";
 import { useLocation } from "@/contexts/LocationContext";
-import { getGhlRecordUrl } from "@/lib/utils";
+import { createMergeHistoryColumns, MergeHistoryRow } from "./mergeHistoryColumns";
 
-interface Merge {
-  id: string;
-  master_record_name?: string;
-  master_record_id?: string;
-  status: string;
-  error_message?: string;
-  created_at?: string;
-}
+type Merge = MergeHistoryRow;
 
 interface MergeHistoryCardProps {
   mergeHistory: Merge[];
@@ -31,76 +23,13 @@ export function MergeHistoryCard({
   isRollbackPending,
 }: MergeHistoryCardProps) {
   const { locationId } = useLocation();
-
-  // Build CRM contact URL (assumes contacts since source_object isn't stored in merge record)
-  const getCrmContactUrl = (contactId: string) => {
-    return getGhlRecordUrl(locationId!, "contacts", contactId);
-  };
-
-  const columns: DataTableColumn<Merge>[] = [
-    {
-      header: "Master Record",
-      accessor: (item) => {
-        if (item.status !== 'failed' && locationId && item.master_record_id) {
-          return (
-            <a
-              href={getCrmContactUrl(item.master_record_id)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-medium text-foreground hover:text-primary hover:underline"
-            >
-              {item.master_record_name || item.master_record_id?.slice(0, 8) + "..."}
-            </a>
-          );
-        }
-        return <span className="font-medium">{item.master_record_name || item.master_record_id?.slice(0, 8) + "..."}</span>;
-      },
-    },
-    {
-      header: "Status",
-      accessor: (item) => (
-        <div className="flex items-center gap-2">
-          <MergeStatusBadge status={item.status} />
-          {item.status === 'failed' && item.error_message && (
-            <span className="text-xs text-destructive/80 max-w-[150px] truncate" title={item.error_message}>
-              {item.error_message}
-            </span>
-          )}
-        </div>
-      ),
-    },
-    {
-      header: "Date",
-      hideOnMobile: true,
-      accessor: (item) => (
-        <span className="text-muted-foreground">
-          {item.created_at ? new Date(item.created_at).toLocaleString() : "—"}
-        </span>
-      ),
-    },
-    {
-      header: "Actions",
-      align: "right" as const,
-      accessor: (item) => (
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" size="sm" asChild>
-            <Link to={`/history/${item.id}`}>View</Link>
-          </Button>
-          {item.status === "completed" && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onRollback(item.id)}
-              disabled={isRollbackPending}
-            >
-              <RotateCcw className="h-4 w-4 mr-1" />
-              Restore
-            </Button>
-          )}
-        </div>
-      ),
-    },
-  ];
+  const columns = createMergeHistoryColumns({
+    locationId,
+    includeDateColumn: true,
+    dateHeader: "Date",
+    onRestore: onRollback,
+    restorePending: isRollbackPending,
+  });
 
   return (
     <Card className="overflow-hidden">

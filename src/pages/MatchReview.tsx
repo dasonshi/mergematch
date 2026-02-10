@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Star, AlertTriangle, Loader2, Save, ChevronDown, ChevronUp, Plus, Trash2, ArrowRight, Settings } from "lucide-react";
@@ -26,7 +26,7 @@ import { computeStrategySelections, computeMasterId, StrategyId } from "@/lib/me
 import { LockedFeatureOverlay, UpgradeBadge } from "@/components/ui/upgrade-badge";
 import { useUpgradeModal } from "@/components/ui/upgrade-modal";
 import { isTypeCompatible, getIncompatibilityReason } from "@/lib/field-compatibility";
-import { getRecordName } from "@/components/rules/helpers";
+import { getRecordName, normalizeDisplayValue } from "@/components/rules/helpers";
 
 // Standard fields for contacts
 const CONTACT_STANDARD_FIELDS = [
@@ -364,13 +364,10 @@ export default function MatchReview() {
     setSelections(newSelections);
   };
 
-  // Helper to format display values (handles boolean, null, arrays)
-  const formatDisplayValue = (value: unknown): string => {
-    if (value === null || value === undefined) return "";
-    if (Array.isArray(value)) return value.join(", ");
-    if (typeof value === "boolean") return value ? "Yes" : "No";
-    return String(value);
-  };
+  // Shared normalizer avoids "[object Object]" and nested-array artifacts.
+  const formatDisplayValue = useCallback((value: unknown): string => {
+    return normalizeDisplayValue(value);
+  }, []);
 
   // Helper to get field label - check fieldOptions first for custom object fields
   const getFieldLabel = (field: string) => {

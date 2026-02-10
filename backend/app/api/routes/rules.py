@@ -63,7 +63,7 @@ class MergeSettings(BaseModel):
 
 class MatchRuleCreate(BaseModel):
     name: str = Field(..., max_length=200)
-    source_object: str = Field(..., max_length=50)  # contacts, custom_objects.* (companies/opportunities not supported)
+    source_object: str = Field(..., max_length=50)  # contacts, companies, opportunities, custom_objects.*
     match_fields: List[MatchField]
     auto_merge_threshold: float = 95.0
     review_threshold: float = 70.0
@@ -94,20 +94,27 @@ async def create_rule(
     user: AuthenticatedUser = Depends(get_user),
 ):
     """Create a new match rule."""
-    # Validate source_object - only contacts and custom_objects supported
-    SUPPORTED_SOURCE_OBJECTS = {"contacts"}
+    # Validate source_object
+    # Note: companies and opportunities are not fully supported for merging yet
+    MERGEABLE_OBJECTS = {"contacts"}
     is_custom_object = rule.source_object.startswith("custom_objects.")
 
-    if not is_custom_object and rule.source_object not in SUPPORTED_SOURCE_OBJECTS:
-        unsupported_reason = {
-            "companies": "GHL API does not support company updates/deletions",
-            "opportunities": "Opportunity merging is not yet implemented"
-        }.get(rule.source_object, "Unsupported object type")
-
+    if rule.source_object in ("companies", "opportunities"):
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot create rule for '{rule.source_object}': {unsupported_reason}. "
-                   f"Supported types: contacts, custom_objects.*"
+            detail=(
+                f"'{rule.source_object}' rules are not yet supported. "
+                "Merging is currently available for contacts and custom objects."
+            ),
+        )
+
+    if not is_custom_object and rule.source_object not in MERGEABLE_OBJECTS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Cannot create rule for '{rule.source_object}'. "
+                "Supported types: contacts, custom_objects.*"
+            ),
         )
 
     supabase = get_supabase()
@@ -174,20 +181,27 @@ async def update_rule(
     user: AuthenticatedUser = Depends(get_user),
 ):
     """Update a match rule."""
-    # Validate source_object - only contacts and custom_objects supported
-    SUPPORTED_SOURCE_OBJECTS = {"contacts"}
+    # Validate source_object
+    # Note: companies and opportunities are not fully supported for merging yet
+    MERGEABLE_OBJECTS = {"contacts"}
     is_custom_object = rule.source_object.startswith("custom_objects.")
 
-    if not is_custom_object and rule.source_object not in SUPPORTED_SOURCE_OBJECTS:
-        unsupported_reason = {
-            "companies": "GHL API does not support company updates/deletions",
-            "opportunities": "Opportunity merging is not yet implemented"
-        }.get(rule.source_object, "Unsupported object type")
-
+    if rule.source_object in ("companies", "opportunities"):
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot create rule for '{rule.source_object}': {unsupported_reason}. "
-                   f"Supported types: contacts, custom_objects.*"
+            detail=(
+                f"'{rule.source_object}' rules are not yet supported. "
+                "Merging is currently available for contacts and custom objects."
+            ),
+        )
+
+    if not is_custom_object and rule.source_object not in MERGEABLE_OBJECTS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Cannot update rule for '{rule.source_object}'. "
+                "Supported types: contacts, custom_objects.*"
+            ),
         )
 
     # Free tier: cannot edit rules

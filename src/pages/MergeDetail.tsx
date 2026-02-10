@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Star, ExternalLink, Loader2, RotateCcw, Check, X, ChevronDown, ChevronUp, Save } from "lucide-react";
@@ -10,7 +10,7 @@ import { MergeStatusBadge, getMergeStatusLabel } from "@/components/ui/merge-sta
 import { cn, getGhlRecordUrl } from "@/lib/utils";
 import { useLocation } from "@/contexts/LocationContext";
 import { api } from "@/lib/api";
-import { getRecordName } from "@/components/rules/helpers";
+import { getRecordName, normalizeDisplayValue } from "@/components/rules/helpers";
 
 // Standard fields for contacts
 const CONTACT_STANDARD_FIELDS = [
@@ -98,6 +98,18 @@ export default function MergeDetail() {
     enabled: !!locationId && !!mergeId,
   });
 
+  const rule = merge?.rule as RuleData | undefined;
+  // Fetch object schema metadata so custom-object titles resolve to primary display fields.
+  const { data: availableObjects = [] } = useQuery({
+    queryKey: ["availableObjects", locationId],
+    queryFn: () => api.getAvailableObjects(),
+    enabled: !!locationId,
+  });
+  const objectDisplayField = useMemo(() => {
+    if (!rule?.source_object) return undefined;
+    return availableObjects.find((objectType) => objectType.id === rule.source_object)?.displayField;
+  }, [availableObjects, rule?.source_object]);
+
   if (authLoading || isLoading || !merge) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -110,12 +122,16 @@ export default function MergeDetail() {
   const duplicateSnapshot = merge.duplicate_snapshot || {};
   const fieldSelections = merge.field_selections || {};
   const crmLocationId = merge.ghl_location_id || locationId;
-  const rule = merge.rule as RuleData | undefined;
 
-  // Build CRM contact URL (assumes contacts since source_object isn't stored in merge record)
-  const getCrmContactUrl = (contactId: string) => {
-    return getGhlRecordUrl(crmLocationId!, "contacts", contactId);
+  // Build CRM URL from the matched object type; returns null for custom objects.
+  const getCrmUrl = (recordId: string) => {
+    if (!crmLocationId) return null;
+    return getGhlRecordUrl(crmLocationId, rule?.source_object || "contacts", recordId);
   };
+  const masterCrmUrl = merge.status === "completed" ? getCrmUrl(merge.master_record_id) : null;
+  const restoredCrmUrl = merge.status === "rolled_back" && merge.restored_record_id
+    ? getCrmUrl(merge.restored_record_id)
+    : null;
 
   // Determine which record was master/duplicate based on IDs
   const masterIsMasterSnapshot = masterSnapshot?.id === merge.master_record_id;
@@ -158,11 +174,8 @@ export default function MergeDetail() {
   }
 
   const getDisplayValue = (value: unknown) => {
-    if (value === null || value === undefined) return "(empty)";
-    if (Array.isArray(value)) return value.length > 0 ? value.join(", ") : "(empty)";
-    if (typeof value === "boolean") return value ? "Yes" : "No";
-    if (typeof value === "object") return JSON.stringify(value);
-    return String(value) || "(empty)";
+    const normalized = normalizeDisplayValue(value);
+    return normalized || "(empty)";
   };
 
   const getResultValue = (field: string) => {
@@ -271,11 +284,11 @@ export default function MergeDetail() {
               <div className="flex items-center gap-2 mt-1">
                 <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
                 <span className="font-medium">
-                  {getRecordName(masterSnapshot, rule?.match_fields)}
+                  {getRecordName(masterSnapshot, rule?.match_fields, objectDisplayField)}
                 </span>
-                {merge.status === "completed" && getCrmContactUrl(merge.master_record_id) && (
+                {masterCrmUrl && (
                   <a
-                    href={getCrmContactUrl(merge.master_record_id)!}
+                    href={masterCrmUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
@@ -299,11 +312,11 @@ export default function MergeDetail() {
                   <X className="h-4 w-4 text-red-500" />
                 )}
                 <span className="font-medium">
-                  {getRecordName(duplicateSnapshot, rule?.match_fields)}
+                  {getRecordName(duplicateSnapshot, rule?.match_fields, objectDisplayField)}
                 </span>
-                {merge.status === "rolled_back" && merge.restored_record_id && getCrmContactUrl(merge.restored_record_id) && (
+                {restoredCrmUrl && (
                   <a
-                    href={getCrmContactUrl(merge.restored_record_id)!}
+                    href={restoredCrmUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
@@ -386,7 +399,7 @@ export default function MergeDetail() {
                       <span className="font-semibold text-foreground">Master</span>
                     </div>
                     <div className="text-sm font-normal text-muted-foreground mt-1">
-                      {getRecordName(recordA || {}, rule?.match_fields)}
+                      {getRecordName(recordA || {}, rule?.match_fields, objectDisplayField)}
                     </div>
                   </th>
                   <th className="min-w-40 py-3 px-4 text-left">
@@ -394,7 +407,7 @@ export default function MergeDetail() {
                       <span className="font-semibold text-foreground">Duplicate</span>
                     </div>
                     <div className="text-sm font-normal text-muted-foreground mt-1">
-                      {getRecordName(recordB || {}, rule?.match_fields)}
+                      {getRecordName(recordB || {}, rule?.match_fields, objectDisplayField)}
                     </div>
                   </th>
                   <th className="min-w-40 py-3 px-4 text-left bg-muted/50">
@@ -520,15 +533,15 @@ export default function MergeDetail() {
         <Button variant="outline" asChild>
           <Link to="/history">Back to History</Link>
         </Button>
-        {merge.status === "completed" && (
+        {masterCrmUrl && (
           <Button variant="outline" asChild>
             <a
-              href={getCrmContactUrl(merge.master_record_id)}
+              href={masterCrmUrl}
               target="_blank"
               rel="noopener noreferrer"
             >
               <ExternalLink className="mr-2 h-4 w-4" />
-              View Master Contact
+              View Master Record
             </a>
           </Button>
         )}

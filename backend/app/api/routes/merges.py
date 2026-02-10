@@ -163,10 +163,10 @@ async def list_merges(
 
     # Use inner join when filtering by rule_id for accurate results
     if rule_id:
-        select_str = "*, match_pairs!inner(rule_id, match_rules(id, name))"
+        select_str = "*, match_pairs!inner(rule_id, match_rules(id, name, source_object))"
         count_select = "id, match_pairs!inner(rule_id)"
     else:
-        select_str = "*, match_pairs(rule_id, match_rules(id, name))"
+        select_str = "*, match_pairs(rule_id, match_rules(id, name, source_object))"
         count_select = "id"
 
     query = supabase.table("merges").select(select_str).eq("location_id", user.location_id)
@@ -209,6 +209,7 @@ async def list_merges(
         if match_pair and match_pair.get("match_rules"):
             merge_data["rule_id"] = match_pair["match_rules"]["id"]
             merge_data["rule_name"] = match_pair["match_rules"]["name"]
+            merge_data["source_object"] = match_pair["match_rules"].get("source_object", "contacts")
         data.append(merge_data)
 
     return {"data": data, "total": total}
@@ -296,7 +297,7 @@ async def get_merge(
     if merge_data.get("match_pair_id"):
         match_pair = supabase.table("match_pairs").select("rule_id").eq("id", merge_data["match_pair_id"]).single().execute()
         if match_pair.data and match_pair.data.get("rule_id"):
-            rule = supabase.table("match_rules").select("name, match_fields, merge_strategy, merge_settings").eq("id", match_pair.data["rule_id"]).single().execute()
+            rule = supabase.table("match_rules").select("name, source_object, match_fields, merge_strategy, merge_settings").eq("id", match_pair.data["rule_id"]).single().execute()
             if rule.data:
                 merge_data["rule"] = rule.data
 

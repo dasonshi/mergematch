@@ -3,16 +3,167 @@
  * Extracted from MatchRuleDetail, PendingMatches, AllPendingMatches.
  */
 
+const DISPLAY_OBJECT_KEYS = [
+  "displayName",
+  "display_name",
+  "name",
+  "label",
+  "title",
+  "text",
+  "value",
+  "amount",
+  "email",
+  "phone",
+  "url",
+  "id",
+] as const;
+
+const CURRENCY_OBJECT_KEYS = [
+  "currency",
+  "currencyCode",
+  "currency_code",
+  "symbol",
+  "currencySymbol",
+] as const;
+
+export function normalizeDisplayValue(
+  value: unknown,
+  depth = 0,
+  seen: WeakSet<object> = new WeakSet()
+): string {
+  if (value === null || value === undefined) return "";
+
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" || typeof value === "bigint") return String(value);
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+
+  if (Array.isArray(value)) {
+    if (depth > 2) return "";
+    return value
+      .map((item) => normalizeDisplayValue(item, depth + 1, seen))
+      .filter(Boolean)
+      .join(", ");
+  }
+
+  if (typeof value === "object") {
+    if (depth > 2) return "";
+    if (seen.has(value as object)) return "";
+    seen.add(value as object);
+
+    const objectValue = value as Record<string, unknown>;
+
+    const amountRaw = objectValue.amount ?? objectValue.value;
+    const currencyRaw = CURRENCY_OBJECT_KEYS.map((key) => objectValue[key]).find((candidate) => candidate !== undefined && candidate !== null);
+    const amountText = normalizeDisplayValue(amountRaw, depth + 1, seen);
+    const currencyText = normalizeDisplayValue(currencyRaw, depth + 1, seen);
+    if (amountText && currencyText) {
+      return `${amountText} ${currencyText}`;
+    }
+
+    for (const key of DISPLAY_OBJECT_KEYS) {
+      const text = normalizeDisplayValue(objectValue[key], depth + 1, seen);
+      if (text) return text;
+    }
+
+    const summarizedEntries = Object.entries(objectValue)
+      .map(([key, raw]) => [key, normalizeDisplayValue(raw, depth + 1, seen)] as const)
+      .filter(([, text]) => text);
+
+    if (summarizedEntries.length === 1) {
+      return summarizedEntries[0][1];
+    }
+
+    if (summarizedEntries.length > 1) {
+      return summarizedEntries
+        .slice(0, 2)
+        .map(([key, text]) => `${key}: ${text}`)
+        .join(", ");
+    }
+  }
+
+  return "";
+}
+
+function getNestedValue(record: Record<string, unknown>, fieldPath: string): unknown {
+  const keys = fieldPath.split(".");
+  let current: unknown = record;
+
+  for (const key of keys) {
+    if (!current || typeof current !== "object" || Array.isArray(current)) {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[key];
+  }
+
+  return current;
+}
+
+function getCustomFieldValue(record: Record<string, unknown>, field: string): unknown {
+  const customFields = record.customFields ?? record.customField;
+  if (!customFields) return undefined;
+
+  if (Array.isArray(customFields)) {
+    for (const item of customFields) {
+      if (!item || typeof item !== "object") continue;
+
+      const customField = item as Record<string, unknown>;
+      const identifier = customField.id ?? customField.key ?? customField.fieldKey;
+      if (typeof identifier !== "string") continue;
+
+      const normalizedIdentifier = identifier.replace(/^customField\./, "");
+      if (
+        normalizedIdentifier !== field &&
+        !normalizedIdentifier.endsWith(`.${field}`)
+      ) {
+        continue;
+      }
+
+      if ("value" in customField) return customField.value;
+      if ("fieldValue" in customField) return customField.fieldValue;
+      if ("field_value" in customField) return customField.field_value;
+    }
+
+    return undefined;
+  }
+
+  if (typeof customFields === "object") {
+    const customFieldMap = customFields as Record<string, unknown>;
+    if (field in customFieldMap) return customFieldMap[field];
+
+    const fullyQualifiedKey = Object.keys(customFieldMap).find((key) => key.endsWith(`.${field}`));
+    if (fullyQualifiedKey) return customFieldMap[fullyQualifiedKey];
+  }
+
+  return undefined;
+}
+
 /**
  * Get field value from record, handling nested custom fields.
  */
 export function getFieldValue(record: Record<string, unknown>, field: string): string {
+  if (!record || !field) return "";
+
+  const candidates: unknown[] = [];
+
   if (field.startsWith("customField.")) {
     const customKey = field.replace("customField.", "");
-    const customFields = record.customFields || record.customField || {};
-    return customFields[customKey] || record[customKey] || "";
+    candidates.push(getCustomFieldValue(record, customKey));
+    candidates.push(record[customKey]);
+    candidates.push(getNestedValue(record, customKey));
+  } else {
+    candidates.push(record[field]);
+    candidates.push(getCustomFieldValue(record, field));
+    if (field.includes(".")) {
+      candidates.push(getNestedValue(record, field));
+    }
   }
-  return record[field] || "";
+
+  for (const candidate of candidates) {
+    const text = normalizeDisplayValue(candidate);
+    if (text) return text;
+  }
+
+  return "";
 }
 
 /**
@@ -30,29 +181,31 @@ export function getRecordName(
   displayField?: string
 ): string {
   // If schema specifies a display field, try that first
-  if (displayField && record[displayField]) {
-    return String(record[displayField]);
+  if (displayField) {
+    const displayValue = getFieldValue(record, displayField);
+    if (displayValue) return displayValue;
   }
 
   // Try standard contact fields
-  if (record.firstName && record.lastName) {
-    return `${record.firstName} ${record.lastName}`;
-  }
-  if (record.firstName) return String(record.firstName);
+  const firstName = getFieldValue(record, "firstName");
+  const lastName = getFieldValue(record, "lastName");
+  if (firstName && lastName) return `${firstName} ${lastName}`;
+  if (firstName) return firstName;
 
   // Try common display/identifier fields for custom objects
-  if (record.name) return String(record.name);
-  if (record.title) return String(record.title);
-  if (record.label) return String(record.label);
-  if (record.displayName) return String(record.displayName);
+  for (const key of ["name", "title", "label", "displayName"]) {
+    const value = getFieldValue(record, key);
+    if (value) return value;
+  }
 
   // Try email for contacts
-  if (record.email) return String(record.email);
+  const email = getFieldValue(record, "email");
+  if (email) return email;
 
   // For custom objects without standard name fields: use first match field as title
   if (matchFields && matchFields.length > 0) {
     const firstValue = getFieldValue(record, matchFields[0].field);
-    if (firstValue) return String(firstValue);
+    if (firstValue) return firstValue;
   }
 
   return "—";
@@ -71,7 +224,7 @@ export function getMatchFieldSubheading(
     .filter((v) => v);
 
   if (values.length === 0) {
-    return record.email || record.phone || "";
+    return getFieldValue(record, "email") || getFieldValue(record, "phone") || "";
   }
 
   return values.join(" • ");
@@ -85,11 +238,11 @@ export function getFirstMatchFieldValue(
   matchFields: Array<{ field: string; algorithm: string }>
 ): string {
   if (!matchFields || matchFields.length === 0) {
-    return String(record.email || record.phone || "");
+    return getFieldValue(record, "email") || getFieldValue(record, "phone") || "";
   }
   const firstField = matchFields[0];
   const value = getFieldValue(record, firstField.field);
-  return value || String(record.email || record.phone || "");
+  return value || getFieldValue(record, "email") || getFieldValue(record, "phone") || "";
 }
 
 /**
@@ -117,15 +270,16 @@ export function recordMatchesSearch(
   // Also search common display fields
   const commonFields = ["firstName", "lastName", "email", "phone", "name", "title", "companyName"];
   for (const field of commonFields) {
-    const value = record[field];
-    if (value && String(value).toLowerCase().includes(lowerQuery)) {
+    const value = getFieldValue(record, field);
+    if (value && value.toLowerCase().includes(lowerQuery)) {
       return true;
     }
   }
 
-  // Fallback: search any string values in the record
-  for (const [key, value] of Object.entries(record)) {
-    if (typeof value === "string" && value.toLowerCase().includes(lowerQuery)) {
+  // Fallback: search any top-level displayable values in the record
+  for (const value of Object.values(record)) {
+    const normalized = normalizeDisplayValue(value).toLowerCase();
+    if (normalized.includes(lowerQuery)) {
       return true;
     }
   }

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Loader2, Search, X, Play, Filter, AlertCircle, RefreshCw, Crown } from "lucide-react";
@@ -22,16 +22,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { DataTable, DataTableColumn } from "@/components/ui/data-table";
-import { ConfidenceBadge } from "@/components/ui/confidence-badge";
+import { DataTable } from "@/components/ui/data-table";
 import { TablePagination } from "@/components/ui/table-pagination";
 import { useLocation } from "@/contexts/LocationContext";
 import { useUpgradeModal } from "@/components/ui/upgrade-modal";
 import { useToast } from "@/hooks/use-toast";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
-import { api, MatchRule, MatchPair } from "@/lib/api";
-import { getRecordName, getFirstMatchFieldValue } from "@/components/rules/helpers";
-import { getGhlRecordUrl } from "@/lib/utils";
+import { api, MatchRule, MatchPair, ObjectType } from "@/lib/api";
+import { createPendingMatchColumns } from "@/components/rules/pendingTableColumns";
 
 export default function AllPendingMatches() {
   const navigate = useNavigate();
@@ -79,8 +77,25 @@ export default function AllPendingMatches() {
     enabled: !!locationId,
   });
 
+  // Fetch object schema metadata so custom-object title fields resolve consistently.
+  const { data: availableObjects = [] } = useQuery<ObjectType[]>({
+    queryKey: ["availableObjects", locationId],
+    queryFn: () => api.getAvailableObjects(),
+    enabled: !!locationId,
+  });
+
   const rules = rulesData?.data || [];
-  const rulesMap = new Map(rules.map((r: MatchRule) => [r.id, r]));
+  const rulesMap = useMemo(
+    () => new Map(rules.map((r: MatchRule) => [r.id, r])),
+    [rules]
+  );
+  const displayFieldByObject = useMemo(
+    () =>
+      new Map(
+        availableObjects.map((objectType) => [objectType.id, objectType.displayField] as const)
+      ),
+    [availableObjects]
+  );
 
   // Fetch all pending matches (paginated, with optional rule filter and server-side search)
   const { data: matchesData, isLoading: matchesLoading, isError: matchesError, refetch: refetchMatches } = useQuery({
@@ -287,120 +302,34 @@ export default function AllPendingMatches() {
     startBulkMerge(matchIds);
   };
 
-  // Table columns
-  const columns: DataTableColumn<MatchPair>[] = [
-    {
-      header: "Record A",
-      accessor: (item) => {
-        const recordA = item.record_a_data || {};
-        const rule = rulesMap.get(item.rule_id);
-        const matchFields = rule?.match_fields || [];
-        const sourceObject = rule?.source_object || "contacts";
-        const name = getRecordName(recordA, matchFields);
-        const fieldValue = getFirstMatchFieldValue(recordA, matchFields);
-        const ghlUrl = getGhlRecordUrl(locationId!, sourceObject, item.record_a_id);
-        // Don't show subheading if it matches the name (used as title)
-        const showFieldValue = fieldValue && fieldValue !== name;
-        return (
-          <div>
-            <Link
-              to={`/match-rules/${item.rule_id}/review/${item.id}`}
-              className="font-medium hover:text-primary hover:underline"
-            >
-              {name}
-            </Link>
-            {showFieldValue && ghlUrl && (
-              <a
-                href={ghlUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block text-xs text-muted-foreground hover:text-primary hover:underline"
-              >
-                {fieldValue}
-              </a>
-            )}
-            {showFieldValue && !ghlUrl && (
-              <span className="block text-xs text-muted-foreground">{fieldValue}</span>
-            )}
-          </div>
-        );
-      },
-    },
-    {
-      header: "Record B",
-      accessor: (item) => {
-        const recordB = item.record_b_data || {};
-        const rule = rulesMap.get(item.rule_id);
-        const matchFields = rule?.match_fields || [];
-        const sourceObject = rule?.source_object || "contacts";
-        const name = getRecordName(recordB, matchFields);
-        const fieldValue = getFirstMatchFieldValue(recordB, matchFields);
-        const ghlUrl = getGhlRecordUrl(locationId!, sourceObject, item.record_b_id);
-        // Don't show subheading if it matches the name (used as title)
-        const showFieldValue = fieldValue && fieldValue !== name;
-        return (
-          <div>
-            <Link
-              to={`/match-rules/${item.rule_id}/review/${item.id}`}
-              className="font-medium hover:text-primary hover:underline"
-            >
-              {name}
-            </Link>
-            {showFieldValue && ghlUrl && (
-              <a
-                href={ghlUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block text-xs text-muted-foreground hover:text-primary hover:underline"
-              >
-                {fieldValue}
-              </a>
-            )}
-            {showFieldValue && !ghlUrl && (
-              <span className="block text-xs text-muted-foreground">{fieldValue}</span>
-            )}
-          </div>
-        );
-      },
-    },
-    {
-      header: "Rule",
-      hideOnMobile: true,
-      accessor: (item) => {
-        const rule = rulesMap.get(item.rule_id);
-        return (
-          <Link
-            to={`/match-rules/${item.rule_id}`}
-            className="text-sm text-muted-foreground hover:text-primary"
-          >
-            {rule?.name || "Unknown"}
-          </Link>
-        );
-      },
-    },
-    {
-      header: "Confidence",
-      accessor: (item) => <ConfidenceBadge score={item.confidence_score || 0} />,
-    },
-    {
-      header: "Found",
-      hideOnMobile: true,
-      accessor: (item) => (
-        <span className="text-muted-foreground text-sm">
-          {new Date(item.created_at).toLocaleDateString()}
-        </span>
-      ),
-    },
-    {
-      header: "Actions",
-      align: "right" as const,
-      accessor: (item) => (
-        <Button size="sm" asChild>
-          <Link to={`/match-rules/${item.rule_id}/review/${item.id}`}>Merge</Link>
-        </Button>
-      ),
-    },
-  ];
+  const columns = useMemo(
+    () =>
+      createPendingMatchColumns({
+        locationId,
+        includeRuleColumn: true,
+        includeFoundColumn: true,
+        resolveRuleContext: (item) => {
+          const rule = rulesMap.get(item.rule_id);
+          if (!rule) {
+            return {
+              ruleId: item.rule_id,
+              ruleName: "Unknown",
+              sourceObject: "contacts",
+              matchFields: [],
+            };
+          }
+
+          return {
+            ruleId: rule.id,
+            ruleName: rule.name,
+            sourceObject: rule.source_object || "contacts",
+            matchFields: rule.match_fields || [],
+            displayField: displayFieldByObject.get(rule.source_object),
+          };
+        },
+      }),
+    [displayFieldByObject, locationId, rulesMap]
+  );
 
   // Selection display count
   const displaySelectedCount = selectAllMatching ? filteredMatches.length : selectedIds.size;

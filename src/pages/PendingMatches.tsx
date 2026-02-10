@@ -22,16 +22,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { DataTable, DataTableColumn } from "@/components/ui/data-table";
-import { ConfidenceBadge } from "@/components/ui/confidence-badge";
+import { DataTable } from "@/components/ui/data-table";
 import { TablePagination } from "@/components/ui/table-pagination";
 import { useLocation } from "@/contexts/LocationContext";
 import { useUpgradeModal } from "@/components/ui/upgrade-modal";
 import { useToast } from "@/hooks/use-toast";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
-import { api } from "@/lib/api";
-import { getRecordName, getFirstMatchFieldValue } from "@/components/rules/helpers";
-import { getGhlRecordUrl } from "@/lib/utils";
+import { api, ObjectType } from "@/lib/api";
+import { createPendingMatchColumns } from "@/components/rules/pendingTableColumns";
 
 interface MatchPair {
   id: string;
@@ -95,6 +93,13 @@ export default function PendingMatches() {
     enabled: !!locationId && !!ruleId,
   });
 
+  // Fetch object schema metadata so custom-object title fields resolve consistently.
+  const { data: availableObjects = [] } = useQuery<ObjectType[]>({
+    queryKey: ["availableObjects", locationId],
+    queryFn: () => api.getAvailableObjects(),
+    enabled: !!locationId,
+  });
+
   // Fetch pending matches (paginated, with server-side search)
   const { data: matchesData, isLoading: matchesLoading, isError: matchesError, refetch: refetchMatches } = useQuery({
     queryKey: ["matches", ruleId, locationId, page, pageSize, debouncedSearchQuery],
@@ -113,6 +118,11 @@ export default function PendingMatches() {
   const allMatches = matchesData?.data || [];
   const totalCount = matchesData?.total ?? allMatches.length;
   const matchFields = rule?.match_fields || [];
+  const sourceObject = rule?.source_object || "contacts";
+  const displayField = useMemo(() => {
+    if (!rule?.source_object) return undefined;
+    return availableObjects.find((objectType) => objectType.id === rule.source_object)?.displayField;
+  }, [availableObjects, rule?.source_object]);
 
   // Filter matches - search is now server-side, only apply confidence filter client-side
   const filteredMatches = useMemo(() => {
@@ -314,100 +324,21 @@ export default function PendingMatches() {
     }
   };
 
-  // Table columns - uses rule.match_fields to show relevant field values
-  const sourceObject = rule?.source_object || "contacts";
-  const columns: DataTableColumn<MatchPair>[] = [
-    {
-      header: "Record A",
-      accessor: (item) => {
-        const recordA = item.record_a_data || {};
-        const name = getRecordName(recordA, matchFields);
-        const fieldValue = getFirstMatchFieldValue(recordA, matchFields);
-        const ghlUrl = getGhlRecordUrl(locationId!, sourceObject, item.record_a_id);
-        // Don't show subheading if it matches the name (used as title)
-        const showFieldValue = fieldValue && fieldValue !== name;
-        return (
-          <div>
-            <Link
-              to={`/match-rules/${ruleId}/review/${item.id}`}
-              className="font-medium hover:text-primary hover:underline"
-            >
-              {name}
-            </Link>
-            {showFieldValue && ghlUrl && (
-              <a
-                href={ghlUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block text-xs text-muted-foreground hover:text-primary hover:underline"
-              >
-                {fieldValue}
-              </a>
-            )}
-            {showFieldValue && !ghlUrl && (
-              <span className="block text-xs text-muted-foreground">{fieldValue}</span>
-            )}
-          </div>
-        );
-      },
-    },
-    {
-      header: "Record B",
-      accessor: (item) => {
-        const recordB = item.record_b_data || {};
-        const name = getRecordName(recordB, matchFields);
-        const fieldValue = getFirstMatchFieldValue(recordB, matchFields);
-        const ghlUrl = getGhlRecordUrl(locationId!, sourceObject, item.record_b_id);
-        // Don't show subheading if it matches the name (used as title)
-        const showFieldValue = fieldValue && fieldValue !== name;
-        return (
-          <div>
-            <Link
-              to={`/match-rules/${ruleId}/review/${item.id}`}
-              className="font-medium hover:text-primary hover:underline"
-            >
-              {name}
-            </Link>
-            {showFieldValue && ghlUrl && (
-              <a
-                href={ghlUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block text-xs text-muted-foreground hover:text-primary hover:underline"
-              >
-                {fieldValue}
-              </a>
-            )}
-            {showFieldValue && !ghlUrl && (
-              <span className="block text-xs text-muted-foreground">{fieldValue}</span>
-            )}
-          </div>
-        );
-      },
-    },
-    {
-      header: "Confidence",
-      accessor: (item) => <ConfidenceBadge score={item.confidence_score || 0} />,
-    },
-    {
-      header: "Found",
-      hideOnMobile: true,
-      accessor: (item) => (
-        <span className="text-muted-foreground text-sm">
-          {new Date(item.created_at).toLocaleDateString()}
-        </span>
-      ),
-    },
-    {
-      header: "Actions",
-      align: "right" as const,
-      accessor: (item) => (
-        <Button size="sm" asChild>
-          <Link to={`/match-rules/${ruleId}/review/${item.id}`}>Merge</Link>
-        </Button>
-      ),
-    },
-  ];
+  const columns = useMemo(
+    () =>
+      createPendingMatchColumns({
+        locationId,
+        includeFoundColumn: true,
+        resolveRuleContext: () => ({
+          ruleId: ruleId || "",
+          ruleName: rule?.name,
+          sourceObject,
+          matchFields,
+          displayField,
+        }),
+      }),
+    [displayField, locationId, matchFields, rule?.name, ruleId, sourceObject]
+  );
 
   if (authLoading || ruleLoading || matchesLoading) {
     return (
@@ -539,7 +470,7 @@ export default function PendingMatches() {
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
                       id="search"
-                      placeholder="Search by name, email, phone..."
+                      placeholder="Search records..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="pl-9"

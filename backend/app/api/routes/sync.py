@@ -171,12 +171,9 @@ async def force_resync(
     tenant_id = str(location_result.data["tenant_id"])
 
     # Get all active match rules for this location
-    # Exclude unsupported object types (companies, opportunities)
     rules_result = supabase.table("match_rules").select("*").eq(
         "location_id", internal_location_id
-    ).eq("is_active", True).neq(
-        "source_object", "companies"
-    ).neq("source_object", "opportunities").execute()
+    ).eq("is_active", True).execute()
 
     rules = rules_result.data or []
 

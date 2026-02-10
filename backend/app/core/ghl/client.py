@@ -195,6 +195,17 @@ class GHLClient:
         response.raise_for_status()
         return response.json()
 
+    async def create_company(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a company (for rollback)."""
+        payload = dict(data or {})
+        payload["locationId"] = self.location_id
+        response = await self._client.post("/businesses/", json=payload)
+        if response.status_code >= 400:
+            error_detail = response.text
+            logger.error(f"[GHL] Create company failed: {response.status_code} - {error_detail}")
+            raise Exception(f"GHL API error ({response.status_code}): {error_detail}")
+        return response.json()
+
     async def update_company(self, company_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Update a company."""
         response = await self._client.put(f"/businesses/{company_id}", json=data)
@@ -269,11 +280,30 @@ class GHLClient:
         response.raise_for_status()
         return response.json()
 
+    async def create_opportunity(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create an opportunity (for rollback)."""
+        payload = dict(data or {})
+        payload["locationId"] = self.location_id
+        response = await self._client.post("/opportunities/", json=payload)
+        if response.status_code >= 400:
+            error_detail = response.text
+            logger.error(f"[GHL] Create opportunity failed: {response.status_code} - {error_detail}")
+            raise Exception(f"GHL API error ({response.status_code}): {error_detail}")
+        return response.json()
+
     async def update_opportunity(self, opportunity_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Update an opportunity."""
         response = await self._client.put(f"/opportunities/{opportunity_id}", json=data)
         response.raise_for_status()
         return response.json()
+
+    async def delete_opportunity(self, opportunity_id: str) -> None:
+        """Delete an opportunity."""
+        response = await self._client.delete(f"/opportunities/{opportunity_id}")
+        if response.status_code >= 400:
+            error_detail = response.text
+            logger.error(f"[GHL] Delete opportunity failed: {response.status_code} - {error_detail}")
+            raise Exception(f"GHL API error ({response.status_code}): {error_detail}")
 
     async def get_contact_opportunities(self, contact_id: str) -> List[Dict[str, Any]]:
         """Get all opportunities for a contact."""

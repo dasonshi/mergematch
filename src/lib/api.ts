@@ -563,12 +563,14 @@ export interface Merge {
   id: string;
   master_record_id: string;
   master_record_name?: string;
+  master_record_type?: string;
   duplicate_record_id: string;
   status: string;
   created_at: string;
   completed_at?: string;
   rolled_back_at?: string;
   rule_name?: string;
+  source_object?: string;
   error_message?: string;
   master_snapshot?: Record<string, unknown>;
   duplicate_snapshot?: Record<string, unknown>;

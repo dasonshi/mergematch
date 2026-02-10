@@ -1,12 +1,12 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DateRange } from "react-day-picker";
-import { RotateCcw, Loader2, ExternalLink, Search, Filter, Download, X } from "lucide-react";
+import { RotateCcw, Loader2, Search, Filter, Download, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { MergeStatusBadge, getMergeStatusLabel } from "@/components/ui/merge-status-badge";
+import { getMergeStatusLabel } from "@/components/ui/merge-status-badge";
 import {
   Select,
   SelectContent,
@@ -32,22 +32,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { DataTable, DataTableColumn } from "@/components/ui/data-table";
+import { DataTable } from "@/components/ui/data-table";
 import { TablePagination } from "@/components/ui/table-pagination";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 
 import { api } from "@/lib/api";
-import { MergeActionButtons } from "@/components/merge-action-buttons";
 import { PageHeader } from "@/components/ui/page-header";
-import { getGhlRecordUrl } from "@/lib/utils";
-
-// Build CRM contact URL (legacy - for merge history we assume contacts since source_object isn't stored)
-const getCrmContactUrl = (locationId: string, contactId: string) => {
-  // Use the utility which defaults to contacts for backward compatibility
-  return getGhlRecordUrl(locationId, "contacts", contactId);
-};
+import { createMergeHistoryColumns } from "@/components/rules";
 
 interface MergeItem {
   id: string;
@@ -61,6 +54,7 @@ interface MergeItem {
   rule_id?: string;
   rule_name?: string;
   error_message?: string;
+  source_object?: string;
 }
 
 export default function History() {
@@ -310,90 +304,22 @@ export default function History() {
     return `${date.toLocaleDateString()} at ${timeStr}`;
   };
 
-  // Define table columns
-  const columns: DataTableColumn<MergeItem>[] = [
-    {
-      header: "Master Record",
-      accessor: (item) => (
-        <div className="flex items-center gap-2">
-          {(item.status === "completed" || item.status === "rolled_back") && locationId ? (
-            <a
-              href={getCrmContactUrl(locationId, item.master_record_id)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-medium text-foreground hover:text-primary hover:underline"
-            >
-              {item.master_record_name || `${item.master_record_id?.slice(0, 8)}...`}
-            </a>
-          ) : (
-            <span className="font-medium">
-              {item.master_record_name || `${item.master_record_id?.slice(0, 8)}...`}
-            </span>
-          )}
-        </div>
-      ),
-    },
-    {
-      header: "Duplicate",
-      hideOnMobile: true,
-      accessor: (item) => (
-        <div className="flex items-center gap-2">
-          <span className="text-muted-foreground">
-            {item.status === "rolled_back" && item.restored_record_id
-              ? `${item.restored_record_id.slice(0, 8)}...`
-              : `${item.duplicate_record_id?.slice(0, 8)}...`}
-          </span>
-          {item.status === "rolled_back" && item.restored_record_id && locationId && (
-            <a
-              href={getCrmContactUrl(locationId, item.restored_record_id)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary hover:text-primary/80"
-              title="View restored record"
-            >
-              <ExternalLink className="h-4 w-4" />
-            </a>
-          )}
-        </div>
-      ),
-    },
-    {
-      header: "Status",
-      accessor: (item) => <MergeStatusBadge status={item.status} />,
-    },
-    {
-      header: "Rule",
-      hideOnMobile: true,
-      accessor: (item) =>
-        item.rule_id ? (
-          <Link
-            to={`/match-rules/${item.rule_id}`}
-            className="text-primary hover:underline"
-          >
-            {item.rule_name || "Unknown"}
-          </Link>
-        ) : (
-          <span className="text-muted-foreground">-</span>
-        ),
-    },
-    {
-      header: "When",
-      hideOnMobile: true,
-      accessor: (item) => (
-        <span className="text-muted-foreground">{formatDateTime(item.created_at)}</span>
-      ),
-    },
-    {
-      header: "Actions",
-      align: "right" as const,
-      accessor: (item) => (
-        <MergeActionButtons
-          merge={item}
-          onRestore={() => setRestoreItem(item)}
-        />
-      ),
-    },
-  ];
+  const columns = useMemo(
+    () =>
+      createMergeHistoryColumns({
+        locationId,
+        includeDuplicateColumn: true,
+        includeRuleColumn: true,
+        includeDateColumn: true,
+        dateHeader: "When",
+        formatDate: formatDateTime,
+        onRestore: (mergeId) => {
+          const item = merges.find((merge) => merge.id === mergeId);
+          if (item) setRestoreItem(item);
+        },
+      }),
+    [locationId, merges]
+  );
 
   // Selection display count
   const displaySelectedCount = selectAllMatching ? total : selectedIds.size;
