@@ -822,33 +822,51 @@ async def execute_merge(
                 mappings = []
 
         if mappings:
-            custom_fields = merged_fields.get("customFields", [])
-            if not isinstance(custom_fields, list):
-                custom_fields = []
+            # For custom objects, fields are top-level properties, not in customFields array
+            # For contacts/companies/opportunities, use the customFields array format
+            if is_custom_object:
+                for mapping in mappings:
+                    source_field = mapping.get("source")
+                    target_field = mapping.get("target")
 
-            for mapping in mappings:
-                source_field = mapping.get("source")
-                target_field = mapping.get("target")
+                    if not source_field or not target_field:
+                        continue
 
-                if not source_field or not target_field:
-                    continue
+                    value_to_preserve = mapping.get("value")
+                    if value_to_preserve is None:
+                        value_to_preserve = duplicate_data.get(source_field)
 
-                # Use provided value if available (computed based on field selections),
-                # otherwise fall back to duplicate's value for backwards compatibility
-                value_to_preserve = mapping.get("value")
-                if value_to_preserve is None:
-                    value_to_preserve = duplicate_data.get(source_field)
+                    if value_to_preserve:
+                        merged_fields[target_field] = value_to_preserve
+                        logger.info(f"Preserving {source_field} value '{value_to_preserve}' to field '{target_field}'")
+            else:
+                custom_fields = merged_fields.get("customFields", [])
+                if not isinstance(custom_fields, list):
+                    custom_fields = []
 
-                # Only preserve if there's a non-empty value
-                if value_to_preserve:
-                    custom_fields.append({
-                        "id": target_field,  # GHL API expects 'id' for custom field identifier
-                        "field_value": value_to_preserve
-                    })
-                    logger.info(f"Preserving {source_field} value '{value_to_preserve}' to custom field '{target_field}'")
+                for mapping in mappings:
+                    source_field = mapping.get("source")
+                    target_field = mapping.get("target")
 
-            if custom_fields:
-                merged_fields["customFields"] = custom_fields
+                    if not source_field or not target_field:
+                        continue
+
+                    # Use provided value if available (computed based on field selections),
+                    # otherwise fall back to duplicate's value for backwards compatibility
+                    value_to_preserve = mapping.get("value")
+                    if value_to_preserve is None:
+                        value_to_preserve = duplicate_data.get(source_field)
+
+                    # Only preserve if there's a non-empty value
+                    if value_to_preserve:
+                        custom_fields.append({
+                            "id": target_field,  # GHL API expects 'id' for custom field identifier
+                            "field_value": value_to_preserve
+                        })
+                        logger.info(f"Preserving {source_field} value '{value_to_preserve}' to custom field '{target_field}'")
+
+                if custom_fields:
+                    merged_fields["customFields"] = custom_fields
 
     logger.info(f"Merging {duplicate_id} into {master_record_id}")
     logger.info(f"Field selections: {field_selections}")
