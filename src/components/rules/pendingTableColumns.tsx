@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { ConfidenceBadge } from "@/components/ui/confidence-badge";
 import { DataTableColumn } from "@/components/ui/data-table";
 import { MatchField } from "@/lib/api";
-import { getRecordName } from "./helpers";
+import { getMatchFieldSubheading, getRecordName } from "./helpers";
 
 export interface PendingMatchRow {
   id: string;
@@ -71,6 +71,8 @@ function renderRecordCell(
   const matchFields = context?.matchFields || [];
   const recordData = side === "a" ? match.record_a_data || {} : match.record_b_data || {};
   const name = getRecordName(recordData, matchFields, context?.displayField);
+  const subheading = getMatchFieldSubheading(recordData, matchFields);
+  const showSubheading = Boolean(subheading && subheading !== name);
   const matchTooltip = getMatchFieldsTooltip(matchFields);
 
   return (
@@ -82,6 +84,11 @@ function renderRecordCell(
       >
         {name}
       </Link>
+      {showSubheading && (
+        <span className="block text-xs text-muted-foreground" title={matchTooltip}>
+          {subheading}
+        </span>
+      )}
     </div>
   );
 }
