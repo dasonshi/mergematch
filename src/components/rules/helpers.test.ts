@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  formatFieldLabel,
   getFieldValue,
+  getMatchFieldDisplayItems,
   getFirstMatchFieldValue,
   getMatchFieldSubheading,
   getRecordName,
@@ -36,6 +38,28 @@ describe('rule helpers', () => {
     ]
 
     expect(getMatchFieldSubheading(record, matchFields)).toBe('Maria Garcia • 45000 USD')
+  })
+
+  it('returns per-value match display items with dynamic labels', () => {
+    const record = {
+      buyer_name: 'Maria Garcia',
+      purchase_price: { value: 45000, currency: 'USD' },
+    }
+    const matchFields = [
+      { field: 'buyer_name', algorithm: 'exact' },
+      { field: 'customField.purchase_price', algorithm: 'exact' },
+    ]
+
+    expect(getMatchFieldDisplayItems(record, matchFields)).toEqual([
+      { field: 'buyer_name', label: 'Buyer Name', value: 'Maria Garcia' },
+      { field: 'customField.purchase_price', label: 'Purchase Price', value: '45000 USD' },
+    ])
+  })
+
+  it('formats field labels for contact and custom object fields', () => {
+    expect(formatFieldLabel('email')).toBe('Email')
+    expect(formatFieldLabel('customField.vin_number')).toBe('Vin Number')
+    expect(formatFieldLabel('VIN')).toBe('VIN')
   })
 
   it('uses display field values when naming custom object records', () => {

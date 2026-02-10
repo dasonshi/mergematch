@@ -10,7 +10,7 @@ export function cn(...inputs: ClassValue[]) {
  * Returns null for custom objects since they don't have direct URLs.
  *
  * @param locationId - The GHL location ID
- * @param objectType - The object type (contacts, companies, or custom object key)
+ * @param objectType - The object type (contacts, companies, opportunities, or custom object key)
  * @param recordId - The record ID
  * @returns URL string or null if no URL is available
  */
@@ -29,6 +29,10 @@ export function getGhlRecordUrl(
 
   if (objectType === "companies") {
     return `${baseUrl}/${locationId}/companies/detail/${recordId}`;
+  }
+
+  if (objectType === "opportunities") {
+    return `${baseUrl}/${locationId}/opportunities/detail/${recordId}`;
   }
 
   // Custom objects don't have direct CRM URLs readily available without more context

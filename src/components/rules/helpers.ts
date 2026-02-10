@@ -3,6 +3,33 @@
  * Extracted from MatchRuleDetail, PendingMatches, AllPendingMatches.
  */
 
+export function formatFieldLabel(field: string): string {
+  if (!field) return "";
+
+  const withoutCustomPrefix = field.replace(/^customField\./, "");
+  const dottedParts = withoutCustomPrefix.split(".");
+  const leaf = dottedParts[dottedParts.length - 1] || withoutCustomPrefix;
+  const words = leaf
+    .replace(/_/g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (words.length === 0) return withoutCustomPrefix;
+  if (words.length === 1 && words[0].length <= 4) return words[0].toUpperCase();
+
+  return words
+    .map((word) => word[0].toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+export interface MatchFieldDisplayItem {
+  field: string;
+  label: string;
+  value: string;
+}
+
 const DISPLAY_OBJECT_KEYS = [
   "displayName",
   "display_name",
@@ -218,16 +245,41 @@ export function getMatchFieldSubheading(
   record: Record<string, unknown>,
   matchFields: Array<{ field: string; algorithm: string }>
 ): string {
+  return getMatchFieldDisplayItems(record, matchFields)
+    .map((item) => item.value)
+    .join(" • ");
+}
+
+/**
+ * Get match field values paired with labels (up to 3 fields), for UI tooltips.
+ */
+export function getMatchFieldDisplayItems(
+  record: Record<string, unknown>,
+  matchFields: Array<{ field: string; algorithm: string }>
+): MatchFieldDisplayItem[] {
   const fields = matchFields.slice(0, 3);
-  const values = fields
-    .map((f) => getFieldValue(record, f.field))
-    .filter((v) => v);
+  const items = fields
+    .map((field) => {
+      const value = getFieldValue(record, field.field);
+      if (!value) return null;
 
-  if (values.length === 0) {
-    return getFieldValue(record, "email") || getFieldValue(record, "phone") || "";
-  }
+      return {
+        field: field.field,
+        label: formatFieldLabel(field.field),
+        value,
+      };
+    })
+    .filter((item): item is MatchFieldDisplayItem => Boolean(item));
 
-  return values.join(" • ");
+  if (items.length > 0) return items;
+
+  const email = getFieldValue(record, "email");
+  if (email) return [{ field: "email", label: "Email", value: email }];
+
+  const phone = getFieldValue(record, "phone");
+  if (phone) return [{ field: "phone", label: "Phone", value: phone }];
+
+  return [];
 }
 
 /**

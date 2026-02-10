@@ -123,15 +123,42 @@ export default function MergeDetail() {
   const fieldSelections = merge.field_selections || {};
   const crmLocationId = merge.ghl_location_id || locationId;
 
-  // Build CRM URL from the matched object type; returns null for custom objects.
+  // Build CRM URL from the matched object type.
   const getCrmUrl = (recordId: string) => {
     if (!crmLocationId) return null;
     return getGhlRecordUrl(crmLocationId, rule?.source_object || "contacts", recordId);
   };
-  const masterCrmUrl = merge.status === "completed" ? getCrmUrl(merge.master_record_id) : null;
+  // Fallback to any direct URL present in snapshots (best-effort for custom object records).
+  const getSnapshotUrl = (snapshot: Record<string, unknown>) => {
+    const rawValue = snapshot["_raw"];
+    const raw = rawValue && typeof rawValue === "object"
+      ? rawValue as Record<string, unknown>
+      : undefined;
+
+    const candidates = [
+      snapshot["url"],
+      snapshot["recordUrl"],
+      snapshot["record_url"],
+      raw?.url,
+      raw?.recordUrl,
+      raw?.record_url,
+    ];
+
+    return candidates.find(
+      (candidate): candidate is string =>
+        typeof candidate === "string" && /^https?:\/\//.test(candidate)
+    ) || null;
+  };
+
+  const masterCrmUrl = merge.status === "completed"
+    ? (getCrmUrl(merge.master_record_id) || getSnapshotUrl(masterSnapshot))
+    : null;
   const restoredCrmUrl = merge.status === "rolled_back" && merge.restored_record_id
     ? getCrmUrl(merge.restored_record_id)
     : null;
+  const masterRecordName = merge.master_record_name
+    || getRecordName(masterSnapshot, rule?.match_fields, objectDisplayField);
+  const duplicateRecordName = getRecordName(duplicateSnapshot, rule?.match_fields, objectDisplayField);
 
   // Determine which record was master/duplicate based on IDs
   const masterIsMasterSnapshot = masterSnapshot?.id === merge.master_record_id;
@@ -278,24 +305,32 @@ export default function MergeDetail() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 pt-6">
+          <div className="rounded-lg border bg-muted/20 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Master Record</p>
+            {masterCrmUrl ? (
+              <a
+                href={masterCrmUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-1 inline-flex items-center gap-1 text-lg font-bold text-foreground hover:text-primary hover:underline"
+              >
+                {masterRecordName}
+                <ExternalLink className="h-4 w-4" />
+              </a>
+            ) : (
+              <p className="mt-1 text-lg font-bold text-foreground">
+                {masterRecordName}
+              </p>
+            )}
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Master Record (Kept)</p>
               <div className="flex items-center gap-2 mt-1">
                 <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
                 <span className="font-medium">
-                  {getRecordName(masterSnapshot, rule?.match_fields, objectDisplayField)}
+                  {masterRecordName}
                 </span>
-                {masterCrmUrl && (
-                  <a
-                    href={masterCrmUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
-                  >
-                    View Record <ExternalLink className="h-3 w-3" />
-                  </a>
-                )}
               </div>
               <p className="text-xs text-muted-foreground font-mono mt-1">
                 ID: {merge.master_record_id}
@@ -312,7 +347,7 @@ export default function MergeDetail() {
                   <X className="h-4 w-4 text-red-500" />
                 )}
                 <span className="font-medium">
-                  {getRecordName(duplicateSnapshot, rule?.match_fields, objectDisplayField)}
+                  {duplicateRecordName}
                 </span>
                 {restoredCrmUrl && (
                   <a
