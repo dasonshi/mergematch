@@ -97,6 +97,56 @@ function normalizeRuleFieldPath(fieldPath?: string): string {
   return normalized;
 }
 
+type FieldOption = {
+  id: string;
+  name: string;
+  isCustom: boolean;
+  dataType: string;
+  fieldKey?: string;
+};
+
+function canonicalFieldKey(fieldPath?: string): string {
+  return normalizeRuleFieldPath(fieldPath)
+    .split(".")
+    .pop()
+    ?.replace(/[^a-zA-Z0-9]/g, "")
+    .toLowerCase() || "";
+}
+
+function resolveFieldId(fieldPath: string, options: FieldOption[]): string {
+  if (!fieldPath) return "";
+
+  const normalized = normalizeRuleFieldPath(fieldPath);
+
+  // Fast path: direct id match.
+  const direct = options.find((option) => option.id === normalized || option.id === fieldPath);
+  if (direct) return direct.id;
+
+  // Match against known field keys returned by API (important for custom objects).
+  const byFieldKey = options.find((option) => {
+    if (!option.fieldKey) return false;
+    const normalizedFieldKey = normalizeRuleFieldPath(option.fieldKey);
+    return (
+      normalizedFieldKey === normalized ||
+      normalizedFieldKey.endsWith(`.${normalized}`) ||
+      normalized.endsWith(`.${normalizedFieldKey}`)
+    );
+  });
+  if (byFieldKey) return byFieldKey.id;
+
+  // Last resort: canonical token match (e.g. buyer_name vs Buyer Name variants).
+  const canonical = canonicalFieldKey(normalized);
+  if (!canonical) return normalized || fieldPath;
+
+  const byCanonical = options.find((option) => {
+    if (canonicalFieldKey(option.id) === canonical) return true;
+    if (option.fieldKey && canonicalFieldKey(option.fieldKey) === canonical) return true;
+    return false;
+  });
+
+  return byCanonical?.id || normalized || fieldPath;
+}
+
 const strategies = [
   { id: "standard", name: "Standard Merge", description: "Prefer the record with the most complete data", prebuilt: true },
   { id: "recent", name: "Most Recent Wins", description: "Prefer values from the most recently updated record", prebuilt: true },
@@ -263,12 +313,23 @@ export default function MatchRuleForm() {
   ];
 
   // Use fetched fields or fallback to static fields
-  const baseFieldOptions = fetchedFields?.length
-    ? fetchedFields.map(f => ({ id: f.id, name: f.name, isCustom: f.isCustom, dataType: f.dataType || 'TEXT' }))
-    : (fallbackFields[objectType] || []).map(f => ({ ...f, isCustom: false, dataType: 'TEXT' }));
+  const baseFieldOptions: FieldOption[] = fetchedFields?.length
+    ? fetchedFields.map(f => ({
+        id: f.id,
+        name: f.name,
+        isCustom: f.isCustom,
+        dataType: f.dataType || 'TEXT',
+        fieldKey: f.fieldKey,
+      }))
+    : (fallbackFields[objectType] || []).map(f => ({
+        ...f,
+        isCustom: false,
+        dataType: 'TEXT',
+        fieldKey: undefined,
+      }));
 
   // Add synthetic fields (derived from other fields)
-  const syntheticFields: Array<{ id: string; name: string; isCustom: boolean; dataType: string; insertAfter: string }> = [];
+  const syntheticFields: Array<{ id: string; name: string; isCustom: boolean; dataType: string; insertAfter: string; fieldKey?: string }> = [];
   if (objectType === "contacts" || objectType === "companies") {
     // Add Email Domain field after Email if email exists
     const emailIndex = baseFieldOptions.findIndex(f => f.id === "email");
@@ -282,9 +343,21 @@ export default function MatchRuleForm() {
   for (const sf of syntheticFields) {
     const insertIndex = fieldOptions.findIndex(f => f.id === sf.insertAfter);
     if (insertIndex >= 0) {
-      fieldOptions.splice(insertIndex + 1, 0, { id: sf.id, name: sf.name, isCustom: sf.isCustom, dataType: sf.dataType });
+      fieldOptions.splice(insertIndex + 1, 0, {
+        id: sf.id,
+        name: sf.name,
+        isCustom: sf.isCustom,
+        dataType: sf.dataType,
+        fieldKey: sf.fieldKey,
+      });
     } else {
-      fieldOptions.push({ id: sf.id, name: sf.name, isCustom: sf.isCustom, dataType: sf.dataType });
+      fieldOptions.push({
+        id: sf.id,
+        name: sf.name,
+        isCustom: sf.isCustom,
+        dataType: sf.dataType,
+        fieldKey: sf.fieldKey,
+      });
     }
   }
 
@@ -409,6 +482,36 @@ export default function MatchRuleForm() {
       }
     }
   }, [existingRule]);
+
+  // Reconcile hydrated fields against loaded object-field options.
+  // This covers older rules where stored match field values don't exactly match current field option IDs.
+  useEffect(() => {
+    if (!isEditing || !existingRule || fieldOptions.length === 0) return;
+
+    setFields((prev) => {
+      let changed = false;
+
+      const next = prev.map((field) => {
+        const resolvedName = resolveFieldId(field.name, fieldOptions);
+        const resolvedMatchAgainst = field.matchAgainst
+          ? resolveFieldId(field.matchAgainst, fieldOptions)
+          : undefined;
+
+        if (resolvedName !== field.name || resolvedMatchAgainst !== field.matchAgainst) {
+          changed = true;
+          return {
+            ...field,
+            name: resolvedName,
+            matchAgainst: resolvedMatchAgainst,
+          };
+        }
+
+        return field;
+      });
+
+      return changed ? next : prev;
+    });
+  }, [isEditing, existingRule, fieldOptions]);
 
   const addField = (operator: "AND" | "OR" = "AND") => {
     setFields([...fields, { name: "", matchType: "exact", operator }]);
