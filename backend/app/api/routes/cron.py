@@ -3,10 +3,12 @@ Secure cron endpoints for scheduled job processing.
 Only accessible via secret header from Render Cron Jobs.
 """
 from fastapi import APIRouter, HTTPException, Header
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, Tuple
 import logging
 import uuid
+import calendar
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.config import settings
 from app.db.supabase import get_supabase
@@ -18,6 +20,24 @@ from app.services.merge_service import execute_merge
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+UTC = timezone.utc
+SUNDAY_BASED_WEEKDAY_MAP = {
+    "monday": 0,
+    "tuesday": 1,
+    "wednesday": 2,
+    "thursday": 3,
+    "friday": 4,
+    "saturday": 5,
+    "sunday": 6,
+}
+LOCATION_TIMEZONE_KEYS = (
+    "schedule_timezone",
+    "timezone",
+    "time_zone",
+    "timeZone",
+    "iana_timezone",
+    "ianaTimeZone",
+)
 
 
 def verify_cron_secret(x_cron_secret: Optional[str]) -> bool:
@@ -33,102 +53,279 @@ def verify_cron_secret(x_cron_secret: Optional[str]) -> bool:
     return True
 
 
+def _utc_now() -> datetime:
+    """Return timezone-aware UTC now."""
+    return datetime.now(UTC)
+
+
+def _parse_iso_datetime(value: Optional[str]) -> Optional[datetime]:
+    """Parse ISO timestamp into timezone-aware UTC datetime."""
+    if not value:
+        return None
+    try:
+        normalized = value.strip()
+        if normalized.endswith("Z"):
+            normalized = normalized[:-1] + "+00:00"
+        dt = datetime.fromisoformat(normalized)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC)
+    except Exception:
+        return None
+
+
+def _parse_schedule_time(schedule_time: Optional[str]) -> Tuple[int, int]:
+    """Parse HH:MM schedule time. Defaults to 00:00 when unset/invalid."""
+    if not schedule_time:
+        return 0, 0
+    try:
+        hour, minute = map(int, schedule_time.split(":"))
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            return hour, minute
+    except Exception:
+        pass
+    return 0, 0
+
+
+def _scheduled_weekday(schedule_day: Optional[str]) -> Optional[int]:
+    """Convert schedule_day to Python weekday (Mon=0..Sun=6)."""
+    if schedule_day is None:
+        return None
+
+    day_text = str(schedule_day).strip().lower()
+    if day_text in SUNDAY_BASED_WEEKDAY_MAP:
+        return SUNDAY_BASED_WEEKDAY_MAP[day_text]
+
+    try:
+        raw_day = int(day_text)
+        # Frontend sends 0=Sunday..6=Saturday.
+        if 0 <= raw_day <= 6:
+            return (raw_day + 6) % 7
+    except ValueError:
+        return None
+
+    return None
+
+
+def _scheduled_day_of_month(schedule_day: Optional[str]) -> Optional[int]:
+    """Convert schedule_day to monthly day-of-month (1..28)."""
+    if schedule_day is None:
+        return None
+    try:
+        day = int(str(schedule_day).strip())
+        if 1 <= day <= 28:
+            return day
+    except Exception:
+        return None
+    return None
+
+
+def _daily_slot_on_or_before(dt: datetime, hour: int, minute: int) -> datetime:
+    candidate = dt.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if dt < candidate:
+        candidate -= timedelta(days=1)
+    return candidate
+
+
+def _daily_slot_on_or_after(dt: datetime, hour: int, minute: int) -> datetime:
+    candidate = dt.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if dt > candidate:
+        candidate += timedelta(days=1)
+    return candidate
+
+
+def _weekly_slot_on_or_before(dt: datetime, weekday: int, hour: int, minute: int) -> datetime:
+    days_back = (dt.weekday() - weekday) % 7
+    candidate = (dt - timedelta(days=days_back)).replace(
+        hour=hour,
+        minute=minute,
+        second=0,
+        microsecond=0,
+    )
+    if dt < candidate:
+        candidate -= timedelta(days=7)
+    return candidate
+
+
+def _weekly_slot_on_or_after(dt: datetime, weekday: int, hour: int, minute: int) -> datetime:
+    days_ahead = (weekday - dt.weekday()) % 7
+    candidate = (dt + timedelta(days=days_ahead)).replace(
+        hour=hour,
+        minute=minute,
+        second=0,
+        microsecond=0,
+    )
+    if dt > candidate:
+        candidate += timedelta(days=7)
+    return candidate
+
+
+def _shift_month(dt: datetime, months: int) -> datetime:
+    month_index = dt.month - 1 + months
+    year = dt.year + month_index // 12
+    month = month_index % 12 + 1
+    last_day = calendar.monthrange(year, month)[1]
+    day = min(dt.day, last_day)
+    return dt.replace(year=year, month=month, day=day)
+
+
+def _monthly_datetime(dt: datetime, day_of_month: int, hour: int, minute: int) -> datetime:
+    last_day = calendar.monthrange(dt.year, dt.month)[1]
+    safe_day = min(day_of_month, last_day)
+    return dt.replace(day=safe_day, hour=hour, minute=minute, second=0, microsecond=0)
+
+
+def _monthly_slot_on_or_before(dt: datetime, day_of_month: int, hour: int, minute: int) -> datetime:
+    candidate = _monthly_datetime(dt, day_of_month, hour, minute)
+    if dt < candidate:
+        candidate = _shift_month(candidate, -1)
+    return candidate
+
+
+def _monthly_slot_on_or_after(dt: datetime, day_of_month: int, hour: int, minute: int) -> datetime:
+    candidate = _monthly_datetime(dt, day_of_month, hour, minute)
+    if dt > candidate:
+        candidate = _shift_month(candidate, 1)
+    return candidate
+
+
+def _next_slot_on_or_after(
+    frequency: str,
+    anchor_local: datetime,
+    *,
+    hour: int,
+    minute: int,
+    target_weekday: Optional[int],
+    target_dom: Optional[int],
+) -> datetime:
+    if frequency == "daily":
+        return _daily_slot_on_or_after(anchor_local, hour, minute)
+
+    if frequency in {"weekly", "biweekly"}:
+        weekday = target_weekday if target_weekday is not None else anchor_local.weekday()
+        return _weekly_slot_on_or_after(anchor_local, weekday, hour, minute)
+
+    if frequency == "monthly":
+        day_of_month = target_dom if target_dom is not None else anchor_local.day
+        return _monthly_slot_on_or_after(anchor_local, day_of_month, hour, minute)
+
+    return anchor_local
+
+
+def _resolve_schedule_timezone(rule: Dict[str, Any], location: Dict[str, Any]) -> str:
+    """Resolve schedule timezone (rule-level first, then location settings, then UTC)."""
+    candidates = []
+
+    direct_rule_tz = rule.get("schedule_timezone")
+    if isinstance(direct_rule_tz, str) and direct_rule_tz.strip():
+        candidates.append(direct_rule_tz.strip())
+
+    merge_settings = rule.get("merge_settings")
+    if isinstance(merge_settings, dict):
+        merged_rule_tz = merge_settings.get("schedule_timezone")
+        if isinstance(merged_rule_tz, str) and merged_rule_tz.strip():
+            candidates.append(merged_rule_tz.strip())
+
+    location_settings = location.get("settings")
+    if isinstance(location_settings, dict):
+        for key in LOCATION_TIMEZONE_KEYS:
+            location_tz = location_settings.get(key)
+            if isinstance(location_tz, str) and location_tz.strip():
+                candidates.append(location_tz.strip())
+
+    for candidate in candidates:
+        try:
+            ZoneInfo(candidate)
+            return candidate
+        except ZoneInfoNotFoundError:
+            logger.warning(f"Ignoring invalid schedule timezone '{candidate}'")
+
+    return "UTC"
+
+
 def should_run_now(
     schedule_frequency: str,
     last_scan_at: Optional[str],
     schedule_time: Optional[str] = None,
     schedule_day: Optional[str] = None,
+    *,
+    schedule_timezone: Optional[str] = None,
+    created_at: Optional[str] = None,
+    now_utc: Optional[datetime] = None,
 ) -> bool:
     """
     Determine if a rule should run based on its schedule.
 
     - hourly: run if last scan > 1 hour ago
-    - daily: run if last scan > 24 hours ago
-    - weekly: run if last scan > 7 days ago, on configured weekday/time
-    - biweekly: run if last scan > 14 days ago, on configured weekday/time
-    - monthly: run on configured day-of-month/time, after ~1 month elapsed
+    - daily/weekly/biweekly/monthly: run when the next scheduled slot has passed
+      and the rule has not run for that slot yet (supports catch-up after missed cron windows)
     """
     if schedule_frequency == "manual":
         return False
 
-    now = datetime.utcnow()
-
-    if not last_scan_at:
-        return True  # Never run, should run now
-
-    # Parse last scan time
-    try:
-        last_scan_str = last_scan_at.replace("Z", "").replace("+00:00", "")
-        last_scan = datetime.fromisoformat(last_scan_str)
-    except Exception:
-        return True  # Invalid date, run now
-
-    elapsed = now - last_scan
-
-    def _matches_scheduled_hour() -> bool:
-        if not schedule_time:
-            return True
-        try:
-            target_hour = int(schedule_time.split(":")[0])
-            return now.hour == target_hour
-        except Exception:
-            return True
-
-    def _scheduled_weekday() -> Optional[int]:
-        """Convert schedule_day to Python weekday (Mon=0..Sun=6)."""
-        if not schedule_day:
-            return None
-
-        try:
-            raw_day = int(schedule_day)
-            # Frontend sends 0=Sunday..6=Saturday.
-            if 0 <= raw_day <= 6:
-                return (raw_day + 6) % 7
-        except ValueError:
-            pass
-
-        day_map = {
-            "monday": 0, "tuesday": 1, "wednesday": 2,
-            "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6
-        }
-        return day_map.get(str(schedule_day).lower())
+    if now_utc is None:
+        now_utc = _utc_now()
+    elif now_utc.tzinfo is None:
+        now_utc = now_utc.replace(tzinfo=UTC)
+    else:
+        now_utc = now_utc.astimezone(UTC)
 
     if schedule_frequency == "hourly":
-        return elapsed >= timedelta(hours=1)
+        last_scan = _parse_iso_datetime(last_scan_at)
+        if last_scan is None:
+            return True
+        return (now_utc - last_scan) >= timedelta(hours=1)
 
-    elif schedule_frequency == "daily":
-        if elapsed < timedelta(hours=23):  # Give 1 hour buffer
-            return False
-        return _matches_scheduled_hour()
+    tz_name = schedule_timezone or "UTC"
+    try:
+        schedule_tz = ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        logger.warning(f"Invalid schedule timezone '{tz_name}', defaulting to UTC")
+        schedule_tz = ZoneInfo("UTC")
 
-    elif schedule_frequency == "weekly":
-        if elapsed < timedelta(days=6, hours=23):
-            return False
-        target_weekday = _scheduled_weekday()
-        if target_weekday is not None and now.weekday() != target_weekday:
-            return False
-        return _matches_scheduled_hour()
+    now_local = now_utc.astimezone(schedule_tz)
+    hour, minute = _parse_schedule_time(schedule_time)
+    target_weekday = _scheduled_weekday(schedule_day)
+    target_dom = _scheduled_day_of_month(schedule_day)
 
-    elif schedule_frequency == "biweekly":
-        if elapsed < timedelta(days=13, hours=23):
-            return False
-        target_weekday = _scheduled_weekday()
-        if target_weekday is not None and now.weekday() != target_weekday:
-            return False
-        return _matches_scheduled_hour()
+    last_scan = _parse_iso_datetime(last_scan_at)
+    if last_scan is None:
+        created_at_dt = _parse_iso_datetime(created_at) or now_utc
+        anchor_local = created_at_dt.astimezone(schedule_tz)
+        first_slot = _next_slot_on_or_after(
+            schedule_frequency,
+            anchor_local,
+            hour=hour,
+            minute=minute,
+            target_weekday=target_weekday,
+            target_dom=target_dom,
+        )
+        return now_local >= first_slot
 
-    elif schedule_frequency == "monthly":
-        # Use 27-day floor so short months can still run near intended cadence.
-        if elapsed < timedelta(days=27):
-            return False
-        if schedule_day:
-            try:
-                target_dom = int(schedule_day)
-                if now.day != target_dom:
-                    return False
-            except ValueError:
-                pass
-        return _matches_scheduled_hour()
+    last_scan_local = last_scan.astimezone(schedule_tz)
+
+    if schedule_frequency == "daily":
+        last_slot = _daily_slot_on_or_before(last_scan_local, hour, minute)
+        next_slot = last_slot + timedelta(days=1)
+        return now_local >= next_slot
+
+    if schedule_frequency == "weekly":
+        weekday = target_weekday if target_weekday is not None else last_scan_local.weekday()
+        last_slot = _weekly_slot_on_or_before(last_scan_local, weekday, hour, minute)
+        next_slot = last_slot + timedelta(days=7)
+        return now_local >= next_slot
+
+    if schedule_frequency == "biweekly":
+        weekday = target_weekday if target_weekday is not None else last_scan_local.weekday()
+        last_slot = _weekly_slot_on_or_before(last_scan_local, weekday, hour, minute)
+        next_slot = last_slot + timedelta(days=14)
+        return now_local >= next_slot
+
+    if schedule_frequency == "monthly":
+        day_of_month = target_dom if target_dom is not None else last_scan_local.day
+        last_slot = _monthly_slot_on_or_before(last_scan_local, day_of_month, hour, minute)
+        next_slot = _shift_month(last_slot, 1)
+        return now_local >= next_slot
 
     return False
 
@@ -146,6 +343,7 @@ async def _auto_merge_high_confidence_matches(
     ghl_location_id: str,
     tenant_id: str,
     internal_location_id: str,
+    plan: str,
 ) -> Tuple[int, int]:
     """
     Auto-merge pending matches for a rule above its threshold.
@@ -208,6 +406,7 @@ async def _auto_merge_high_confidence_matches(
                 internal_location_id=internal_location_id,
                 preserve_alternates=preserve_alternates,
                 field_preservation_mappings=field_preservation_mappings,
+                plan=plan,
             )
             merged_count += 1
         except Exception as e:
@@ -229,11 +428,12 @@ async def process_scheduled_scans(
 
     logger.info("Starting scheduled scan processing")
     supabase = get_supabase()
+    evaluation_now_utc = _utc_now()
 
     # Get all active rules with schedules (not manual)
     # Join with locations to get ghl_location_id and tenant plan
     rules_result = supabase.table("match_rules").select(
-        "*, locations!inner(id, ghl_location_id, tenant_id, tenants!inner(plan))"
+        "*, locations!inner(id, ghl_location_id, tenant_id, settings, tenants!inner(plan))"
     ).eq("is_active", True).neq("schedule_frequency", "manual").execute()
 
     rules = rules_result.data or []
@@ -271,11 +471,15 @@ async def process_scheduled_scans(
             continue
 
         # Check if rule is due to run
+        schedule_timezone = _resolve_schedule_timezone(rule, location)
         if not should_run_now(
             rule.get("schedule_frequency", "manual"),
             rule.get("last_scan_at"),
             rule.get("schedule_time"),
             rule.get("schedule_day"),
+            schedule_timezone=schedule_timezone,
+            created_at=rule.get("created_at"),
+            now_utc=evaluation_now_utc,
         ):
             skipped.append({
                 "rule_id": rule_id,
@@ -303,7 +507,7 @@ async def process_scheduled_scans(
             "rule_id": rule_id,
             "status": "running",
             "trigger_type": "scheduled",
-            "started_at": datetime.utcnow().isoformat(),
+            "started_at": _utc_now().isoformat(),
         }
         supabase.table("job_executions").insert(job_data).execute()
 
@@ -318,6 +522,21 @@ async def process_scheduled_scans(
                 plan=plan,
             )
 
+            # Handle aborted scans (dataset too large for full scan)
+            if result.get("scan_aborted"):
+                supabase.table("job_executions").update({
+                    "status": "failed",
+                    "completed_at": _utc_now().isoformat(),
+                    "error_message": result.get("message", "Scan aborted due to dataset size"),
+                }).eq("id", job_id).execute()
+
+                errors.append({
+                    "rule_id": rule_id,
+                    "rule_name": rule_name,
+                    "error": result.get("message", "Scan aborted"),
+                })
+                continue
+
             auto_merged = 0
             auto_merge_failed = 0
             if features.auto_merge:
@@ -327,12 +546,13 @@ async def process_scheduled_scans(
                     ghl_location_id=ghl_location_id,
                     tenant_id=tenant_id,
                     internal_location_id=internal_location_id,
+                    plan=plan,
                 )
 
             # Update job execution with results
             supabase.table("job_executions").update({
                 "status": "completed",
-                "completed_at": datetime.utcnow().isoformat(),
+                "completed_at": _utc_now().isoformat(),
                 "records_scanned": result.get("records_scanned", 0),
                 "matches_found": result.get("matches_found", 0),
                 "matches_stored": result.get("matches_stored", 0),
@@ -341,7 +561,7 @@ async def process_scheduled_scans(
 
             # Update last_scan_at
             supabase.table("match_rules").update({
-                "last_scan_at": datetime.utcnow().isoformat()
+                "last_scan_at": _utc_now().isoformat()
             }).eq("id", rule_id).execute()
 
             processed.append({
@@ -361,7 +581,7 @@ async def process_scheduled_scans(
             error_msg = str(e)[:500]
             supabase.table("job_executions").update({
                 "status": "failed",
-                "completed_at": datetime.utcnow().isoformat(),
+                "completed_at": _utc_now().isoformat(),
                 "error_message": error_msg,
             }).eq("id", job_id).execute()
 
@@ -377,7 +597,7 @@ async def process_scheduled_scans(
         "processed": len(processed),
         "skipped": len(skipped),
         "errors": len(errors),
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": _utc_now().isoformat(),
     }
 
     logger.info(f"Scheduled scan processing complete: {summary}")
@@ -407,7 +627,7 @@ async def cleanup_expired_snapshots(
     logger.info("Starting expired snapshot cleanup")
     supabase = get_supabase()
 
-    now = datetime.utcnow().isoformat()
+    now = _utc_now().isoformat()
 
     # Delete all snapshots where expires_at is in the past
     result = supabase.table("snapshots").delete().lt("expires_at", now).execute()
@@ -427,4 +647,4 @@ async def cron_health(
 ):
     """Health check for cron system."""
     verify_cron_secret(x_cron_secret)
-    return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
+    return {"status": "ok", "timestamp": _utc_now().isoformat()}

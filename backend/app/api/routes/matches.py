@@ -45,7 +45,7 @@ async def list_matches(
     # Get the true total count (not limited by pagination)
     count_query = (
         supabase.table("match_pairs")
-        .select("*", count="exact")
+        .select("id", count="exact")
         .eq("location_id", user.location_id)
     )
     if status:
@@ -54,7 +54,8 @@ async def list_matches(
         count_query = count_query.eq("rule_id", rule_id)
     if search:
         # Search both record snapshots using JSONB text search (case-insensitive)
-        search_term = search.lower()
+        # Escape ILIKE wildcards so literal % and _ in search terms don't act as wildcards
+        search_term = search.lower().replace("%", "\\%").replace("_", "\\_")
         count_query = count_query.or_(
             f"record_a_data::text.ilike.%{search_term}%,"
             f"record_b_data::text.ilike.%{search_term}%"
@@ -62,31 +63,52 @@ async def list_matches(
     count_result = count_query.limit(1).execute()
     true_total = count_result.count if count_result.count is not None else 0
 
-    # Count unique contacts involved in matches (deduplicated across rules)
-    # A contact appearing in 10 pairs across 5 rules is still just 1 contact
-    # Paginate to handle >1000 rows (Supabase default limit)
-    unique_contacts = set()
-    page_offset = 0
-    page_size = 1000
-    while True:
-        ids_query = supabase.table("match_pairs").select("record_a_id, record_b_id").eq("location_id", user.location_id)
-        if status:
-            ids_query = ids_query.eq("status", status)
-        if rule_id:
-            ids_query = ids_query.eq("rule_id", rule_id)
-        if search:
-            search_term = search.lower()
-            ids_query = ids_query.or_(
-                f"record_a_data::text.ilike.%{search_term}%,"
-                f"record_b_data::text.ilike.%{search_term}%"
-            )
-        ids_result = ids_query.range(page_offset, page_offset + page_size - 1).execute()
-        for row in ids_result.data:
-            unique_contacts.add(row["record_a_id"])
-            unique_contacts.add(row["record_b_id"])
-        if len(ids_result.data) < page_size:
-            break
-        page_offset += page_size
+    # Count unique contacts using optimized SQL function when available.
+    unique_contact_count = 0
+    use_paginated_fallback = bool(search)
+    if not use_paginated_fallback:
+        try:
+            stats_result = supabase.rpc(
+                "get_match_pair_stats",
+                {
+                    "p_location_id": user.location_id,
+                    "p_status": status,
+                    "p_rule_id": rule_id,
+                }
+            ).execute()
+            if stats_result.data and len(stats_result.data) > 0:
+                unique_contact_count = stats_result.data[0].get("unique_contact_count", 0)
+            else:
+                use_paginated_fallback = true_total > 0
+        except Exception as e:
+            logger.warning(f"get_match_pair_stats RPC failed in list_matches, falling back: {e}")
+            use_paginated_fallback = True
+
+    if use_paginated_fallback:
+        # Fall back to pagination for search queries or when RPC is unavailable.
+        unique_contacts = set()
+        page_offset = 0
+        page_size = 1000
+        while True:
+            ids_query = supabase.table("match_pairs").select("record_a_id, record_b_id").eq("location_id", user.location_id)
+            if status:
+                ids_query = ids_query.eq("status", status)
+            if rule_id:
+                ids_query = ids_query.eq("rule_id", rule_id)
+            if search:
+                search_term = search.lower().replace("%", "\\%").replace("_", "\\_")
+                ids_query = ids_query.or_(
+                    f"record_a_data::text.ilike.%{search_term}%,"
+                    f"record_b_data::text.ilike.%{search_term}%"
+                )
+            ids_result = ids_query.range(page_offset, page_offset + page_size - 1).execute()
+            for row in ids_result.data:
+                unique_contacts.add(row["record_a_id"])
+                unique_contacts.add(row["record_b_id"])
+            if len(ids_result.data) < page_size:
+                break
+            page_offset += page_size
+        unique_contact_count = len(unique_contacts)
 
     # Fetch paginated data
     query = supabase.table("match_pairs").select("*").eq("location_id", user.location_id)
@@ -95,19 +117,20 @@ async def list_matches(
     if rule_id:
         query = query.eq("rule_id", rule_id)
     if search:
-        search_term = search.lower()
+        search_term = search.lower().replace("%", "\\%").replace("_", "\\_")
         query = query.or_(
             f"record_a_data::text.ilike.%{search_term}%,"
             f"record_b_data::text.ilike.%{search_term}%"
         )
 
-    query = query.range(offset, offset + limit - 1)
+    # Deterministic ordering prevents duplicate/missing rows across pages.
+    query = query.order("created_at", desc=True).order("id", desc=True).range(offset, offset + limit - 1)
     result = query.execute()
 
     return {
         "data": result.data,
         "total": true_total,
-        "unique_contacts": len(unique_contacts),
+        "unique_contacts": unique_contact_count,
         "limit": limit,
         "offset": offset,
     }
@@ -274,13 +297,33 @@ async def get_match_counts(
     user: AuthenticatedUser = Depends(get_user),
     status: Optional[str] = Query(None, description="Filter by status: pending, approved, rejected, merged"),
 ):
-    """Get lightweight counts of matches - no row data returned."""
+    """Get lightweight counts of matches using optimized SQL function."""
     supabase = get_supabase()
 
-    # Get the true total count
+    try:
+        result = supabase.rpc(
+            "get_match_pair_stats",
+            {
+                "p_location_id": user.location_id,
+                "p_status": status,
+                "p_rule_id": None,
+            }
+        ).execute()
+
+        if result.data and len(result.data) > 0:
+            row = result.data[0]
+            return {
+                "total": row.get("total_count", 0),
+                "unique_contacts": row.get("unique_contact_count", 0),
+                "by_rule": row.get("by_rule", {}),
+            }
+    except Exception as e:
+        logger.warning(f"get_match_pair_stats RPC failed in get_match_counts, falling back: {e}")
+
+    # Fallback path if RPC is unavailable.
     count_query = (
         supabase.table("match_pairs")
-        .select("*", count="exact")
+        .select("id", count="exact")
         .eq("location_id", user.location_id)
     )
     if status:
@@ -288,7 +331,6 @@ async def get_match_counts(
     count_result = count_query.limit(1).execute()
     total = count_result.count if count_result.count is not None else 0
 
-    # Count unique contacts and per-rule counts in one paginated scan
     unique_contacts = set()
     by_rule = {}
     page_offset = 0
@@ -305,9 +347,9 @@ async def get_match_counts(
         for row in ids_result.data:
             unique_contacts.add(row["record_a_id"])
             unique_contacts.add(row["record_b_id"])
-            rule_id = row.get("rule_id")
-            if rule_id:
-                by_rule[rule_id] = by_rule.get(rule_id, 0) + 1
+            row_rule_id = row.get("rule_id")
+            if row_rule_id:
+                by_rule[row_rule_id] = by_rule.get(row_rule_id, 0) + 1
         if len(ids_result.data) < page_size:
             break
         page_offset += page_size

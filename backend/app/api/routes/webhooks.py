@@ -74,7 +74,7 @@ async def update_last_webhook_at(location_id: str):
     try:
         supabase = get_supabase()
         supabase.table("locations").update({
-            "last_webhook_at": "now()"
+            "last_webhook_at": datetime.utcnow().isoformat()
         }).eq("ghl_location_id", location_id).execute()
     except Exception as e:
         logger.warning(f"Failed to update last_webhook_at: {e}")
@@ -164,12 +164,28 @@ def _extract_record_id_and_data(payload: dict) -> tuple:
     return None, None
 
 
-async def _update_match_pair_snapshots(record_id: str, fresh_data: dict) -> list:
+async def _resolve_location(ghl_location_id: str) -> dict | None:
+    """Resolve GHL location ID to internal location record (id, tenant_id)."""
+    if not ghl_location_id:
+        return None
+    supabase = get_supabase()
+    result = supabase.table("locations").select("id, tenant_id").eq(
+        "ghl_location_id", ghl_location_id
+    ).limit(1).execute()
+    return result.data[0] if result.data else None
+
+
+async def _update_match_pair_snapshots(record_id: str, fresh_data: dict, location_id: str | None = None) -> list:
     """Update snapshot data in pending match_pairs that reference this record.
 
     Returns list of affected pair IDs for re-validation.
     """
-    if not record_id or not fresh_data:
+    if not record_id or not fresh_data or not location_id:
+        if record_id and fresh_data and not location_id:
+            logger.warning(
+                "Skipping snapshot update for record %s: missing internal location scope",
+                record_id,
+            )
         return []
 
     supabase = get_supabase()
@@ -177,9 +193,12 @@ async def _update_match_pair_snapshots(record_id: str, fresh_data: dict) -> list
 
     try:
         # Find pending pairs where this record is record_a
-        pairs_a = supabase.table("match_pairs").select("id").eq(
+        query_a = supabase.table("match_pairs").select("id").eq(
             "record_a_id", record_id
-        ).eq("status", "pending").execute()
+        ).eq("status", "pending")
+        if location_id:
+            query_a = query_a.eq("location_id", location_id)
+        pairs_a = query_a.execute()
 
         for pair in (pairs_a.data or []):
             supabase.table("match_pairs").update({
@@ -189,9 +208,12 @@ async def _update_match_pair_snapshots(record_id: str, fresh_data: dict) -> list
             affected_pair_ids.append(pair["id"])
 
         # Find pending pairs where this record is record_b
-        pairs_b = supabase.table("match_pairs").select("id").eq(
+        query_b = supabase.table("match_pairs").select("id").eq(
             "record_b_id", record_id
-        ).eq("status", "pending").execute()
+        ).eq("status", "pending")
+        if location_id:
+            query_b = query_b.eq("location_id", location_id)
+        pairs_b = query_b.execute()
 
         for pair in (pairs_b.data or []):
             supabase.table("match_pairs").update({
@@ -209,27 +231,38 @@ async def _update_match_pair_snapshots(record_id: str, fresh_data: dict) -> list
     return affected_pair_ids
 
 
-async def _mark_pairs_stale(record_id: str) -> int:
+async def _mark_pairs_stale(record_id: str, location_id: str | None = None) -> int:
     """Mark all pending match_pairs referencing this record as stale.
 
     Used when a record is deleted.
     Returns count of pairs marked stale.
     """
-    if not record_id:
+    if not record_id or not location_id:
+        if record_id and not location_id:
+            logger.warning(
+                "Skipping stale mark for record %s: missing internal location scope",
+                record_id,
+            )
         return 0
 
     supabase = get_supabase()
     stale_count = 0
 
     try:
-        stale_a = supabase.table("match_pairs").update({
+        query_a = supabase.table("match_pairs").update({
             "status": "stale",
-        }).eq("record_a_id", record_id).eq("status", "pending").execute()
+        }).eq("record_a_id", record_id).eq("status", "pending")
+        if location_id:
+            query_a = query_a.eq("location_id", location_id)
+        stale_a = query_a.execute()
         stale_count += len(stale_a.data or [])
 
-        stale_b = supabase.table("match_pairs").update({
+        query_b = supabase.table("match_pairs").update({
             "status": "stale",
-        }).eq("record_b_id", record_id).eq("status", "pending").execute()
+        }).eq("record_b_id", record_id).eq("status", "pending")
+        if location_id:
+            query_b = query_b.eq("location_id", location_id)
+        stale_b = query_b.execute()
         stale_count += len(stale_b.data or [])
 
         if stale_count > 0:
@@ -524,21 +557,9 @@ async def ghl_webhook(
             logger.warning("Data webhook signature verification failed")
             raise HTTPException(status_code=401, detail="Invalid signature")
     else:
-        # Data webhook without signature — validate locationId against our DB
-        location_id_check = payload.get("locationId") or (
-            data.get("locationId") if isinstance(data, dict) else None
-        )
-        if not location_id_check:
-            logger.warning("Data webhook missing both signature and locationId")
-            raise HTTPException(status_code=401, detail="Unverifiable webhook")
-
-        supabase = get_supabase()
-        loc_check = supabase.table("locations").select("id").eq(
-            "ghl_location_id", location_id_check
-        ).limit(1).execute()
-        if not loc_check.data:
-            logger.warning(f"Data webhook from unknown location: {location_id_check}")
-            raise HTTPException(status_code=401, detail="Unknown location")
+        # SECURITY: Reject data webhooks without signature
+        logger.warning(f"Data webhook missing signature, event={event_type}")
+        raise HTTPException(status_code=401, detail="Missing webhook signature")
 
     # SECURITY: Verify timestamp to prevent replay attacks
     timestamp = payload.get("timestamp") or payload.get("createdAt")
@@ -581,6 +602,20 @@ async def ghl_webhook(
     # ── Data webhooks ─────────────────────────────────────────────────────
     location_id = payload.get("locationId") or (data.get("locationId") if isinstance(data, dict) else None)
 
+    # Resolve GHL location ID to internal location UUID for scoped queries
+    loc = await _resolve_location(location_id) if location_id else None
+    internal_location_id = str(loc["id"]) if loc else None
+
+    # All data/tracking events must resolve to a known location (fail closed).
+    data_event_types = _CREATE_EVENTS | _UPDATE_EVENTS | _DELETE_EVENTS | _TRACKING_ONLY_EVENTS
+    if event_type in data_event_types:
+        if not location_id:
+            logger.warning("Data webhook missing locationId, event=%s", event_type)
+            raise HTTPException(status_code=401, detail="Missing locationId")
+        if not internal_location_id:
+            logger.warning("Data webhook for unknown locationId=%s, event=%s", location_id, event_type)
+            raise HTTPException(status_code=401, detail="Unknown location")
+
     # CREATE events: update timestamp + check for duplicates
     if event_type in _CREATE_EVENTS:
         await update_last_webhook_at(location_id)
@@ -606,7 +641,7 @@ async def ghl_webhook(
 
         if record_id and record_data:
             # Update snapshots in existing pending match_pairs
-            affected_pair_ids = await _update_match_pair_snapshots(record_id, record_data)
+            affected_pair_ids = await _update_match_pair_snapshots(record_id, record_data, internal_location_id)
             if affected_pair_ids:
                 # Fire-and-forget background revalidation
                 asyncio.ensure_future(_revalidate_pairs(affected_pair_ids))
@@ -630,7 +665,7 @@ async def ghl_webhook(
         await update_last_webhook_at(location_id)
         record_id, _ = _extract_record_id_and_data(payload)
         if record_id:
-            await _mark_pairs_stale(record_id)
+            await _mark_pairs_stale(record_id, internal_location_id)
         return {"received": True, "event": event_type, "location_id": location_id}
 
     # TRACKING-ONLY events: just update the timestamp

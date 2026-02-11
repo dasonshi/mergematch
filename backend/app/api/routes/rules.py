@@ -1,12 +1,15 @@
 from fastapi import APIRouter, HTTPException, Header, Request, Depends
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 import uuid
 import logging
+import re
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.db.supabase import get_supabase
 from app.services.matching_service import run_scan
+from app.services.billing_service import get_plan_features
 from app.core.security import AuthenticatedUser
 from app.core.deps import get_user, get_auth_context, AuthContext
 from app.core.rate_limit import limiter
@@ -15,6 +18,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 MERGEABLE_OBJECTS = {"contacts", "companies", "opportunities"}
+SCHEDULE_FREQUENCIES = {"manual", "hourly", "daily", "weekly", "biweekly", "monthly"}
+TIME_PATTERN = re.compile(r"^\d{2}:\d{2}$")
 
 
 class MatchField(BaseModel):
@@ -60,6 +65,8 @@ class MergeSettings(BaseModel):
     overwrite_blanks: Optional[bool] = False
     field_preservation: Optional[FieldPreservationSettings] = None
     related_records: Optional[RelatedRecordsSettings] = None
+    # Stored in merge_settings for backward-compatible persistence without schema changes.
+    schedule_timezone: Optional[str] = None
 
 
 class MatchRuleCreate(BaseModel):
@@ -72,8 +79,114 @@ class MatchRuleCreate(BaseModel):
     schedule_frequency: str = Field("manual", max_length=50)
     schedule_time: Optional[str] = None  # HH:MM format (e.g., "06:00")
     schedule_day: Optional[str] = None   # Day of week (0-6) or day of month (1-28)
+    schedule_timezone: Optional[str] = None  # IANA timezone (e.g., "America/New_York")
     is_active: bool = True
     merge_settings: Optional[MergeSettings] = None
+
+
+def _validate_rule_access(rule: MatchRuleCreate, user: AuthenticatedUser) -> None:
+    """Enforce plan-based feature gates on the backend."""
+    features = get_plan_features(user.plan)
+    is_custom_object = rule.source_object.startswith("custom_objects.")
+
+    if rule.source_object == "companies" and not features.company_matching:
+        raise HTTPException(status_code=403, detail="Upgrade required for company matching.")
+    if rule.source_object == "opportunities" and not features.opportunity_matching:
+        raise HTTPException(status_code=403, detail="Upgrade required for opportunity matching.")
+    if is_custom_object and not features.custom_object_matching:
+        raise HTTPException(status_code=403, detail="Upgrade required for custom object matching.")
+    if rule.schedule_frequency != "manual" and not features.scheduled_scans:
+        raise HTTPException(status_code=403, detail="Upgrade required for scheduled scans.")
+
+
+def _normalize_schedule_fields(rule: MatchRuleCreate) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """Validate and normalize schedule fields for storage."""
+    frequency = rule.schedule_frequency
+    schedule_time = rule.schedule_time
+    schedule_day = rule.schedule_day
+    schedule_timezone = (
+        rule.schedule_timezone
+        or (rule.merge_settings.schedule_timezone if rule.merge_settings else None)
+    )
+    if schedule_timezone is not None:
+        schedule_timezone = schedule_timezone.strip() or None
+
+    if frequency not in SCHEDULE_FREQUENCIES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid schedule frequency '{frequency}'. Supported values: {', '.join(sorted(SCHEDULE_FREQUENCIES))}",
+        )
+
+    if frequency == "manual":
+        return None, None, None
+
+    if schedule_timezone:
+        try:
+            ZoneInfo(schedule_timezone)
+        except ZoneInfoNotFoundError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid schedule_timezone '{schedule_timezone}'. Use a valid IANA timezone.",
+            )
+
+    if schedule_time:
+        if not TIME_PATTERN.match(schedule_time):
+            raise HTTPException(status_code=400, detail="schedule_time must be HH:MM format.")
+        try:
+            hour, minute = map(int, schedule_time.split(":"))
+            if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                raise ValueError
+        except Exception:
+            raise HTTPException(status_code=400, detail="schedule_time must be a valid time.")
+
+        # Scheduled scans run on hourly cron boundaries, so persist top-of-hour values.
+        schedule_time = f"{hour:02d}:00"
+
+    if frequency in {"hourly", "daily"}:
+        return schedule_time, None, schedule_timezone
+
+    if frequency in {"weekly", "biweekly"}:
+        if schedule_day:
+            day = schedule_day.strip().lower()
+            day_map = {
+                "monday", "tuesday", "wednesday",
+                "thursday", "friday", "saturday", "sunday",
+            }
+            if day in day_map:
+                pass
+            else:
+                try:
+                    day_int = int(schedule_day)
+                    if not (0 <= day_int <= 6):
+                        raise ValueError
+                except Exception:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="schedule_day for weekly/biweekly must be 0-6 (Sunday=0) or day name.",
+                    )
+        return schedule_time, schedule_day, schedule_timezone
+
+    # monthly
+    if schedule_day:
+        try:
+            day_int = int(schedule_day)
+            if not (1 <= day_int <= 28):
+                raise ValueError
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail="schedule_day for monthly schedules must be 1-28.",
+            )
+    return schedule_time, schedule_day, schedule_timezone
+
+
+def _build_merge_settings_payload(rule: MatchRuleCreate, schedule_timezone: Optional[str]) -> Dict[str, Any]:
+    merge_settings_payload = rule.merge_settings.model_dump() if rule.merge_settings else {}
+    if schedule_timezone:
+        merge_settings_payload["schedule_timezone"] = schedule_timezone
+    else:
+        merge_settings_payload.pop("schedule_timezone", None)
+    return merge_settings_payload
 
 
 @router.get("/")
@@ -106,6 +219,8 @@ async def create_rule(
                 "Supported types: contacts, companies, opportunities, custom_objects.*"
             ),
         )
+    _validate_rule_access(rule, user)
+    schedule_time, schedule_day, schedule_timezone = _normalize_schedule_fields(rule)
 
     supabase = get_supabase()
 
@@ -122,6 +237,7 @@ async def create_rule(
     # Convert percentage thresholds to decimals if > 1 (e.g., 95 -> 0.95)
     auto_threshold = rule.auto_merge_threshold / 100 if rule.auto_merge_threshold > 1 else rule.auto_merge_threshold
     review_threshold = rule.review_threshold / 100 if rule.review_threshold > 1 else rule.review_threshold
+    merge_settings_payload = _build_merge_settings_payload(rule, schedule_timezone)
 
     rule_data = {
         "id": rule_id,
@@ -134,10 +250,10 @@ async def create_rule(
         "review_threshold": review_threshold,
         "merge_strategy": rule.merge_strategy,
         "schedule_frequency": rule.schedule_frequency,
-        "schedule_time": rule.schedule_time,
-        "schedule_day": rule.schedule_day,
+        "schedule_time": schedule_time,
+        "schedule_day": schedule_day,
         "is_active": rule.is_active,
-        "merge_settings": rule.merge_settings.model_dump() if rule.merge_settings else {},
+        "merge_settings": merge_settings_payload,
     }
 
     result = supabase.table("match_rules").insert(rule_data).execute()
@@ -182,6 +298,8 @@ async def update_rule(
                 "Supported types: contacts, companies, opportunities, custom_objects.*"
             ),
         )
+    _validate_rule_access(rule, user)
+    schedule_time, schedule_day, schedule_timezone = _normalize_schedule_fields(rule)
 
     # Free tier: cannot edit rules
     if user.plan == "free":
@@ -193,6 +311,7 @@ async def update_rule(
     # Convert percentage thresholds to decimals if > 1
     auto_threshold = rule.auto_merge_threshold / 100 if rule.auto_merge_threshold > 1 else rule.auto_merge_threshold
     review_threshold = rule.review_threshold / 100 if rule.review_threshold > 1 else rule.review_threshold
+    merge_settings_payload = _build_merge_settings_payload(rule, schedule_timezone)
 
     supabase = get_supabase()
 
@@ -204,10 +323,10 @@ async def update_rule(
         "review_threshold": review_threshold,
         "merge_strategy": rule.merge_strategy,
         "schedule_frequency": rule.schedule_frequency,
-        "schedule_time": rule.schedule_time,
-        "schedule_day": rule.schedule_day,
+        "schedule_time": schedule_time,
+        "schedule_day": schedule_day,
         "is_active": rule.is_active,
-        "merge_settings": rule.merge_settings.model_dump() if rule.merge_settings else {},
+        "merge_settings": merge_settings_payload,
     }
 
     result = supabase.table("match_rules").update(update_data).eq("id", rule_id).eq("location_id", user.location_id).execute()
@@ -273,13 +392,21 @@ async def scan_rule(
             plan=ctx.plan,
         )
 
+        if result.get("scan_aborted"):
+            raise HTTPException(
+                status_code=409,
+                detail=result.get("message", "Scan aborted due to dataset size"),
+            )
+
         # Update last_scan_at on the rule
         supabase = get_supabase()
         supabase.table("match_rules").update({
-            "last_scan_at": "now()"
+            "last_scan_at": datetime.utcnow().isoformat()
         }).eq("id", rule_id).execute()
 
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Scan failed for rule {rule_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Scan failed. Please try again.")
@@ -326,6 +453,20 @@ async def run_rule_manually(
             internal_location_id=ctx.location_id,
             plan=ctx.plan,
         )
+
+        # Handle aborted scans (dataset too large for full scan)
+        if result.get("scan_aborted"):
+            supabase.table("job_executions").update({
+                "status": "failed",
+                "completed_at": datetime.utcnow().isoformat(),
+                "error_message": result.get("message", "Scan aborted due to dataset size"),
+            }).eq("id", job_id).execute()
+
+            return {
+                "job_id": job_id,
+                "status": "failed",
+                **result,
+            }
 
         # Update job execution with results
         supabase.table("job_executions").update({

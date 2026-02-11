@@ -7,12 +7,12 @@ import logging
 from datetime import datetime
 from typing import List, Dict, Optional
 
-from celery import shared_task
 from celery.exceptions import SoftTimeLimitExceeded
+import httpx
 
 from app.core.celery_app import celery_app
 from app.db.supabase import get_supabase
-from app.services.merge_service import execute_merge
+from app.services.bulk_merge_service import process_single_merge
 from app.services.billing_service import check_merge_quota
 from app.services.auth_service import get_location_tokens, refresh_ghl_token
 
@@ -38,141 +38,11 @@ def is_job_cancelled(job_id: str) -> bool:
     return result.data.get("cancel_requested", False) if result.data else False
 
 
-def compute_merge_selections(
-    record_a: Dict,
-    record_b: Dict,
-    strategy: str,
-    overwrite_blanks: bool = False,
-    source_object: str = "contacts",
-) -> tuple:
-    """Compute master record ID and field selections based on merge strategy."""
-    if source_object == "contacts":
-        fields = [
-            "firstName", "lastName", "email", "phone", "tags",
-            "address1", "city", "state", "postalCode", "companyName",
-        ]
-    else:
-        internal_fields = {
-            "id", "_raw", "dateAdded", "dateUpdated", "createdAt", "updatedAt",
-            "locationId", "location_id", "contact", "pipeline", "contacts",
-            "opportunities", "relationships",
-        }
-        all_fields = set(record_a.keys()) | set(record_b.keys())
-        fields = [f for f in all_fields if f not in internal_fields and not f.startswith("_")]
-
-    id_a = record_a.get("id", "")
-    id_b = record_b.get("id", "")
-
-    # Determine master based on strategy
-    if strategy == "recent":
-        date_a = record_a.get("dateUpdated") or record_a.get("dateAdded") or ""
-        date_b = record_b.get("dateUpdated") or record_b.get("dateAdded") or ""
-        master_id = id_a if date_a >= date_b else id_b
-    elif strategy == "standard":
-        def count_filled(record: Dict) -> int:
-            return sum(1 for f in fields if record.get(f))
-        master_id = id_a if count_filled(record_a) >= count_filled(record_b) else id_b
-    elif strategy == "oldest":
-        date_a = record_a.get("dateAdded") or ""
-        date_b = record_b.get("dateAdded") or ""
-        master_id = id_a if date_a <= date_b else id_b
-    else:
-        master_id = id_a
-
-    # Compute field selections
-    master = record_a if master_id == id_a else record_b
-    duplicate = record_b if master_id == id_a else record_a
-
-    selections = {}
-    for field in fields:
-        master_val = master.get(field)
-        dup_val = duplicate.get(field)
-        master_empty = master_val is None or master_val == "" or master_val == []
-        dup_empty = dup_val is None or dup_val == "" or dup_val == []
-
-        if master_empty and not dup_empty and not overwrite_blanks:
-            selections[field] = "b" if master_id == id_a else "a"
-        else:
-            selections[field] = "a" if master_id == id_a else "b"
-
-    return master_id, selections
-
-
-async def process_single_merge_async(
-    match_id: str,
-    rule: Dict,
-    access_token: str,
-    ghl_location_id: str,
-    tenant_id: str,
-    internal_location_id: str,
-) -> Dict:
-    """Process a single merge operation."""
-    supabase = get_supabase()
-
-    try:
-        # Fetch match details
-        match_result = (
-            supabase.table("match_pairs")
-            .select("*")
-            .eq("id", match_id)
-            .eq("location_id", internal_location_id)
-            .single()
-            .execute()
-        )
-
-        if not match_result.data:
-            return {"match_id": match_id, "success": False, "error": "Match not found"}
-
-        match = match_result.data
-
-        if match.get("status") != "pending":
-            return {"match_id": match_id, "success": False, "error": f"Match status is {match.get('status')}"}
-
-        record_a = match.get("record_a_data") or {}
-        record_b = match.get("record_b_data") or {}
-
-        strategy = rule.get("merge_strategy") or "standard"
-        merge_settings = rule.get("merge_settings") or {}
-        overwrite_blanks = merge_settings.get("overwrite_blanks", False)
-
-        # Check if this is a custom object merge
-        source_object = rule.get("source_object", "contacts")
-
-        master_id, selections = compute_merge_selections(
-            record_a, record_b, strategy, overwrite_blanks, source_object
-        )
-
-        # Get field preservation mappings
-        mappings = None
-        field_preservation = merge_settings.get("field_preservation") or {}
-        if field_preservation.get("enabled"):
-            mappings = field_preservation.get("mappings") or []
-
-        # Execute the merge
-        result = await execute_merge(
-            match_id=match_id,
-            master_record_id=master_id,
-            field_selections=selections,
-            access_token=access_token,
-            ghl_location_id=ghl_location_id,
-            tenant_id=tenant_id,
-            internal_location_id=internal_location_id,
-            preserve_alternates=field_preservation.get("enabled", False),
-            field_preservation_mappings=mappings,
-        )
-
-        return {"match_id": match_id, "success": True, "merge_id": result.get("id")}
-
-    except Exception as e:
-        logger.error(f"Merge failed for match {match_id}: {str(e)}")
-        return {"match_id": match_id, "success": False, "error": str(e)}
-
-
 @celery_app.task(
     bind=True,
     max_retries=3,
     default_retry_delay=60,
-    autoretry_for=(Exception,),
+    autoretry_for=(ConnectionError, TimeoutError, httpx.TransportError),
     retry_backoff=True,
 )
 def execute_bulk_merge_task(
@@ -231,8 +101,8 @@ def execute_bulk_merge_task(
         })
         return {"status": "failed", "error": str(e)}
 
-    # Get rule configuration
-    rule = {}
+    # Shared per-match rules cache to match BackgroundTasks behavior.
+    rules_cache: Dict[str, Dict] = {}
     if rule_id:
         rule_result = (
             supabase.table("match_rules")
@@ -243,7 +113,7 @@ def execute_bulk_merge_task(
             .execute()
         )
         if rule_result.data:
-            rule = rule_result.data
+            rules_cache[rule_id] = rule_result.data
 
     success_count = 0
     failed_count = 0
@@ -293,13 +163,15 @@ def execute_bulk_merge_task(
 
             # Process the merge
             try:
-                result = asyncio.run(process_single_merge_async(
+                result = asyncio.run(process_single_merge(
                     match_id=match_id,
-                    rule=rule,
+                    rules_cache=rules_cache,
                     access_token=access_token,
                     ghl_location_id=ghl_location_id,
                     tenant_id=tenant_id,
                     internal_location_id=location_id,
+                    semaphore=asyncio.Semaphore(1),
+                    plan=plan,
                 ))
 
                 processed_count += 1
