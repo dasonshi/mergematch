@@ -22,6 +22,8 @@ class GHLOAuth:
         "objects/schema.readonly",  # Object schemas
         "objects/record.readonly",  # Custom object records (read)
         "objects/record.write",  # Custom object records (write/delete)
+        "associations/relation.readonly",  # Record associations (read)
+        "associations/relation.write",  # Record associations (write/delete)
         "oauth.readonly",
         "oauth.write",
     ]

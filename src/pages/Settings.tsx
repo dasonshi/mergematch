@@ -13,6 +13,7 @@ import {
   Rocket,
   ExternalLink,
   Lightbulb,
+  Loader2,
 } from "lucide-react";
 import {
   AlertDialog,
@@ -381,6 +382,11 @@ export default function Settings() {
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button variant="outline" disabled={isResyncing}>
+                    {isResyncing ? (
+                      <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="mr-1.5 h-4 w-4" />
+                    )}
                     {isResyncing ? "Resyncing..." : "Force Resync"}
                   </Button>
                 </AlertDialogTrigger>
@@ -402,6 +408,20 @@ export default function Settings() {
                 </AlertDialogContent>
               </AlertDialog>
             </div>
+            {isResyncing && (
+              <div className="mt-4 flex items-center gap-3 rounded-lg bg-primary/5 border border-primary/20 p-3">
+                <Loader2 className="h-5 w-5 animate-spin text-primary flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm">Scanning all active rules...</p>
+                  <p className="text-xs text-muted-foreground">
+                    Re-pulling records and checking for duplicates. This may take a few minutes.
+                  </p>
+                  <div className="mt-2 h-1 w-full rounded-full bg-primary/10 overflow-hidden">
+                    <div className="h-full w-1/3 rounded-full bg-primary/40 animate-pulse" />
+                  </div>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
