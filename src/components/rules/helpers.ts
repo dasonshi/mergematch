@@ -164,33 +164,81 @@ function getCustomFieldValue(record: Record<string, unknown>, field: string): un
   return undefined;
 }
 
-/**
- * Get field value from record, handling nested custom fields.
- */
-export function getFieldValue(record: Record<string, unknown>, field: string): string {
-  if (!record || !field) return "";
+function getRawPropertiesValue(record: Record<string, unknown>, field: string): unknown {
+  const rawValue = record._raw;
+  if (!rawValue || typeof rawValue !== "object") return undefined;
 
+  const rawRecord = rawValue as Record<string, unknown>;
+  const propertiesValue = rawRecord.properties;
+  if (!propertiesValue || typeof propertiesValue !== "object" || Array.isArray(propertiesValue)) {
+    return undefined;
+  }
+
+  const properties = propertiesValue as Record<string, unknown>;
+  if (field in properties) return properties[field];
+
+  if (field.startsWith("custom_objects.")) {
+    const parts = field.split(".");
+    if (parts.length >= 3) {
+      const extracted = parts.slice(2).join(".");
+      if (extracted in properties) return properties[extracted];
+    }
+  }
+
+  if (field.includes(".")) {
+    const nested = getNestedValue(properties, field);
+    if (nested !== undefined) return nested;
+  }
+
+  const suffixKey = Object.keys(properties).find((key) => key.endsWith(`.${field}`));
+  if (suffixKey) return properties[suffixKey];
+
+  return undefined;
+}
+
+function getFieldCandidates(record: Record<string, unknown>, field: string): unknown[] {
   const candidates: unknown[] = [];
 
   if (field.startsWith("customField.")) {
     const customKey = field.replace("customField.", "");
     candidates.push(getCustomFieldValue(record, customKey));
     candidates.push(record[customKey]);
+    candidates.push(getRawPropertiesValue(record, customKey));
     candidates.push(getNestedValue(record, customKey));
   } else {
     candidates.push(record[field]);
     candidates.push(getCustomFieldValue(record, field));
+    candidates.push(getRawPropertiesValue(record, field));
     if (field.includes(".")) {
       candidates.push(getNestedValue(record, field));
     }
   }
 
+  return candidates;
+}
+
+/**
+ * Resolve raw field value from record, handling nested custom fields.
+ * Returns the first candidate that has a non-empty display value.
+ */
+export function getFieldRawValue(record: Record<string, unknown>, field: string): unknown {
+  if (!record || !field) return undefined;
+
+  const candidates = getFieldCandidates(record, field);
   for (const candidate of candidates) {
     const text = normalizeDisplayValue(candidate);
-    if (text) return text;
+    if (text) return candidate;
   }
 
-  return "";
+  return undefined;
+}
+
+/**
+ * Get field value from record, handling nested custom fields.
+ */
+export function getFieldValue(record: Record<string, unknown>, field: string): string {
+  const value = getFieldRawValue(record, field);
+  return normalizeDisplayValue(value);
 }
 
 /**

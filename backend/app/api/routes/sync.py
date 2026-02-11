@@ -212,6 +212,9 @@ async def force_resync(
                 plan=user.plan or "free",
             )
 
+            if result.get("scan_aborted"):
+                raise RuntimeError(result.get("message", "Scan aborted due to dataset size"))
+
             total_matches += result.get("matches_found", 0)
             total_records += result.get("records_scanned", 0)
             rules_scanned += 1

@@ -42,8 +42,7 @@ interface Rule {
   review_threshold: number;
   schedule_frequency?: string;
   schedule_time?: string;
-  schedule_day_of_week?: string;
-  schedule_day_of_month?: string;
+  schedule_day?: string;
   merge_settings?: MergeSettings;
 }
 
@@ -79,22 +78,21 @@ function formatMatchLogic(fields: MatchField[]): string {
 function formatSchedule(
   frequency?: string,
   time?: string,
-  dayOfWeek?: string,
-  dayOfMonth?: string
+  scheduleDay?: string
 ): string {
   if (!frequency || frequency === 'manual') return 'Manual';
 
   const dayNames: Record<string, string> = {
-    '1': 'Monday', '2': 'Tuesday', '3': 'Wednesday',
-    '4': 'Thursday', '5': 'Friday', '6': 'Saturday', '7': 'Sunday'
+    '0': 'Sunday', '1': 'Monday', '2': 'Tuesday', '3': 'Wednesday',
+    '4': 'Thursday', '5': 'Friday', '6': 'Saturday'
   };
 
   let result = frequency.charAt(0).toUpperCase() + frequency.slice(1);
 
-  if (frequency === 'weekly' && dayOfWeek) {
-    result += ` on ${dayNames[dayOfWeek] || dayOfWeek}`;
-  } else if (frequency === 'monthly' && dayOfMonth) {
-    result += ` on day ${dayOfMonth}`;
+  if ((frequency === 'weekly' || frequency === 'biweekly') && scheduleDay) {
+    result += ` on ${dayNames[scheduleDay] || scheduleDay}`;
+  } else if (frequency === 'monthly' && scheduleDay) {
+    result += ` on day ${scheduleDay}`;
   }
 
   if (time) {
@@ -203,8 +201,7 @@ export function RuleSummaryCard({
               {formatSchedule(
                 rule.schedule_frequency,
                 rule.schedule_time,
-                rule.schedule_day_of_week,
-                rule.schedule_day_of_month
+                rule.schedule_day
               )}
             </p>
           </div>

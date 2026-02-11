@@ -149,8 +149,8 @@ export default function Dashboard() {
     queryKey: ['rules', locationId],
     queryFn: () => api.getMatchRules(),
     enabled: isAuthenticated && !!locationId,
-    gcTime: 0,
-    staleTime: 0,
+    gcTime: 5 * 60 * 1000,      // 5 minutes
+    staleTime: 30 * 1000,       // 30 seconds
   });
 
   // Fetch object schema metadata for display-field aware record titles.
@@ -165,9 +165,8 @@ export default function Dashboard() {
     queryKey: ['match-counts', 'pending', locationId],
     queryFn: () => api.getMatchCounts('pending'),
     enabled: isAuthenticated && !!locationId,
-    gcTime: 0,
-    staleTime: 0,
-    refetchOnMount: 'always',
+    gcTime: 5 * 60 * 1000,      // 5 minutes
+    staleTime: 15 * 1000,       // 15 seconds
   });
 
   // Small preview for the pending matches table (only 5 records)
@@ -175,8 +174,8 @@ export default function Dashboard() {
     queryKey: ['matches', 'pending', 'preview', locationId],
     queryFn: () => api.getMatches('pending', undefined, 5),
     enabled: isAuthenticated && !!locationId && (matchCountsData?.total ?? 0) > 0,
-    gcTime: 0,
-    staleTime: 0,
+    gcTime: 5 * 60 * 1000,      // 5 minutes
+    staleTime: 30 * 1000,       // 30 seconds
   });
 
   // Fetch merge stats

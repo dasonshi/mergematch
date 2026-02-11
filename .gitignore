@@ -37,3 +37,4 @@ ENV/
 # Environment files
 .env
 backend/.env
+coverage/

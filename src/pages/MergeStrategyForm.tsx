@@ -67,7 +67,7 @@ export default function MergeStrategyForm() {
 
   // Fetch available object types
   const { data: availableObjects } = useQuery({
-    queryKey: ["available-objects", locationId],
+    queryKey: ["availableObjects", locationId],
     queryFn: () => api.getAvailableObjects(),
     enabled: !!locationId,
   });

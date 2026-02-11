@@ -8,7 +8,6 @@ from fastapi import APIRouter, HTTPException, Header, Query, Request
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 import uuid
-import json
 import logging
 
 from app.db.supabase import get_supabase
@@ -16,6 +15,7 @@ from app.services.auth_service import get_location_tokens_with_refresh
 from app.services.matching_service import check_single_contact
 from app.services.merge_service import execute_merge
 from app.core.security import get_current_user_flexible, AuthenticatedUser
+from app.core.rate_limit import limiter, RATE_LIMIT_SCAN, RATE_LIMIT_DEFAULT
 
 logger = logging.getLogger(__name__)
 
@@ -55,12 +55,10 @@ async def authenticate_ghl_action(
     - Plan is always verified from the database (not the JWT)
     - The ghl_location_id is injected by GHL itself (trusted source)
     """
-    # Try JWT first (used by frontend / direct API calls)
+    # JWT takes precedence. If an Authorization header is present but invalid,
+    # fail closed and do not fall back to location lookup.
     if authorization:
-        try:
-            return await get_current_user_flexible(authorization=authorization)
-        except HTTPException:
-            pass  # Fall through to location_id lookup
+        return await get_current_user_flexible(authorization=authorization)
 
     # Fall back to DB lookup by GHL location ID (used by GHL workflow actions)
     if not ghl_location_id:
@@ -75,7 +73,7 @@ async def authenticate_ghl_action(
     ).eq("ghl_location_id", ghl_location_id).single().execute()
 
     if not result.data:
-        logger.warning(f"GHL action auth failed: unknown location {ghl_location_id}")
+        logger.warning("GHL action auth failed: unknown location")
         raise HTTPException(
             status_code=401,
             detail="Location not found. Is the app installed?",
@@ -85,7 +83,7 @@ async def authenticate_ghl_action(
 
     # Verify the location is active and not uninstalled
     if not loc.get("is_active") or loc.get("uninstalled_at"):
-        logger.warning(f"GHL action auth rejected: inactive location {ghl_location_id}")
+        logger.warning("GHL action auth rejected: inactive location")
         raise HTTPException(
             status_code=403,
             detail="App is not active for this location.",
@@ -95,7 +93,7 @@ async def authenticate_ghl_action(
     if loc.get("tenants"):
         plan = loc["tenants"].get("plan", "free")
 
-    logger.info(f"GHL action authenticated via location_id: {ghl_location_id}")
+    logger.info("GHL action authenticated via location lookup")
 
     return AuthenticatedUser(
         location_id=loc["id"],
@@ -117,7 +115,9 @@ class RuleOptionsResponse(BaseModel):
 
 
 @router.get("/rules/options", response_model=RuleOptionsResponse)
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def get_rule_options(
+    request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
     location_id: Optional[str] = Query(None, description="GHL Location ID"),
     source_object: Optional[str] = Query(None, description="Filter by source object type (contacts, companies, custom_objects.*)"),
@@ -284,6 +284,7 @@ class DedupeCheckResponse(BaseModel):
 
 
 @router.post("/check", response_model=DedupeCheckResponse)
+@limiter.limit(RATE_LIMIT_SCAN)
 async def check_duplicate(
     request: Request,
     body: DedupeCheckRequest,
@@ -311,11 +312,11 @@ async def check_duplicate(
     - action_taken: What action was taken
     - master_record_id: If merged, which record survived
     """
-    # DEBUG: Log raw request to understand GHL test panel payload
-    raw_body = await request.body()
-    logger.info(f"Dedupe check raw body: {raw_body.decode('utf-8', errors='replace')}")
-    logger.info(f"Dedupe check headers: Authorization={'present' if authorization else 'missing'}, query location_id={location_id}")
-    logger.info(f"Dedupe check parsed: data={body.data}, extras={body.extras}, branches={body.branches}, flat contact_id={body.contact_id}, flat location_id={body.location_id}")
+    logger.info(
+        "Dedupe check request received (auth=%s, location_id_in_query=%s)",
+        "present" if authorization else "missing",
+        bool(location_id),
+    )
 
     # Resolve fields from GHL Default or flat payload
     try:
@@ -360,13 +361,23 @@ async def check_duplicate(
             rule_id=rule_id_val,
             plan=user.plan,
         )
-    except Exception as e:
-        logger.error(f"Dedupe check failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Dedupe check failed: {str(e)}")
+    except Exception:
+        logger.error("Dedupe check execution failed")
+        raise HTTPException(
+            status_code=500,
+            detail="Dedupe check failed. Please try again.",
+        )
 
     # Handle error response
     if check_result.get("error"):
-        raise HTTPException(status_code=404, detail=check_result["error"])
+        error_message = str(check_result["error"]).lower()
+        if "not found" in error_message:
+            raise HTTPException(status_code=404, detail="Contact not found")
+        logger.warning("Dedupe check upstream returned an error")
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to complete dedupe check at this time.",
+        )
 
     # No duplicates found
     if not check_result.get("is_duplicate"):
@@ -413,8 +424,8 @@ async def check_duplicate(
 
         try:
             supabase.table("match_pairs").insert(match_data).execute()
-        except Exception as e:
-            logger.warning(f"Failed to insert match pair: {e}")
+        except Exception:
+            logger.warning("Failed to insert match pair")
             # Continue anyway - merge can still work
 
         # Build field selections: prefer existing (master) record values
@@ -445,9 +456,10 @@ async def check_duplicate(
                 ghl_location_id=user.ghl_location_id,
                 tenant_id=user.tenant_id,
                 internal_location_id=user.location_id,
+                plan=user.plan,
             )
 
-            logger.info(f"Auto-merged duplicate: {duplicate_id} into {master_id}")
+            logger.info("Auto-merge completed successfully")
 
             return DedupeCheckResponse(
                 status="merged",
@@ -462,8 +474,8 @@ async def check_duplicate(
                 contacts_scanned=check_result.get("contacts_scanned", 0),
             )
 
-        except Exception as e:
-            logger.error(f"Auto-merge failed: {e}")
+        except Exception:
+            logger.error("Auto-merge failed")
             # Fall through to pending_review status
             return DedupeCheckResponse(
                 status="pending_review",
@@ -502,8 +514,8 @@ async def check_duplicate(
 
         try:
             supabase.table("match_pairs").insert(match_data).execute()
-        except Exception as e:
-            logger.warning(f"Failed to store match for review: {e}")
+        except Exception:
+            logger.warning("Failed to store match for review")
 
         return DedupeCheckResponse(
             status="pending_review",

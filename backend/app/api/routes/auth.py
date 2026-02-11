@@ -6,11 +6,12 @@ from fastapi import APIRouter, HTTPException, Query, Depends, Header, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import base64
 import hashlib
 import json
 import secrets
+import logging
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
@@ -38,6 +39,7 @@ from app.services.billing_service import get_plan_features, get_upgrade_url
 
 router = APIRouter()
 ghl_oauth = GHLOAuth()
+logger = logging.getLogger(__name__)
 
 
 class TokenResponse(BaseModel):
@@ -86,21 +88,20 @@ async def callback(
     if not code:
         raise HTTPException(status_code=400, detail="Missing authorization code")
 
-    # Validate state parameter (CSRF protection)
-    # Allow missing state for GHL Marketplace installs (they don't include it)
+    # Validate state parameter when present (CSRF protection)
     if state:
         try:
             verify_secure_state(state)
-        except ValueError as e:
-            print(f"🚨 OAuth state validation failed: {e}")
+        except ValueError:
+            logger.warning("OAuth state validation failed")
             frontend_url = f"{settings.FRONTEND_URL}?error=invalid_state"
             return RedirectResponse(url=frontend_url)
 
     # Exchange code for tokens
     try:
         tokens = await ghl_oauth.exchange_code(code)
-    except Exception as e:
-        print(f"❌ Token exchange failed: {e}")
+    except Exception:
+        logger.error("Token exchange failed during OAuth callback")
         frontend_url = f"{settings.FRONTEND_URL}?error=token_exchange_failed"
         return RedirectResponse(url=frontend_url)
 
@@ -111,12 +112,12 @@ async def callback(
     ghl_location_id = tokens.get("locationId")
     company_id = tokens.get("companyId", ghl_location_id)
 
-    # Log token response keys for debugging (never log actual tokens)
-    print(f"🔑 Token response keys: {list(tokens.keys())}")
-    print(f"🔑 locationId: {ghl_location_id}, companyId: {tokens.get('companyId')}, userType: {tokens.get('userType')}")
-
     if not access_token or not ghl_location_id:
-        print(f"❌ Invalid token response - access_token: {'present' if access_token else 'missing'}, locationId: {'present' if ghl_location_id else 'missing'}")
+        logger.warning(
+            "Invalid token response from OAuth exchange (access_token=%s, locationId=%s)",
+            "present" if access_token else "missing",
+            "present" if ghl_location_id else "missing",
+        )
         frontend_url = f"{settings.FRONTEND_URL}?error=invalid_token_response"
         return RedirectResponse(url=frontend_url)
 
@@ -130,8 +131,8 @@ async def callback(
             refresh_token=refresh_token,
             expires_in=expires_in,
         )
-    except Exception as e:
-        print(f"❌ Failed to store tokens: {e}")
+    except Exception:
+        logger.error("Failed to persist OAuth tokens")
         frontend_url = f"{settings.FRONTEND_URL}?error=storage_failed"
         return RedirectResponse(url=frontend_url)
 
@@ -165,8 +166,8 @@ async def callback(
             jwt_access_token=jwt_access_token,
             jwt_refresh_token=jwt_refresh_token,
         )
-    except Exception as e:
-        print(f"❌ Failed to store exchange code: {e}")
+    except Exception:
+        logger.error("Failed to store auth exchange code")
         frontend_url = f"{settings.FRONTEND_URL}?error=storage_failed"
         return RedirectResponse(url=frontend_url)
 
@@ -200,7 +201,7 @@ async def refresh_tokens(request: Request, body: RefreshRequest):
     if token_expires:
         try:
             expires_dt = datetime.fromisoformat(str(token_expires).replace("Z", "+00:00"))
-            time_until_expiry = (expires_dt - datetime.utcnow()).total_seconds()
+            time_until_expiry = (expires_dt - datetime.now(timezone.utc)).total_seconds()
 
             if time_until_expiry < 300:  # 5 minutes
                 try:
@@ -211,10 +212,10 @@ async def refresh_tokens(request: Request, body: RefreshRequest):
                         refresh_token=new_ghl_tokens.get("refresh_token", ghl_tokens["refresh_token"]),
                         expires_in=new_ghl_tokens.get("expires_in", 86400),
                     )
-                except Exception as e:
-                    print(f"⚠️ GHL token refresh failed: {e}")
+                except Exception:
+                    logger.warning("Background GHL token refresh failed")
         except Exception:
-            pass
+            logger.warning("Failed to evaluate token expiry window")
 
     # Get updated plan info
     updated_tokens = await get_location_tokens(payload.ghl_location_id)
@@ -355,10 +356,6 @@ async def disconnect(
     """
     from app.db.supabase import get_supabase
     from datetime import datetime, timezone
-    import logging
-
-    logger = logging.getLogger(__name__)
-
     # Authenticate to verify the request is valid
     user = await get_current_user_flexible(authorization=authorization, location_id=location_id)
 
@@ -373,7 +370,7 @@ async def disconnect(
         raise HTTPException(status_code=404, detail="Location not found")
 
     internal_location_id = str(location_result.data["id"])
-    logger.info(f"Disconnecting location {user.ghl_location_id} (internal: {internal_location_id})")
+    logger.info("Disconnecting location and deleting tenant-scoped data")
 
     # Delete all data in order (respecting FK constraints)
     # 1. Delete snapshots (via merge_id)
@@ -437,7 +434,7 @@ async def disconnect(
     if not result.data:
         raise HTTPException(status_code=404, detail="Location not found")
 
-    logger.info(f"Location {user.ghl_location_id} disconnected and marked inactive")
+    logger.info("Location disconnected and marked inactive")
 
     return {"success": True, "message": "Account disconnected and all data deleted. Re-authorize from Marketplace to reconnect."}
 
@@ -483,9 +480,9 @@ def decrypt_ghl_sso_data(encrypted_data: str, secret: str) -> dict:
 
         # Parse JSON
         return json.loads(decrypted.decode("utf-8"))
-    except Exception as e:
-        print(f"❌ SSO decrypt failed: {e}")
-        raise ValueError(f"Failed to decrypt SSO data: {e}")
+    except Exception:
+        logger.warning("SSO decryption failed")
+        raise ValueError("Failed to decrypt SSO data")
 
 
 class AppContextRequest(BaseModel):
@@ -502,29 +499,25 @@ async def app_context(request: Request, body: AppContextRequest):
     Decrypts user data from GHL iframe postMessage and validates authentication.
     """
     encrypted_data = body.encryptedData
-    target_location_id = body.locationId
 
     user = None
 
     # Try to decrypt SSO data if provided
     if encrypted_data and encrypted_data.strip():
         if not settings.GHL_APP_SHARED_SECRET:
-            print("⚠️ GHL_APP_SHARED_SECRET not configured")
+            logger.error("GHL SSO shared secret is not configured")
             raise HTTPException(status_code=500, detail="SSO not configured")
 
         try:
             user = decrypt_ghl_sso_data(encrypted_data, settings.GHL_APP_SHARED_SECRET)
-            print(f"✅ SSO user decrypted: companyId={user.get('companyId')}, location={user.get('activeLocation')}")
-        except ValueError as e:
-            print(f"❌ SSO decrypt failed: {e}")
-            # Continue without user data - might have locationId
+            logger.info("SSO user context decrypted")
+        except ValueError:
+            raise HTTPException(status_code=401, detail="Invalid SSO data")
 
-    # Determine location ID from user data or request
+    # Determine location ID from verified SSO data only
     location_id = None
     if user and user.get("activeLocation"):
         location_id = user["activeLocation"]
-    elif target_location_id:
-        location_id = target_location_id
 
     if not location_id:
         raise HTTPException(
@@ -540,7 +533,7 @@ async def app_context(request: Request, body: AppContextRequest):
             status_code=422,
             detail={
                 "error": "app_not_installed",
-                "message": f"App not installed for location {location_id}",
+                "message": "App not installed for this location",
                 "redirectUrl": "/auth/install"
             }
         )

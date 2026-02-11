@@ -188,12 +188,15 @@ export default function PendingMatches() {
   // Resume polling if there's an active job (e.g., after page refresh)
   useEffect(() => {
     const savedJobId = localStorage.getItem(BULK_JOB_KEY);
-    if (savedJobId && !bulkJobId) {
+    if (savedJobId) {
       console.log('[BulkMerge] Resuming job from localStorage:', savedJobId);
       setBulkJobId(savedJobId);
       setBulkMergeProgress({ current: 0, total: 0, inProgress: true });
 
       // Start polling immediately
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
       pollJobStatus(savedJobId);
       pollIntervalRef.current = setInterval(() => {
         pollJobStatus(savedJobId);

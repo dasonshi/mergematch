@@ -6,6 +6,7 @@ from difflib import SequenceMatcher
 import re
 import unicodedata
 import uuid
+import os
 
 from app.core.ghl.client import GHLClient
 from app.db.supabase import get_supabase
@@ -16,6 +17,19 @@ from app.services.blocking_service import (
     clear_contact_blocks,
     stream_contacts_to_blocks,
 )
+
+
+def _read_int_env(name: str, default: int) -> int:
+    """Read an integer env var with a safe fallback."""
+    try:
+        value = os.getenv(name)
+        return int(value) if value is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
+FULL_SCAN_WARN_PAIR_THRESHOLD = _read_int_env("MATCH_FULL_SCAN_WARN_PAIRS", 5_000_000)
+FULL_SCAN_MAX_PAIR_THRESHOLD = _read_int_env("MATCH_FULL_SCAN_MAX_PAIRS", 20_000_000)
 
 
 def normalize_phone(phone: str) -> str:
@@ -355,7 +369,6 @@ async def run_scan(
     matches_stored = 0
     high_confidence_count = 0
     stale_count = 0
-    compared_pairs = set()
     valid_contact_ids = set()
 
     # Check if blocking can be used before fetching
@@ -567,6 +580,7 @@ async def run_scan(
         # Process candidate pairs in chunks for memory efficiency
         CHUNK_SIZE = 500
         comparison_count = 0
+        seen_candidate_pairs: Set[Tuple[str, str]] = set()
 
         for chunk_start in range(0, total_pairs, CHUNK_SIZE):
             chunk_end = min(chunk_start + CHUNK_SIZE, total_pairs)
@@ -581,10 +595,10 @@ async def run_scan(
                     continue
 
                 # Skip already compared pairs
-                pair_key = (id_a, id_b)
-                if pair_key in compared_pairs:
+                pair_key = (id_a, id_b) if id_a <= id_b else (id_b, id_a)
+                if pair_key in seen_candidate_pairs:
                     continue
-                compared_pairs.add(pair_key)
+                seen_candidate_pairs.add(pair_key)
                 comparison_count += 1
 
                 is_match, confidence, field_scores = compare_records(
@@ -633,7 +647,48 @@ async def run_scan(
 
     else:
         # FULL SCAN: Compare all pairs (O(n^2)) - required for complex rules
-        logger.info(f"Using full scan for {total_contacts} contacts (blocking not applicable)")
+        estimated_pairs = total_contacts * (total_contacts - 1) // 2
+        logger.info(
+            "Using full scan for %s contacts (estimated_pairs=%s, blocking not applicable)",
+            total_contacts,
+            estimated_pairs,
+        )
+        if estimated_pairs > FULL_SCAN_WARN_PAIR_THRESHOLD:
+            logger.warning(
+                "High-cardinality full scan warning for rule %s at location %s: "
+                "estimated_pairs=%s exceeds warn threshold=%s",
+                rule_id,
+                internal_location_id,
+                estimated_pairs,
+                FULL_SCAN_WARN_PAIR_THRESHOLD,
+            )
+
+        if FULL_SCAN_MAX_PAIR_THRESHOLD > 0 and estimated_pairs > FULL_SCAN_MAX_PAIR_THRESHOLD:
+            logger.error(
+                "Aborting full scan for rule %s at location %s: "
+                "estimated_pairs=%s exceeds max threshold=%s",
+                rule_id,
+                internal_location_id,
+                estimated_pairs,
+                FULL_SCAN_MAX_PAIR_THRESHOLD,
+            )
+            del all_contacts
+            del contacts_by_id
+            gc.collect()
+            return {
+                "matches_found": 0,
+                "matches_stored": 0,
+                "stale_cleaned": stale_count,
+                "records_scanned": records_scanned,
+                "high_confidence": 0,
+                "scan_aborted": True,
+                "message": (
+                    "Full scan aborted due to dataset size. "
+                    "Narrow matching fields or enable blocking-compatible rules."
+                ),
+                "estimated_pairs": estimated_pairs,
+                "max_pairs_allowed": FULL_SCAN_MAX_PAIR_THRESHOLD,
+            }
 
         comparison_count = 0
         for i in range(total_contacts):
@@ -648,11 +703,7 @@ async def run_scan(
                 if not id_b:
                     continue
 
-                # Skip already compared pairs (use IDs only to save memory)
-                pair_key = (min(id_a, id_b), max(id_a, id_b))
-                if pair_key in compared_pairs:
-                    continue
-                compared_pairs.add(pair_key)
+                # i<j already guarantees unique pair comparisons without additional memory.
                 comparison_count += 1
 
                 is_match, confidence, field_scores = compare_records(

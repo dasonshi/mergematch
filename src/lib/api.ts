@@ -233,8 +233,7 @@ class ApiClient {
     return this.fetch<{ id: string; is_active: boolean }>(`/v1/rules/${id}/toggle`, { method: 'PATCH' });
   }
 
-  async runRuleManually(id: string, limit?: number) {
-    const params = limit ? `?limit=${limit}` : '';
+  async runRuleManually(id: string) {
     return this.fetch<{
       job_id: string;
       status: string;
@@ -242,7 +241,7 @@ class ApiClient {
       records_scanned: number;
       matches_stored: number;
       auto_merged?: number;
-    }>(`/v1/rules/${id}/run${params}`, { method: 'POST' });
+    }>(`/v1/rules/${id}/run`, { method: 'POST' });
   }
 
   // Jobs
@@ -443,6 +442,10 @@ class ApiClient {
 
   async triggerSync() {
     return this.fetch<SyncTriggerResponse>('/v1/sync/trigger', { method: 'POST' });
+  }
+
+  async forceResync() {
+    return this.fetch<ForceResyncResponse>('/v1/sync/force-resync', { method: 'POST' });
   }
 
   // Settings - Merge Strategy
@@ -661,6 +664,14 @@ export interface SyncStatus {
 export interface SyncTriggerResponse {
   success: boolean;
   last_synced_at: string;
+}
+
+export interface ForceResyncResponse {
+  success: boolean;
+  message: string;
+  rules_scanned: number;
+  total_matches_found: number;
+  total_records_scanned: number;
 }
 
 export interface FieldPreservationMapping {

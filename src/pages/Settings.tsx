@@ -75,7 +75,7 @@ export default function Settings() {
   const handleForceResync = async () => {
     setIsResyncing(true);
     try {
-      const result = await api.post("/sync/force-resync");
+      const result = await api.forceResync();
       toast({
         title: "Resync complete",
         description: result.message || `Scanned ${result.rules_scanned} rule(s) and found ${result.total_matches_found} potential matches.`,

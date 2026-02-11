@@ -8,6 +8,7 @@ from typing import Optional, List, Dict, Any
 
 from app.core.security import AuthenticatedUser
 from app.core.deps import get_user
+from app.db.supabase import get_supabase
 from app.services.notification_service import (
     get_notifications,
     get_unread_count,
@@ -59,6 +60,14 @@ async def list_notifications(
         unread_only=unread_only,
     )
 
+    # Return full matching count (not current page length) for pagination semantics.
+    supabase = get_supabase()
+    total_query = supabase.table("notifications").select("id", count="exact").eq("location_id", user.location_id)
+    if unread_only:
+        total_query = total_query.eq("read", False)
+    total_result = total_query.execute()
+    total = total_result.count or 0
+
     unread = await get_unread_count(user.location_id)
 
     return NotificationsListResponse(
@@ -71,7 +80,7 @@ async def list_notifications(
             read=n["read"],
             created_at=n["created_at"],
         ) for n in notifications],
-        total=len(notifications),
+        total=total,
         unread_count=unread,
     )
 

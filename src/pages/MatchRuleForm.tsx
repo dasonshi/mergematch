@@ -172,17 +172,37 @@ const daysOfWeek = [
   { id: "6", name: "Saturday" },
 ];
 
-// Generate time options in 30-min increments
-const timeOptions = Array.from({ length: 48 }, (_, i) => {
-  const hour = Math.floor(i / 2);
-  const minute = i % 2 === 0 ? "00" : "30";
+const SCHEDULE_TIME_PATTERN = /^\d{2}:\d{2}$/;
+const DEFAULT_SCHEDULE_TIME = "06:00";
+
+// Generate time options in 1-hour increments
+const timeOptions = Array.from({ length: 24 }, (_, hour) => {
   const ampm = hour < 12 ? "AM" : "PM";
   const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
   return {
-    id: `${hour.toString().padStart(2, "0")}:${minute}`,
-    name: `${displayHour}:${minute} ${ampm}`,
+    id: `${hour.toString().padStart(2, "0")}:00`,
+    name: `${displayHour}:00 ${ampm}`,
   };
 });
+
+function normalizeHourlyScheduleTime(value?: string | null): string {
+  if (!value || !SCHEDULE_TIME_PATTERN.test(value)) {
+    return DEFAULT_SCHEDULE_TIME;
+  }
+
+  const [hourRaw] = value.split(":");
+  const hour = Number.parseInt(hourRaw, 10);
+
+  if (Number.isNaN(hour) || hour < 0 || hour > 23) {
+    return DEFAULT_SCHEDULE_TIME;
+  }
+
+  return `${hour.toString().padStart(2, "0")}:00`;
+}
+
+function getScheduleTimeLabel(time: string): string {
+  return timeOptions.find((option) => option.id === time)?.name ?? time;
+}
 
 // Generate day of month options
 const daysOfMonth = Array.from({ length: 28 }, (_, i) => ({
@@ -223,7 +243,7 @@ export default function MatchRuleForm() {
   ]);
   const [strategy, setStrategy] = useState("standard");
   const [frequency, setFrequency] = useState("manual");
-  const [scheduleTime, setScheduleTime] = useState("06:00");
+  const [scheduleTime, setScheduleTime] = useState(DEFAULT_SCHEDULE_TIME);
   const [scheduleDayOfWeek, setScheduleDayOfWeek] = useState("1"); // Monday
   const [scheduleDayOfMonth, setScheduleDayOfMonth] = useState("1"); // 1st
 
@@ -274,7 +294,7 @@ export default function MatchRuleForm() {
 
   // Fetch available objects (standard + custom from GHL)
   const { data: fetchedObjects } = useQuery({
-    queryKey: ['available-objects', locationId],
+    queryKey: ['availableObjects', locationId],
     queryFn: () => api.getAvailableObjects(),
     enabled: isAuthenticated,
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
@@ -282,7 +302,7 @@ export default function MatchRuleForm() {
 
   // Fetch available fields for selected object type
   const { data: fetchedFields, isLoading: fieldsLoading } = useQuery({
-    queryKey: ['object-fields', objectType, locationId],
+    queryKey: ['fields', objectType, locationId],
     queryFn: () => api.getObjectFields(objectType),
     enabled: !!objectType && isAuthenticated,
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
@@ -450,7 +470,7 @@ export default function MatchRuleForm() {
 
       // Load schedule time and day fields
       if (existingRule.schedule_time) {
-        setScheduleTime(existingRule.schedule_time);
+        setScheduleTime(normalizeHourlyScheduleTime(existingRule.schedule_time));
       }
       if (existingRule.schedule_day) {
         const freq = existingRule.schedule_frequency || "manual";
@@ -663,7 +683,7 @@ export default function MatchRuleForm() {
     }
 
     // Build schedule fields based on frequency
-    const scheduleTimeValue = frequency !== "manual" ? scheduleTime : undefined;
+    const scheduleTimeValue = frequency !== "manual" ? normalizeHourlyScheduleTime(scheduleTime) : undefined;
     const scheduleDayValue = (frequency === "weekly" || frequency === "biweekly")
       ? scheduleDayOfWeek
       : frequency === "monthly"
@@ -1708,10 +1728,10 @@ export default function MatchRuleForm() {
                     <div className="p-4 bg-muted/40 rounded-lg border-l-4 border-l-primary">
                       <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Schedule Preview</p>
                       <p className="font-medium">
-                        {frequency === "daily" && `Every day at ${timeOptions.find(t => t.id === scheduleTime)?.name}`}
-                        {frequency === "weekly" && `Every ${daysOfWeek.find(d => d.id === scheduleDayOfWeek)?.name} at ${timeOptions.find(t => t.id === scheduleTime)?.name}`}
-                        {frequency === "biweekly" && `Every other ${daysOfWeek.find(d => d.id === scheduleDayOfWeek)?.name} at ${timeOptions.find(t => t.id === scheduleTime)?.name}`}
-                        {frequency === "monthly" && `${daysOfMonth.find(d => d.id === scheduleDayOfMonth)?.name} of each month at ${timeOptions.find(t => t.id === scheduleTime)?.name}`}
+                        {frequency === "daily" && `Every day at ${getScheduleTimeLabel(scheduleTime)}`}
+                        {frequency === "weekly" && `Every ${daysOfWeek.find(d => d.id === scheduleDayOfWeek)?.name} at ${getScheduleTimeLabel(scheduleTime)}`}
+                        {frequency === "biweekly" && `Every other ${daysOfWeek.find(d => d.id === scheduleDayOfWeek)?.name} at ${getScheduleTimeLabel(scheduleTime)}`}
+                        {frequency === "monthly" && `${daysOfMonth.find(d => d.id === scheduleDayOfMonth)?.name} of each month at ${getScheduleTimeLabel(scheduleTime)}`}
                       </p>
                     </div>
                   )}
@@ -1779,7 +1799,7 @@ export default function MatchRuleForm() {
                       <p className="font-semibold">{frequencies.find(f => f.id === frequency)?.name}</p>
                       {frequency !== "manual" && (
                         <p className="text-sm text-muted-foreground">
-                          {frequency === "daily" && `Every day at ${timeOptions.find(t => t.id === scheduleTime)?.name}`}
+                          {frequency === "daily" && `Every day at ${getScheduleTimeLabel(scheduleTime)}`}
                           {frequency === "weekly" && `Every ${daysOfWeek.find(d => d.id === scheduleDayOfWeek)?.name}`}
                           {frequency === "biweekly" && `Every other ${daysOfWeek.find(d => d.id === scheduleDayOfWeek)?.name}`}
                           {frequency === "monthly" && `${daysOfMonth.find(d => d.id === scheduleDayOfMonth)?.name} of each month`}

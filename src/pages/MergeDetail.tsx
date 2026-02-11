@@ -10,7 +10,7 @@ import { MergeStatusBadge, getMergeStatusLabel } from "@/components/ui/merge-sta
 import { cn, getGhlRecordUrl } from "@/lib/utils";
 import { useLocation } from "@/contexts/LocationContext";
 import { api } from "@/lib/api";
-import { getRecordName, normalizeDisplayValue } from "@/components/rules/helpers";
+import { formatFieldLabel, getFieldRawValue, getRecordName, normalizeDisplayValue } from "@/components/rules/helpers";
 
 // Standard fields for contacts
 const CONTACT_STANDARD_FIELDS = [
@@ -184,14 +184,22 @@ export default function MergeDetail() {
   const restoredCrmUrl = merge.status === "rolled_back" && merge.restored_record_id
     ? getCrmUrl(merge.restored_record_id, duplicateSnapshot)
     : null;
-  const masterRecordName = merge.master_record_name
+  const masterRecordName = merge.master_record_display_name
+    || merge.master_record_name
     || getRecordName(masterSnapshot, rule?.match_fields, objectDisplayField);
   const duplicateRecordName = getRecordName(duplicateSnapshot, rule?.match_fields, objectDisplayField);
 
   // Determine which record was master/duplicate based on IDs
   const masterIsMasterSnapshot = masterSnapshot?.id === merge.master_record_id;
-  const recordA = masterIsMasterSnapshot ? masterSnapshot : duplicateSnapshot;
-  const recordB = masterIsMasterSnapshot ? duplicateSnapshot : masterSnapshot;
+  const recordA = (masterIsMasterSnapshot ? masterSnapshot : duplicateSnapshot) as Record<string, unknown>;
+  const recordB = (masterIsMasterSnapshot ? duplicateSnapshot : masterSnapshot) as Record<string, unknown>;
+
+  const hasResolvableFieldValue = (field: string): boolean => {
+    return Boolean(
+      normalizeDisplayValue(getFieldRawValue(recordA, field)) ||
+      normalizeDisplayValue(getFieldRawValue(recordB, field))
+    );
+  };
 
   // Get all fields from both records (excluding system fields)
   const allFields = new Set([
@@ -215,13 +223,13 @@ export default function MergeDetail() {
 
   if (isCustomObject) {
     const matchFieldNames = rule?.match_fields?.map(f => f.field) || [];
-    standardFields = matchFieldNames.filter(f => allFields.has(f));
+    standardFields = matchFieldNames.filter((f) => allFields.has(f) || hasResolvableFieldValue(f));
     ruleFields = [];
     otherFields = [...allFields].filter(f => !matchFieldNames.includes(f));
   } else {
-    standardFields = standardFieldsForObject.filter(f => allFields.has(f));
+    standardFields = standardFieldsForObject.filter((f) => allFields.has(f) || hasResolvableFieldValue(f));
     ruleFields = [...ruleFieldSet].filter(f =>
-      allFields.has(f) && !standardFieldsForObject.includes(f)
+      (allFields.has(f) || hasResolvableFieldValue(f)) && !standardFieldsForObject.includes(f)
     );
     otherFields = [...allFields].filter(f =>
       !standardFieldsForObject.includes(f) && !ruleFieldSet.has(f)
@@ -233,14 +241,23 @@ export default function MergeDetail() {
     return normalized || "(empty)";
   };
 
+  const getResolvedValue = (record: Record<string, unknown>, field: string): unknown => {
+    return getFieldRawValue(record, field);
+  };
+
+  const getResolvedDisplayValue = (record: Record<string, unknown>, field: string): string => {
+    return getDisplayValue(getResolvedValue(record, field));
+  };
+
   const getResultValue = (field: string) => {
     const source = fieldSelections[field];
-    const value = source === "a" ? recordA?.[field] : recordB?.[field];
-    return getDisplayValue(value);
+    return source === "a"
+      ? getResolvedDisplayValue(recordA, field)
+      : getResolvedDisplayValue(recordB, field);
   };
 
   const getFieldLabel = (field: string) => {
-    return FIELD_LABELS[field] || field.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
+    return FIELD_LABELS[field] || formatFieldLabel(field);
   };
 
   const getStatusBadge = (status: string) => <MergeStatusBadge status={status} />;
@@ -251,8 +268,8 @@ export default function MergeDetail() {
 
   // Render a field row
   const renderFieldRow = (field: string, isRuleField: boolean = false) => {
-    const valueA = recordA?.[field];
-    const valueB = recordB?.[field];
+    const valueA = getResolvedValue(recordA, field);
+    const valueB = getResolvedValue(recordB, field);
     const selectedSource = fieldSelections[field];
 
     return (
@@ -545,7 +562,7 @@ export default function MergeDetail() {
                       </td>
                     </tr>
                     {rule.merge_settings.field_preservation.mappings.map((mapping, idx) => {
-                      const preservedValue = duplicateSnapshot?.[mapping.source];
+                      const preservedValue = getResolvedValue(duplicateSnapshot, mapping.source);
                       return (
                         <tr key={`preserve-${idx}`} className="bg-primary/5 hover:bg-primary/10 transition-colors">
                           <td className="py-3 px-4 font-medium text-muted-foreground">

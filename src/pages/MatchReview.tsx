@@ -22,11 +22,11 @@ import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 import { useWarningPreferences } from "@/hooks/use-warning-preferences";
 import { api, FieldPreservationMapping, ObjectField, ObjectType } from "@/lib/api";
-import { computeStrategySelections, computeMasterId, StrategyId } from "@/lib/merge-strategies";
+import { StrategyId } from "@/lib/merge-strategies";
 import { LockedFeatureOverlay, UpgradeBadge } from "@/components/ui/upgrade-badge";
 import { useUpgradeModal } from "@/components/ui/upgrade-modal";
 import { isTypeCompatible, getIncompatibilityReason } from "@/lib/field-compatibility";
-import { getRecordName, normalizeDisplayValue } from "@/components/rules/helpers";
+import { formatFieldLabel, getFieldRawValue, getRecordName, normalizeDisplayValue } from "@/components/rules/helpers";
 
 // Standard fields for contacts
 const CONTACT_STANDARD_FIELDS = [
@@ -213,12 +213,19 @@ export default function MatchReview() {
   const [showAllFields, setShowAllFields] = useState(false);
 
   // Build record data from match
-  const recordA = match?.record_a_data || {};
-  const recordB = match?.record_b_data || {};
+  const recordA = (match?.record_a_data || {}) as Record<string, unknown>;
+  const recordB = (match?.record_b_data || {}) as Record<string, unknown>;
   const recordAId = match?.record_a_id || "a";
   const recordBId = match?.record_b_id || "b";
   const confidence = Math.round((match?.confidence_score || 0) * 100);
   const isCustomObject = rule?.source_object?.startsWith("custom_objects.") ?? false;
+
+  const hasResolvableFieldValue = useCallback((field: string): boolean => {
+    return Boolean(
+      normalizeDisplayValue(getFieldRawValue(recordA, field)) ||
+      normalizeDisplayValue(getFieldRawValue(recordB, field))
+    );
+  }, [recordA, recordB]);
 
   // Get all fields from both records (excluding system fields)
   const allFields = useMemo(() => new Set([
@@ -248,7 +255,7 @@ export default function MatchReview() {
       // Combine match fields with other fields to ensure we show something useful
       // Limit to 10 fields total for the "Standard" view
       const allAvailableFields = [...allFields];
-      const matchSpecific = matchFieldNames.filter(f => allFields.has(f));
+      const matchSpecific = matchFieldNames.filter((f) => allFields.has(f) || hasResolvableFieldValue(f));
 
       // If we have few match fields, pull in other fields to populate the view
       const extraFields = allAvailableFields
@@ -265,15 +272,15 @@ export default function MatchReview() {
     }
 
     // For standard objects (contacts, companies)
-    const standard = standardFieldsForObject.filter(f => allFields.has(f));
+    const standard = standardFieldsForObject.filter((f) => allFields.has(f) || hasResolvableFieldValue(f));
     const ruleSpecific = [...ruleFieldSet].filter(f =>
-      allFields.has(f) && !standardFieldsForObject.includes(f)
+      (allFields.has(f) || hasResolvableFieldValue(f)) && !standardFieldsForObject.includes(f)
     );
     const other = [...allFields].filter(f =>
       !standardFieldsForObject.includes(f) && !ruleFieldSet.has(f) && !metadataFields.includes(f)
     );
     return { standardFields: standard, ruleFields: ruleSpecific, otherFields: other };
-  }, [allFields, ruleFieldSet, standardFieldsForObject, rule]);
+  }, [allFields, hasResolvableFieldValue, ruleFieldSet, standardFieldsForObject, rule]);
 
   // Fields to display (for selection logic)
   const displayFields = useMemo(() => {
@@ -289,15 +296,25 @@ export default function MatchReview() {
     if (!match || !rule) return "a";
     const strategy = (rule.merge_strategy || "standard") as StrategyId;
     const allFieldsList = [...standardFields, ...ruleFields, ...otherFields];
-    const computedMasterId = computeMasterId(
-      strategy,
-      recordA as Record<string, unknown>,
-      recordB as Record<string, unknown>,
-      allFieldsList,
-      recordAId,
-      recordBId
-    );
-    return computedMasterId === recordAId ? "a" : "b";
+    const countResolvedNonBlank = (record: Record<string, unknown>) =>
+      allFieldsList.reduce((count, field) => (
+        normalizeDisplayValue(getFieldRawValue(record, field)) ? count + 1 : count
+      ), 0);
+    const parseDate = (value: unknown) => {
+      if (!value) return 0;
+      const timestamp = new Date(String(value)).getTime();
+      return Number.isNaN(timestamp) ? 0 : timestamp;
+    };
+
+    if (strategy === "recent") {
+      return parseDate(recordA.dateUpdated) >= parseDate(recordB.dateUpdated) ? "a" : "b";
+    }
+
+    if (strategy === "oldest") {
+      return parseDate(recordA.dateAdded) <= parseDate(recordB.dateAdded) ? "a" : "b";
+    }
+
+    return countResolvedNonBlank(recordA) >= countResolvedNonBlank(recordB) ? "a" : "b";
   };
 
   // Get default field selections - prefer master's values, fall back to duplicate only if master is blank
@@ -311,20 +328,11 @@ export default function MatchReview() {
     const selections: Record<string, "a" | "b"> = {};
 
     for (const field of allFieldsList) {
-      const masterVal = masterRecord[field];
-      const duplicateVal = duplicateRecord[field];
+      const masterVal = getFieldRawValue(masterRecord, field);
+      const duplicateVal = getFieldRawValue(duplicateRecord, field);
 
-      const masterBlank =
-        masterVal === undefined ||
-        masterVal === null ||
-        masterVal === "" ||
-        (Array.isArray(masterVal) && masterVal.length === 0);
-
-      const duplicateBlank =
-        duplicateVal === undefined ||
-        duplicateVal === null ||
-        duplicateVal === "" ||
-        (Array.isArray(duplicateVal) && duplicateVal.length === 0);
+      const masterBlank = !normalizeDisplayValue(masterVal);
+      const duplicateBlank = !normalizeDisplayValue(duplicateVal);
 
       // Prefer master's value, fall back to duplicate only if master is blank
       if (masterBlank && !duplicateBlank && !overwriteBlanks) {
@@ -369,19 +377,31 @@ export default function MatchReview() {
     return normalizeDisplayValue(value);
   }, []);
 
+  const getResolvedValue = useCallback(
+    (record: Record<string, unknown>, field: string): unknown =>
+      getFieldRawValue(record, field),
+    []
+  );
+
+  const getResolvedDisplayValue = useCallback(
+    (record: Record<string, unknown>, field: string): string =>
+      formatDisplayValue(getResolvedValue(record, field)),
+    [formatDisplayValue, getResolvedValue]
+  );
+
   // Helper to get field label - check fieldOptions first for custom object fields
   const getFieldLabel = (field: string) => {
     // Check if we have field metadata from the API
     const fieldMeta = fieldOptions.find(f => f.id === field || f.fieldKey === field);
     if (fieldMeta?.name) return fieldMeta.name;
-    // Fall back to static labels, or return raw field key (don't mangle it with regex)
-    return fieldLabels[field] || field;
+    return fieldLabels[field] || formatFieldLabel(field);
   };
 
   const getResultValue = (field: string): string => {
-    const source = selections[field];
-    const value = source === "a" ? recordA[field] : recordB[field];
-    const formatted = formatDisplayValue(value);
+    const source = selections[field] || masterId;
+    const formatted = source === "a"
+      ? getResolvedDisplayValue(recordA, field)
+      : getResolvedDisplayValue(recordB, field);
     return formatted || "(empty)";
   };
 
@@ -405,7 +425,7 @@ export default function MatchReview() {
       .filter(m => m.source && m.target)
       .map(mapping => {
         // Value to preserve always comes from the duplicate record
-        const valueToPreserve = duplicateRecord[mapping.source];
+        const valueToPreserve = getResolvedValue(duplicateRecord, mapping.source);
 
         return {
           sourceLabel: getFieldLabel(mapping.source),
@@ -431,7 +451,9 @@ export default function MatchReview() {
         .filter(m => m.source && m.target)
         .map(m => {
           const selectedSource = selections[m.source] || masterId;
-          const valueToPreserve = selectedSource === "a" ? recordB[m.source] : recordA[m.source];
+          const valueToPreserve = selectedSource === "a"
+            ? getResolvedValue(recordB, m.source)
+            : getResolvedValue(recordA, m.source);
           return {
             source: m.source,
             target: m.target,
@@ -451,8 +473,8 @@ export default function MatchReview() {
 
   // Render a field row - Record A always on left, Record B always on right
   const renderFieldRow = (field: string, isRuleField: boolean) => {
-    const valueA = recordA[field];
-    const valueB = recordB[field];
+    const valueA = getResolvedValue(recordA, field);
+    const valueB = getResolvedValue(recordB, field);
     const displayValueA = formatDisplayValue(valueA);
     const displayValueB = formatDisplayValue(valueB);
 
@@ -849,7 +871,7 @@ export default function MatchReview() {
                         {/* Info about targets */}
                         {compatibleCustom.length === 0 && incompatibleCustom.length === 0 && (
                           <SelectItem value="_none_" disabled className="text-muted-foreground text-xs italic">
-                            No custom fields available
+                            No custom fields — create one in GHL to use this feature
                           </SelectItem>
                         )}
                       </SelectContent>

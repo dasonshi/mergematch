@@ -71,8 +71,8 @@ async def start_bulk_merge(
     if not body.match_ids:
         raise HTTPException(status_code=400, detail="No match IDs provided")
 
-    if len(body.match_ids) > 1000:
-        raise HTTPException(status_code=400, detail="Maximum 1000 matches per bulk operation")
+    if len(body.match_ids) > 10000:
+        raise HTTPException(status_code=400, detail="Maximum 10000 matches per bulk operation")
 
     # Check merge quota before starting
     quota = await check_merge_quota(ctx.location_id, ctx.plan)

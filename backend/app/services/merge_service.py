@@ -11,6 +11,7 @@ import gc
 from app.core.ghl.client import GHLClient
 from app.db.supabase import get_supabase
 from app.services.matching_service import compare_records
+from app.services.billing_service import get_plan_features
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,85 @@ NON_MUTABLE_RECORD_FIELDS = {
 NON_CONTACT_DYNAMIC_EXCLUDE_FIELDS = NON_MUTABLE_RECORD_FIELDS | {
     "contact", "pipeline", "contacts", "opportunities", "relationships",
 }
+
+
+def _normalize_source_object(source_object: Any) -> Optional[str]:
+    """Normalize source object values to canonical merge object keys."""
+    if not isinstance(source_object, str):
+        return None
+
+    value = source_object.strip()
+    if not value:
+        return None
+
+    lowered = value.lower()
+    if lowered in ("contact", "contacts"):
+        return "contacts"
+    if lowered in ("company", "companies", "business"):
+        return "companies"
+    if lowered in ("opportunity", "opportunities"):
+        return "opportunities"
+    if lowered.startswith("custom_objects."):
+        suffix = value.split(".", 1)[1] if "." in value else ""
+        if suffix:
+            return f"custom_objects.{suffix}"
+    return None
+
+
+def _extract_id_from_response(
+    payload: Dict[str, Any],
+    candidate_paths: List[tuple[str, ...]],
+) -> Optional[str]:
+    """Extract a record ID from an API response using known response shapes."""
+    for path in candidate_paths:
+        current: Any = payload
+        for key in path:
+            if not isinstance(current, dict):
+                current = None
+                break
+            current = current.get(key)
+        if isinstance(current, str) and current:
+            return current
+    return None
+
+
+def _remap_record_payload_id(
+    record_data: Any,
+    *,
+    old_id: str,
+    new_id: str,
+) -> bool:
+    """Update known ID fields inside cached match payload snapshots."""
+    if not isinstance(record_data, dict):
+        return False
+
+    changed = False
+    if record_data.get("id") == old_id:
+        record_data["id"] = new_id
+        changed = True
+    if record_data.get("recordId") == old_id:
+        record_data["recordId"] = new_id
+        changed = True
+
+    raw_data = record_data.get("_raw")
+    if isinstance(raw_data, dict):
+        if raw_data.get("id") == old_id:
+            raw_data["id"] = new_id
+            changed = True
+        if raw_data.get("recordId") == old_id:
+            raw_data["recordId"] = new_id
+            changed = True
+
+        raw_record = raw_data.get("record")
+        if isinstance(raw_record, dict):
+            if raw_record.get("id") == old_id:
+                raw_record["id"] = new_id
+                changed = True
+            if raw_record.get("recordId") == old_id:
+                raw_record["recordId"] = new_id
+                changed = True
+
+    return changed
 
 
 def _extract_custom_object_field_key(field_key: str) -> Optional[str]:
@@ -318,7 +398,7 @@ def _build_record_name(
     display_field: Optional[str] = None,
 ) -> str:
     """Build a display name for a record using common fields and match fields."""
-    logger.info(f"_build_record_name: record keys={list(record.keys())[:15]}, match_fields={match_fields}")
+    logger.debug("Building record display name")
 
     if display_field:
         value = _stringify_value(_get_field_value(record, display_field))
@@ -345,7 +425,6 @@ def _build_record_name(
             if not field:
                 continue
             value = _stringify_value(_get_field_value(record, field))
-            logger.info(f"_build_record_name: trying match field '{field}', value={value}")
             if value:
                 return value
 
@@ -401,6 +480,67 @@ def compute_strategy_selections(
             selections[field] = winner
 
     return selections
+
+
+def compute_merge_selections(
+    record_a: Dict[str, Any],
+    record_b: Dict[str, Any],
+    strategy: str,
+    overwrite_blanks: bool = False,
+    source_object: str = "contacts",
+) -> tuple[str, Dict[str, str]]:
+    """
+    Compute master record ID and field selections based on merge strategy.
+    Returns (master_id, field_selections) tuple.
+    """
+    if source_object == "contacts":
+        fields = [
+            "firstName", "lastName", "email", "phone", "tags",
+            "address1", "city", "state", "postalCode", "companyName",
+        ]
+    else:
+        internal_fields = {
+            "id", "_raw", "dateAdded", "dateUpdated", "createdAt", "updatedAt",
+            "locationId", "location_id", "contact", "pipeline", "contacts",
+            "opportunities", "relationships",
+        }
+        all_fields = set(record_a.keys()) | set(record_b.keys())
+        fields = [f for f in all_fields if f not in internal_fields and not f.startswith("_")]
+
+    id_a = record_a.get("id", "")
+    id_b = record_b.get("id", "")
+
+    if strategy == "recent":
+        date_a = record_a.get("dateUpdated") or record_a.get("dateAdded") or ""
+        date_b = record_b.get("dateUpdated") or record_b.get("dateAdded") or ""
+        master_id = id_a if date_a >= date_b else id_b
+    elif strategy == "standard":
+        def count_filled(record: Dict) -> int:
+            return sum(1 for f in fields if record.get(f))
+        master_id = id_a if count_filled(record_a) >= count_filled(record_b) else id_b
+    elif strategy == "oldest":
+        date_a = record_a.get("dateAdded") or ""
+        date_b = record_b.get("dateAdded") or ""
+        master_id = id_a if date_a <= date_b else id_b
+    else:
+        master_id = id_a
+
+    master = record_a if master_id == id_a else record_b
+    duplicate = record_b if master_id == id_a else record_a
+
+    selections = {}
+    for field in fields:
+        master_val = master.get(field)
+        dup_val = duplicate.get(field)
+        master_empty = _is_blank(master_val)
+        dup_empty = _is_blank(dup_val)
+
+        if master_empty and not dup_empty and not overwrite_blanks:
+            selections[field] = "b" if master_id == id_a else "a"
+        else:
+            selections[field] = "a" if master_id == id_a else "b"
+
+    return master_id, selections
 
 
 def evaluate_condition(record: dict, condition: dict) -> bool:
@@ -506,8 +646,8 @@ async def reassign_opportunities_with_custom_logic(
             try:
                 await client.update_opportunity(opp_id, {"contactId": to_contact_id})
                 reassigned += 1
-            except Exception as e:
-                logger.warning(f"Failed to reassign opportunity {opp_id}: {e}")
+            except Exception:
+                logger.warning("Failed to reassign opportunity")
 
     return reassigned
 
@@ -522,6 +662,7 @@ async def execute_merge(
     internal_location_id: str,
     preserve_alternates: bool = False,
     field_preservation_mappings: Optional[List[Dict[str, str]]] = None,
+    plan: str = "free",
 ) -> Dict[str, Any]:
     """
     Execute a merge operation:
@@ -552,7 +693,7 @@ async def execute_merge(
     if rule_id:
         rule_check = supabase.table("match_rules").select("source_object").eq("id", rule_id).single().execute()
         if rule_check.data:
-            source_object = rule_check.data.get("source_object", "contacts")
+            source_object = _normalize_source_object(rule_check.data.get("source_object")) or "contacts"
             if source_object.startswith("custom_objects."):
                 is_custom_object = True
                 schema_key = source_object  # Use full key
@@ -589,8 +730,8 @@ async def execute_merge(
                     source_display_field = _extract_custom_object_field_key(primary_display)
                     if source_display_field:
                         logger.info(f"Resolved custom object display field: {source_display_field}")
-                except Exception as e:
-                    logger.warning(f"Could not resolve custom object display field for {schema_key}: {e}")
+                except Exception:
+                    logger.warning("Could not resolve custom object display field")
 
                 # Fetch custom object records
                 try:
@@ -728,20 +869,19 @@ async def execute_merge(
                         review_threshold = float(rule_check.data.get("review_threshold", 0.70)) * 100
 
                         if match_fields:
-                            # Debug: log what we're comparing
-                            logger.info(f"Re-validation: match_fields={match_fields}")
-                            logger.info(f"Re-validation: record_a keys={list(record_a_data.keys())[:20]}")
-                            logger.info(f"Re-validation: record_b keys={list(record_b_data.keys())[:20]}")
-                            for mf in match_fields:
-                                field_name = mf.get("field", "")
-                                val_a = record_a_data.get(field_name)
-                                val_b = record_b_data.get(field_name)
-                                logger.info(f"Re-validation: field={field_name}, val_a={val_a}, val_b={val_b}")
+                            logger.info(
+                                "Re-validating candidate pair before merge (fields=%d)",
+                                len(match_fields),
+                            )
 
-                            is_match, confidence, field_scores = compare_records(
+                            is_match, confidence, _field_scores = compare_records(
                                 record_a_data, record_b_data, match_fields
                             )
-                            logger.info(f"Re-validation result: is_match={is_match}, confidence={confidence}, field_scores={field_scores}")
+                            logger.info(
+                                "Re-validation result: is_match=%s, confidence=%.1f",
+                                is_match,
+                                confidence,
+                            )
                             if not is_match or confidence < review_threshold:
                                 supabase.table("match_pairs").update({
                                     "status": "stale",
@@ -764,9 +904,9 @@ async def execute_merge(
     except ValueError:
         # Re-raise validation errors (stale, deleted, no longer matching)
         raise
-    except Exception as e:
+    except Exception:
         # Non-critical: if the pre-fetch fails for other reasons, proceed with snapshots
-        logger.warning(f"Pre-merge record refresh failed, using stored snapshots: {e}")
+        logger.warning("Pre-merge record refresh failed, using stored snapshots")
         record_a_data = match.data.get("record_a_data", {})
         record_b_data = match.data.get("record_b_data", {})
 
@@ -868,7 +1008,11 @@ async def execute_merge(
 
                     if value_to_preserve:
                         merged_fields[target_field] = value_to_preserve
-                        logger.info(f"Preserving {source_field} value '{value_to_preserve}' to field '{target_field}'")
+                        logger.info(
+                            "Preserving alternate value mapping from '%s' to '%s'",
+                            source_field,
+                            target_field,
+                        )
             else:
                 custom_fields = merged_fields.get("customFields", [])
                 if not isinstance(custom_fields, list):
@@ -893,15 +1037,22 @@ async def execute_merge(
                             "id": target_field,  # GHL API expects 'id' for custom field identifier
                             "field_value": value_to_preserve
                         })
-                        logger.info(f"Preserving {source_field} value '{value_to_preserve}' to custom field '{target_field}'")
+                        logger.info(
+                            "Preserving alternate custom field mapping from '%s' to '%s'",
+                            source_field,
+                            target_field,
+                        )
 
                 if custom_fields:
                     merged_fields["customFields"] = custom_fields
 
     logger.info(f"Merging {duplicate_id} into {master_record_id}")
     logger.info(f"Field selections: {field_selections}")
-    logger.info(f"Merged fields to apply: {merged_fields}")
-    logger.info(f"Preserve alternates: {preserve_alternates}")
+    logger.info(
+        "Merge payload prepared (selected_fields=%d, preserve_alternates=%s)",
+        len(merged_fields),
+        preserve_alternates,
+    )
 
     # Create merge record BEFORE making changes
     merge_id = str(uuid.uuid4())
@@ -912,7 +1063,8 @@ async def execute_merge(
         "match_pair_id": match_id,
         "master_record_id": master_record_id,
         "master_record_name": master_record_name,
-        "master_record_type": match.data.get("record_a_type", "contact"),
+        # Persist immutable object context for rollback.
+        "master_record_type": source_object,
         "duplicate_record_id": duplicate_id,
         "field_selections": field_selections,
         "status": "pending",
@@ -920,8 +1072,9 @@ async def execute_merge(
 
     supabase.table("merges").insert(merge_data).execute()
 
-    # Store snapshots in the snapshots table for rollback (30-day window)
-    expires_at = (datetime.utcnow() + timedelta(days=30)).isoformat()
+    # Store snapshots in the snapshots table for rollback (plan-based window)
+    plan_features = get_plan_features(plan)
+    expires_at = (datetime.utcnow() + timedelta(days=plan_features.rollback_days)).isoformat()
     snapshots_data = [
         {
             "id": str(uuid.uuid4()),
@@ -960,34 +1113,42 @@ async def execute_merge(
                 try:
                     duplicate_notes = await client.get_contact_notes(duplicate_id)
                     logger.info(f"Snapshotted {len(duplicate_notes)} notes from duplicate")
-                except Exception as e:
-                    logger.warning(f"Failed to snapshot notes: {e}")
+                except Exception:
+                    logger.warning("Failed to snapshot notes")
 
                 try:
                     duplicate_tasks = await client.get_contact_tasks(duplicate_id)
                     logger.info(f"Snapshotted {len(duplicate_tasks)} tasks from duplicate")
-                except Exception as e:
-                    logger.warning(f"Failed to snapshot tasks: {e}")
+                except Exception:
+                    logger.warning("Failed to snapshot tasks")
 
                 try:
                     duplicate_opps = await client.get_contact_opportunities(duplicate_id)
                     logger.info(f"Snapshotted {len(duplicate_opps)} opportunities from duplicate")
-                except Exception as e:
-                    logger.warning(f"Failed to snapshot opportunities: {e}")
+                except Exception:
+                    logger.warning("Failed to snapshot opportunities")
 
                 try:
                     duplicate_appointments = await client.get_contact_appointments(duplicate_id)
                     logger.info(f"Snapshotted {len(duplicate_appointments)} appointments from duplicate")
-                except Exception as e:
-                    logger.warning(f"Failed to snapshot appointments: {e}")
+                except Exception:
+                    logger.warning("Failed to snapshot appointments")
             else:
                 try:
-                    duplicate_associations = await client.get_relations_for_record(duplicate_id)
+                    duplicate_associations = await client.get_relations_for_record(
+                        duplicate_id,
+                        fail_on_error=True,
+                    )
+                    if not isinstance(duplicate_associations, list):
+                        raise ValueError("Associations snapshot payload was not a list")
                     logger.info(
                         f"Snapshotted {len(duplicate_associations)} associations from duplicate {source_object} record"
                     )
-                except Exception as e:
-                    logger.warning(f"Failed to snapshot {source_object} associations: {e}")
+                except Exception:
+                    # Non-contact rollback fidelity depends on association snapshots.
+                    raise RuntimeError(
+                        f"Failed to snapshot {source_object} associations for rollback safety."
+                    )
 
             # Store related record snapshots (same 30-day expiration)
             related_snapshots = []
@@ -1050,7 +1211,11 @@ async def execute_merge(
                 )
 
                 if update_properties:
-                    logger.info(f"Updating master custom object {master_record_id} with: {update_properties}")
+                    logger.info(
+                        "Updating master custom object %s (%d fields)",
+                        master_record_id,
+                        len(update_properties),
+                    )
                     await client.update_custom_object_record(schema_key, master_record_id, update_properties)
             elif is_company:
                 update_payload = _build_payload(
@@ -1059,7 +1224,11 @@ async def execute_merge(
                     excluded_fields=NON_MUTABLE_RECORD_FIELDS,
                 )
                 if update_payload:
-                    logger.info(f"Updating master company {master_record_id} with: {update_payload}")
+                    logger.info(
+                        "Updating master company %s (%d fields)",
+                        master_record_id,
+                        len(update_payload),
+                    )
                     await client.update_company(master_record_id, update_payload)
             elif is_opportunity:
                 update_payload = _build_payload(
@@ -1068,7 +1237,11 @@ async def execute_merge(
                     excluded_fields=NON_CONTACT_DYNAMIC_EXCLUDE_FIELDS,
                 )
                 if update_payload:
-                    logger.info(f"Updating master opportunity {master_record_id} with: {update_payload}")
+                    logger.info(
+                        "Updating master opportunity %s (%d fields)",
+                        master_record_id,
+                        len(update_payload),
+                    )
                     await client.update_opportunity(master_record_id, update_payload)
             else:
                 update_payload = _build_payload(
@@ -1077,7 +1250,11 @@ async def execute_merge(
                     allowed_fields=CONTACT_ALLOWED_UPDATE_FIELDS,
                 )
                 if update_payload:
-                    logger.info(f"Updating master contact {master_record_id} with: {update_payload}")
+                    logger.info(
+                        "Updating master contact %s (%d fields)",
+                        master_record_id,
+                        len(update_payload),
+                    )
                     await client.update_contact(master_record_id, update_payload)
 
             # Handle related records BEFORE deleting duplicate (contacts only)
@@ -1090,8 +1267,8 @@ async def execute_merge(
                     try:
                         notes_copied = await client.reassign_contact_notes(duplicate_id, master_record_id)
                         logger.info(f"Copied {notes_copied} notes to master")
-                    except Exception as e:
-                        logger.warning(f"Failed to copy notes: {e}")
+                    except Exception:
+                        logger.warning("Failed to copy notes")
 
                 # Handle Tasks
                 tasks_handling = related_records_config.get("tasks")
@@ -1099,8 +1276,8 @@ async def execute_merge(
                     try:
                         tasks_copied = await client.reassign_contact_tasks(duplicate_id, master_record_id)
                         logger.info(f"Copied {tasks_copied} tasks to master")
-                    except Exception as e:
-                        logger.warning(f"Failed to copy tasks: {e}")
+                    except Exception:
+                        logger.warning("Failed to copy tasks")
 
                 # Handle Opportunities
                 opps_handling = related_records_config.get("opportunities")
@@ -1116,8 +1293,8 @@ async def execute_merge(
                                 duplicate_id, master_record_id, handling=opps_handling
                             )
                         logger.info(f"Reassigned {opps_reassigned} opportunities to master")
-                    except Exception as e:
-                        logger.warning(f"Failed to reassign opportunities: {e}")
+                    except Exception:
+                        logger.warning("Failed to reassign opportunities")
 
             # Delete the duplicate record
             if is_custom_object:
@@ -1180,24 +1357,18 @@ async def execute_merge(
         }
 
     except httpx.HTTPStatusError as e:
-        # Capture actual GHL API error response
-        error_detail = str(e)
-        try:
-            error_body = e.response.json()
-            error_detail = f"{e.response.status_code}: {error_body}"
-        except Exception:
-            error_detail = f"{e.response.status_code}: {e.response.text}"
-        logger.error(f"Merge failed (HTTP): {error_detail}")
+        status_code = e.response.status_code if e.response is not None else "unknown"
+        logger.error("Merge failed due to upstream API error (status=%s)", status_code)
         supabase.table("merges").update({
             "status": "failed",
-            "error_message": error_detail
+            "error_message": f"Upstream API error (status={status_code})",
         }).eq("id", merge_id).execute()
         raise
-    except Exception as e:
-        logger.error(f"Merge failed: {e}")
+    except Exception:
+        logger.error("Merge failed due to internal error")
         supabase.table("merges").update({
             "status": "failed",
-            "error_message": str(e)
+            "error_message": "Internal merge error",
         }).eq("id", merge_id).execute()
         raise
 
@@ -1224,8 +1395,13 @@ async def rollback_merge(
     if not merge.data:
         raise ValueError("Merge not found")
 
-    if merge.data["status"] == "rolled_back":
+    merge_status = merge.data.get("status")
+    if merge_status in ("rolled_back", "rolled_back_partial"):
         raise ValueError("Merge already rolled back")
+    if merge_status != "completed":
+        raise ValueError(
+            f"Rollback is only allowed for completed merges. Current status: {merge_status}"
+        )
 
     # Get all snapshots for this merge
     snapshots = supabase.table("snapshots").select("*").eq("merge_id", merge_id).execute()
@@ -1269,35 +1445,31 @@ async def rollback_merge(
             try:
                 expiry_time = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
                 if expiry_time < datetime.now(expiry_time.tzinfo):
-                    raise ValueError("Rollback window has expired (30 days). Snapshots have been deleted.")
+                    raise ValueError("Rollback window has expired. Snapshots have been deleted.")
             except ValueError as e:
-                if "Rollback window" in str(e):
+                error_text = e.args[0] if e.args else ""
+                if isinstance(error_text, str) and "Rollback window" in error_text:
                     raise
                 # Parse error - continue without expiration check
                 pass
             break  # Only need to check one snapshot
 
-    # Determine if this was a custom object merge from the match pair's rule
+    # Determine object type from immutable merge context. Fallback to rule only for legacy merges.
     match_pair_id = merge.data.get("match_pair_id")
-    is_custom_object = False
-    is_company = False
-    is_opportunity = False
-    schema_key = None
-    source_object = "contacts"
-
-    if match_pair_id:
+    source_object = _normalize_source_object(merge.data.get("master_record_type"))
+    if not source_object and match_pair_id:
         match_pair = supabase.table("match_pairs").select("rule_id").eq("id", match_pair_id).single().execute()
         if match_pair.data and match_pair.data.get("rule_id"):
             rule_check = supabase.table("match_rules").select("source_object").eq("id", match_pair.data["rule_id"]).single().execute()
             if rule_check.data:
-                source_object = rule_check.data.get("source_object", "contacts")
-                if source_object.startswith("custom_objects."):
-                    is_custom_object = True
-                    schema_key = source_object  # Use full key
-                elif source_object == "companies":
-                    is_company = True
-                elif source_object == "opportunities":
-                    is_opportunity = True
+                source_object = _normalize_source_object(rule_check.data.get("source_object"))
+    if not source_object:
+        raise ValueError("Rollback object context is missing; this merge cannot be safely rolled back.")
+
+    is_custom_object = source_object.startswith("custom_objects.")
+    is_company = source_object == "companies"
+    is_opportunity = source_object == "opportunities"
+    schema_key = source_object if is_custom_object else None
 
     is_contact = source_object == "contacts"
     is_non_contact_object = is_custom_object or is_company or is_opportunity
@@ -1318,12 +1490,25 @@ async def rollback_merge(
         logger.info(f"Associations to restore: {len(associations_snapshot or [])}")
 
     try:
+        partial_failures: List[str] = []
+
         async with GHLClient(access_token, ghl_location_id) as client:
             if is_custom_object:
                 restore_properties = _extract_custom_object_properties(duplicate_snapshot)
-                logger.info(f"Creating custom object record with properties: {restore_properties}")
+                logger.info(
+                    "Creating custom object record from snapshot (%d fields)",
+                    len(restore_properties),
+                )
                 restored_record = await client.create_custom_object_record(schema_key, restore_properties)
-                restored_id = restored_record.get("id")
+                restored_id = _extract_id_from_response(
+                    restored_record,
+                    [
+                        ("id",),
+                        ("record", "id"),
+                        ("customObjectRecord", "id"),
+                        ("data", "id"),
+                    ],
+                )
                 logger.info(f"Restored custom object record created with ID: {restored_id}")
             elif is_company:
                 restore_data = _build_payload(
@@ -1332,9 +1517,17 @@ async def rollback_merge(
                     allowed_fields=COMPANY_ALLOWED_FIELDS,
                     excluded_fields=NON_MUTABLE_RECORD_FIELDS,
                 )
-                logger.info(f"Creating company with data: {restore_data}")
+                logger.info("Creating company from snapshot (%d fields)", len(restore_data))
                 restored_company = await client.create_company(restore_data)
-                restored_id = restored_company.get("id") or restored_company.get("business", {}).get("id")
+                restored_id = _extract_id_from_response(
+                    restored_company,
+                    [
+                        ("id",),
+                        ("business", "id"),
+                        ("company", "id"),
+                        ("record", "id"),
+                    ],
+                )
                 logger.info(f"Restored company created with ID: {restored_id}")
             elif is_opportunity:
                 restore_data = _build_payload(
@@ -1343,9 +1536,17 @@ async def rollback_merge(
                     allowed_fields=OPPORTUNITY_ALLOWED_FIELDS,
                     excluded_fields=NON_CONTACT_DYNAMIC_EXCLUDE_FIELDS,
                 )
-                logger.info(f"Creating opportunity with data: {restore_data}")
+                logger.info("Creating opportunity from snapshot (%d fields)", len(restore_data))
                 restored_opportunity = await client.create_opportunity(restore_data)
-                restored_id = restored_opportunity.get("id") or restored_opportunity.get("opportunity", {}).get("id")
+                restored_id = _extract_id_from_response(
+                    restored_opportunity,
+                    [
+                        ("id",),
+                        ("opportunity", "id"),
+                        ("record", "id"),
+                        ("data", "id"),
+                    ],
+                )
                 logger.info(f"Restored opportunity created with ID: {restored_id}")
             else:
                 restore_data = _build_payload(
@@ -1355,10 +1556,20 @@ async def rollback_merge(
                 )
                 restore_data["locationId"] = ghl_location_id
 
-                logger.info(f"Creating contact with data: {restore_data}")
+                logger.info("Creating contact from snapshot (%d fields)", len(restore_data))
                 restored_contact = await client.create_contact(restore_data)
-                restored_id = restored_contact.get("contact", {}).get("id")
+                restored_id = _extract_id_from_response(
+                    restored_contact,
+                    [
+                        ("contact", "id"),
+                        ("id",),
+                        ("record", "id"),
+                    ],
+                )
                 logger.info(f"Restored contact created with ID: {restored_id}")
+
+            if not restored_id:
+                raise ValueError("Rollback failed: GHL did not return a restored record ID.")
 
             # Restore related records on the recreated contact (contacts only)
             notes_restored = 0
@@ -1375,8 +1586,9 @@ async def rollback_merge(
                             try:
                                 await client.create_contact_note(restored_id, body)
                                 notes_restored += 1
-                            except Exception as e:
-                                logger.warning(f"Failed to restore note: {e}")
+                            except Exception:
+                                partial_failures.append("Failed to restore note.")
+                                logger.warning("Failed to restore note")
                     logger.info(f"Restored {notes_restored}/{len(notes_snapshot)} notes")
 
                 # Restore tasks
@@ -1393,8 +1605,9 @@ async def rollback_merge(
                                     completed=task.get("completed", False),
                                 )
                                 tasks_restored += 1
-                            except Exception as e:
-                                logger.warning(f"Failed to restore task: {e}")
+                            except Exception:
+                                partial_failures.append("Failed to restore task.")
+                                logger.warning("Failed to restore task")
                     logger.info(f"Restored {tasks_restored}/{len(tasks_snapshot)} tasks")
 
                 # Restore opportunities by reassigning them back from master
@@ -1406,8 +1619,9 @@ async def rollback_merge(
                             try:
                                 await client.update_opportunity(opp_id, {"contactId": restored_id})
                                 opps_restored += 1
-                            except Exception as e:
-                                logger.warning(f"Failed to restore opportunity {opp_id}: {e}")
+                            except Exception:
+                                partial_failures.append("Failed to restore opportunity.")
+                                logger.warning("Failed to restore opportunity")
                     logger.info(f"Restored {opps_restored}/{len(opps_snapshot)} opportunities")
 
                 # Restore appointments by reassigning them back to restored contact
@@ -1418,16 +1632,24 @@ async def rollback_merge(
                             try:
                                 await client.update_appointment(appt_id, {"contactId": restored_id})
                                 appointments_restored += 1
-                            except Exception as e:
-                                logger.warning(f"Failed to restore appointment {appt_id}: {e}")
+                            except Exception:
+                                partial_failures.append("Failed to restore appointment.")
+                                logger.warning("Failed to restore appointment")
                     logger.info(f"Restored {appointments_restored}/{len(appointments_snapshot)} appointments")
-            elif associations_snapshot and restored_id:
+            else:
+                if associations_snapshot is None:
+                    partial_failures.append(
+                        "Missing duplicate_associations snapshot; associations could not be restored."
+                    )
+
+            if not is_contact and associations_snapshot and restored_id:
                 relations_restored = 0
                 old_duplicate_id = merge.data.get("duplicate_record_id")
 
                 for relation in associations_snapshot:
                     if not isinstance(relation, dict):
-                        logger.warning(f"Skipping malformed association snapshot row: {relation}")
+                        partial_failures.append("Malformed association snapshot row skipped.")
+                        logger.warning("Skipping malformed association snapshot row")
                         continue
 
                     source_object_key = relation.get("sourceObjectKey")
@@ -1444,10 +1666,10 @@ async def rollback_merge(
 
                     # Safety check: only restore relations tied to the recreated duplicate
                     if restored_id not in (source_record_id, target_record_id):
-                        logger.warning(
-                            "Skipping association restore because duplicate ID was not found in relation payload: "
-                            f"{relation}"
+                        partial_failures.append(
+                            "Association restore skipped because restored duplicate ID was absent."
                         )
+                        logger.warning("Skipping association restore: duplicate record not present")
                         continue
 
                     if not all(
@@ -1459,7 +1681,8 @@ async def rollback_merge(
                             association_id,
                         ]
                     ):
-                        logger.warning(f"Skipping association restore due to missing required fields: {relation}")
+                        partial_failures.append("Association restore skipped due to missing required fields.")
+                        logger.warning("Skipping association restore due to missing required fields")
                         continue
 
                     try:
@@ -1471,8 +1694,9 @@ async def rollback_merge(
                             association_id=association_id,
                         )
                         relations_restored += 1
-                    except Exception as e:
-                        logger.warning(f"Failed to restore {source_object} association: {e}")
+                    except Exception:
+                        partial_failures.append("Failed to restore association.")
+                        logger.warning("Failed to restore association")
 
                 logger.info(f"Restored {relations_restored}/{len(associations_snapshot)} associations")
 
@@ -1486,8 +1710,9 @@ async def rollback_merge(
                             try:
                                 await client.update_custom_object_record(schema_key, master_record_id, restore_properties)
                                 logger.info(f"Restored master custom object {master_record_id} to original state")
-                            except Exception as e:
-                                logger.warning(f"Failed to restore master record: {e}")
+                            except Exception:
+                                partial_failures.append("Failed to restore master custom object.")
+                                logger.warning("Failed to restore master record")
                     elif is_company:
                         restore_master_data = _build_payload(
                             master_snapshot,
@@ -1499,8 +1724,9 @@ async def rollback_merge(
                             try:
                                 await client.update_company(master_record_id, restore_master_data)
                                 logger.info(f"Restored master company {master_record_id} to original state")
-                            except Exception as e:
-                                logger.warning(f"Failed to restore master record: {e}")
+                            except Exception:
+                                partial_failures.append("Failed to restore master company.")
+                                logger.warning("Failed to restore master record")
                     elif is_opportunity:
                         restore_master_data = _build_payload(
                             master_snapshot,
@@ -1512,8 +1738,9 @@ async def rollback_merge(
                             try:
                                 await client.update_opportunity(master_record_id, restore_master_data)
                                 logger.info(f"Restored master opportunity {master_record_id} to original state")
-                            except Exception as e:
-                                logger.warning(f"Failed to restore master record: {e}")
+                            except Exception:
+                                partial_failures.append("Failed to restore master opportunity.")
+                                logger.warning("Failed to restore master record")
                     else:
                         restore_master_data = _build_payload(
                             master_snapshot,
@@ -1524,51 +1751,92 @@ async def rollback_merge(
                             try:
                                 await client.update_contact(master_record_id, restore_master_data)
                                 logger.info(f"Restored master record {master_record_id} to original state")
-                            except Exception as e:
-                                logger.warning(f"Failed to restore master record: {e}")
+                            except Exception:
+                                partial_failures.append("Failed to restore master contact.")
+                                logger.warning("Failed to restore master record")
+            else:
+                partial_failures.append("Master snapshot missing; master record state was not restored.")
 
-        # Update merge status and store the new restored record ID
-        supabase.table("merges").update({
-            "status": "rolled_back",
-            "rolled_back_at": "now()",
+        final_status = "rolled_back" if not partial_failures else "rolled_back_partial"
+        merge_update_payload: Dict[str, Any] = {
+            "status": final_status,
+            "rolled_back_at": datetime.utcnow().isoformat(),
             "restored_record_id": restored_id,
-        }).eq("id", merge_id).execute()
+        }
+        if partial_failures:
+            preview = "; ".join(partial_failures[:5])
+            if len(partial_failures) > 5:
+                preview = f"{preview}; ... (+{len(partial_failures) - 5} more)"
+            merge_update_payload["error_message"] = preview
+        else:
+            merge_update_payload["error_message"] = None
 
-        # Update match pair: status back to pending AND update the record ID.
-        # The restored duplicate has a NEW ID, so update whichever side held the old ID.
+        # Update merge status and store restored ID.
+        supabase.table("merges").update(merge_update_payload).eq("id", merge_id).execute()
+
+        # Update match pairs that still reference the deleted duplicate ID.
         match_pair_id = merge.data.get("match_pair_id")
         old_duplicate_id = merge.data.get("duplicate_record_id")
-        if match_pair_id and restored_id:
-            # Get the match pair to check which record was the duplicate
-            match_pair = supabase.table("match_pairs").select("record_a_id, record_b_id, record_a_data, record_b_data").eq("id", match_pair_id).single().execute()
-            if match_pair.data:
-                update_data = {"status": "pending"}
-                # Update the correct record ID (a or b) with the new restored ID
-                if match_pair.data["record_a_id"] == old_duplicate_id:
+        if old_duplicate_id and restored_id:
+            related_pairs = (
+                supabase.table("match_pairs")
+                .select("id, status, record_a_id, record_b_id, record_a_data, record_b_data")
+                .eq("location_id", internal_location_id)
+                .or_(f"record_a_id.eq.{old_duplicate_id},record_b_id.eq.{old_duplicate_id}")
+                .execute()
+            )
+
+            remapped_pairs = 0
+            for pair in related_pairs.data or []:
+                pair_id = pair.get("id")
+                if not pair_id:
+                    continue
+
+                update_data: Dict[str, Any] = {}
+                if pair.get("record_a_id") == old_duplicate_id:
                     update_data["record_a_id"] = restored_id
-                    # Also update the snapshot data with the new ID
-                    record_data = match_pair.data.get("record_a_data", {})
-                    if record_data:
-                        record_data["id"] = restored_id
+                    record_data = pair.get("record_a_data")
+                    if isinstance(record_data, dict) and _remap_record_payload_id(
+                        record_data,
+                        old_id=old_duplicate_id,
+                        new_id=restored_id,
+                    ):
                         update_data["record_a_data"] = record_data
-                elif match_pair.data["record_b_id"] == old_duplicate_id:
+
+                if pair.get("record_b_id") == old_duplicate_id:
                     update_data["record_b_id"] = restored_id
-                    record_data = match_pair.data.get("record_b_data", {})
-                    if record_data:
-                        record_data["id"] = restored_id
+                    record_data = pair.get("record_b_data")
+                    if isinstance(record_data, dict) and _remap_record_payload_id(
+                        record_data,
+                        old_id=old_duplicate_id,
+                        new_id=restored_id,
+                    ):
                         update_data["record_b_data"] = record_data
 
-                supabase.table("match_pairs").update(update_data).eq("id", match_pair_id).execute()
-                logger.info(f"Updated match_pair {match_pair_id}: old ID {old_duplicate_id} -> new ID {restored_id}")
+                if pair_id == match_pair_id:
+                    update_data["status"] = "pending"
 
-        logger.info(f"Rollback {merge_id} completed successfully")
+                if update_data:
+                    supabase.table("match_pairs").update(update_data).eq("id", pair_id).execute()
+                    remapped_pairs += 1
+
+            if remapped_pairs > 0:
+                logger.info(
+                    "Remapped restored record ID for %d match_pair(s): %s -> %s",
+                    remapped_pairs,
+                    old_duplicate_id,
+                    restored_id,
+                )
+
+        logger.info("Rollback %s completed with status=%s", merge_id, final_status)
 
         return {
             "id": merge_id,
-            "status": "rolled_back",
+            "status": final_status,
             "restored_record_id": restored_id,
+            "partial_failures": partial_failures,
         }
 
-    except Exception as e:
-        logger.error(f"Rollback failed: {e}")
+    except Exception:
+        logger.error("Rollback failed")
         raise

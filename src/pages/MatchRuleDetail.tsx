@@ -38,12 +38,19 @@ export default function MatchRuleDetail() {
   const [matchSearchQuery, setMatchSearchQuery] = useState("");
   const debouncedSearchQuery = useDebouncedValue(matchSearchQuery, 300);
   const [showMergeAllDialog, setShowMergeAllDialog] = useState(false);
-  const [bulkMergeProgress, setBulkMergeProgress] = useState({ current: 0, total: 0, inProgress: false });
-  const [bulkJobId, setBulkJobId] = useState<string | null>(null);
+  const BULK_JOB_KEY_INIT = id ? `bulkJob_${id}` : null;
+  const [bulkMergeProgress, setBulkMergeProgress] = useState(() => {
+    const savedJobId = BULK_JOB_KEY_INIT ? localStorage.getItem(BULK_JOB_KEY_INIT) : null;
+    return { current: 0, total: 0, inProgress: !!savedJobId };
+  });
+  const [bulkJobId, setBulkJobId] = useState<string | null>(() => {
+    return BULK_JOB_KEY_INIT ? localStorage.getItem(BULK_JOB_KEY_INIT) : null;
+  });
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [matchPage, setMatchPage] = useState(1);
   const [matchPageSize, setMatchPageSize] = useState(50);
   const [mergeAllValidIds, setMergeAllValidIds] = useState<string[]>([]);
+  const BULK_JOB_KEY = id ? `bulkJob_${id}` : null;
 
   // Scroll to top on mount
   useEffect(() => {
@@ -317,6 +324,25 @@ export default function MatchRuleDetail() {
     });
   };
 
+  // Resume polling if there's an active job (e.g., after page refresh)
+  useEffect(() => {
+    if (!BULK_JOB_KEY) return;
+
+    const savedJobId = localStorage.getItem(BULK_JOB_KEY);
+    if (savedJobId) {
+      setBulkJobId(savedJobId);
+      setBulkMergeProgress({ current: 0, total: 0, inProgress: true });
+
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+      pollJobStatus(savedJobId);
+      pollIntervalRef.current = setInterval(() => {
+        pollJobStatus(savedJobId);
+      }, 1000);
+    }
+  }, [BULK_JOB_KEY]);
+
   // Cleanup polling on unmount
   useEffect(() => {
     return () => {
@@ -344,6 +370,9 @@ export default function MatchRuleDetail() {
         }
         setBulkJobId(null);
         setBulkMergeProgress({ current: 0, total: 0, inProgress: false });
+        if (BULK_JOB_KEY) {
+          localStorage.removeItem(BULK_JOB_KEY);
+        }
 
         // Refresh data
         queryClient.invalidateQueries({ queryKey: ["matches"] });
@@ -397,8 +426,15 @@ export default function MatchRuleDetail() {
       // Start server-side bulk merge
       const response = await api.startBulkMerge(matchIds, id);
       setBulkJobId(response.job_id);
+      if (BULK_JOB_KEY) {
+        localStorage.setItem(BULK_JOB_KEY, response.job_id);
+      }
 
       // Start polling for progress
+      pollJobStatus(response.job_id);
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
       pollIntervalRef.current = setInterval(() => {
         pollJobStatus(response.job_id);
       }, 1000);

@@ -152,12 +152,15 @@ export default function AllPendingMatches() {
   // Resume polling if there's an active job (e.g., after page refresh)
   useEffect(() => {
     const savedJobId = localStorage.getItem(BULK_JOB_KEY);
-    if (savedJobId && !bulkJobId) {
+    if (savedJobId) {
       console.log('[BulkMerge] Resuming job from localStorage:', savedJobId);
       setBulkJobId(savedJobId);
       setBulkMergeProgress({ current: 0, total: 0, inProgress: true });
 
       // Start polling immediately
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
       pollJobStatus(savedJobId);
       pollIntervalRef.current = setInterval(() => {
         pollJobStatus(savedJobId);
@@ -259,6 +262,35 @@ export default function AllPendingMatches() {
     }
   };
 
+  const fetchAllMatchingIds = async () => {
+    const pageSize = 1000;
+    const allIds: string[] = [];
+    let offset = 0;
+    let total = Number.POSITIVE_INFINITY;
+
+    while (offset < total) {
+      const result = await api.getMatches(
+        "pending",
+        ruleFilter !== "all" ? ruleFilter : undefined,
+        pageSize,
+        offset,
+        debouncedSearchQuery || undefined
+      );
+
+      const pageItems = result.data || [];
+      total = result.total ?? 0;
+      allIds.push(...pageItems.map((m: MatchPair) => m.id));
+
+      if (pageItems.length === 0) {
+        break;
+      }
+
+      offset += pageItems.length;
+    }
+
+    return allIds;
+  };
+
   // Cancel bulk job
   const handleCancelBulkMerge = async () => {
     if (!bulkJobId) return;
@@ -280,26 +312,37 @@ export default function AllPendingMatches() {
 
   const handleMergeAll = async () => {
     setShowMergeAllDialog(false);
-    // Fetch all pending match IDs for the merge (not just the current page, respecting search filter)
-    const allResult = await api.getMatches(
-      "pending",
-      ruleFilter !== "all" ? ruleFilter : undefined,
-      10000,
-      0,
-      debouncedSearchQuery || undefined
-    );
-    const matchIds = (allResult.data || []).map((m: MatchPair) => m.id);
-    startBulkMerge(matchIds, ruleFilter !== "all" ? ruleFilter : undefined);
+
+    try {
+      // Fetch all pending match IDs for the merge (not just the current page, respecting filters)
+      const matchIds = await fetchAllMatchingIds();
+      startBulkMerge(matchIds, ruleFilter !== "all" ? ruleFilter : undefined);
+    } catch (error) {
+      toast({
+        title: "Bulk Merge Failed",
+        description: error instanceof Error ? error.message : "Failed to load matching IDs",
+        variant: "destructive",
+      });
+    }
   };
 
-  const handleMergeSelected = () => {
+  const handleMergeSelected = async () => {
     setShowMergeSelectedDialog(false);
-    const matchesToMerge = selectAllMatching
-      ? filteredMatches
-      : filteredMatches.filter((m: MatchPair) => selectedIds.has(m.id));
-    const matchIds = matchesToMerge.map((m: MatchPair) => m.id);
-    // For selected merges across multiple rules, don't pass a rule_id
-    startBulkMerge(matchIds);
+
+    try {
+      const matchIds = selectAllMatching
+        ? await fetchAllMatchingIds()
+        : Array.from(selectedIds);
+
+      // For selected merges across multiple rules, don't pass a rule_id
+      startBulkMerge(matchIds);
+    } catch (error) {
+      toast({
+        title: "Bulk Merge Failed",
+        description: error instanceof Error ? error.message : "Failed to load selected IDs",
+        variant: "destructive",
+      });
+    }
   };
 
   const selectedRuleDisplayField = useMemo(() => {
@@ -339,7 +382,7 @@ export default function AllPendingMatches() {
   );
 
   // Selection display count
-  const displaySelectedCount = selectAllMatching ? filteredMatches.length : selectedIds.size;
+  const displaySelectedCount = selectAllMatching ? totalCount : selectedIds.size;
 
   if (authLoading || rulesLoading || matchesLoading) {
     return (
@@ -452,14 +495,14 @@ export default function AllPendingMatches() {
           <span className="text-sm font-medium">
             {displaySelectedCount.toLocaleString()} selected
           </span>
-          {!selectAllMatching && selectedIds.size < filteredMatches.length && (
+          {!selectAllMatching && selectedIds.size < totalCount && (
             <Button
               variant="link"
               size="sm"
               className="text-primary p-0 h-auto"
               onClick={() => setSelectAllMatching(true)}
             >
-              Select all {filteredMatches.length.toLocaleString()} matching
+              Select all {totalCount.toLocaleString()} matching
             </Button>
           )}
           <div className="flex-1" />

@@ -1,8 +1,10 @@
 from fastapi import APIRouter, HTTPException, Query, Header, Request, Depends
 from pydantic import BaseModel
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Set, Tuple
 from datetime import datetime, timedelta
 from collections import defaultdict
+import asyncio
+import time
 import uuid
 import logging
 
@@ -18,6 +20,93 @@ from app.services.auth_service import get_location_tokens_with_refresh
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+CUSTOM_OBJECT_METADATA_TTL_SECONDS = 300
+CUSTOM_OBJECT_METADATA_MAX_LOCATIONS = 256
+MERGE_STATS_PAGE_SIZE = 10000
+
+_custom_object_display_cache: Dict[str, Tuple[float, Dict[str, str]]] = {}
+_custom_object_cache_lock = asyncio.Lock()
+
+
+def _count_merges(
+    supabase,
+    location_id: str,
+    status: Optional[str] = None,
+) -> int:
+    """Count merges for a location with optional status filter."""
+    query = supabase.table("merges").select("id", count="exact").eq("location_id", location_id)
+    if status:
+        query = query.eq("status", status)
+    result = query.limit(1).execute()
+    return result.count if result.count is not None else 0
+
+
+async def _get_custom_display_fields_for_sources(
+    ghl_location_id: str,
+    custom_sources: Set[str],
+) -> Dict[str, str]:
+    """
+    Resolve custom object display fields with a short-lived location cache.
+    This avoids token refresh + list_objects calls on every list_merges request.
+    """
+    if not custom_sources:
+        return {}
+
+    now = time.monotonic()
+    cached_entry = _custom_object_display_cache.get(ghl_location_id)
+    if cached_entry and cached_entry[0] > now:
+        cached_fields = cached_entry[1]
+        return {k: v for k, v in cached_fields.items() if k in custom_sources}
+
+    stale_fields = cached_entry[1] if cached_entry else {}
+
+    async with _custom_object_cache_lock:
+        now = time.monotonic()
+        cached_entry = _custom_object_display_cache.get(ghl_location_id)
+        if cached_entry and cached_entry[0] > now:
+            cached_fields = cached_entry[1]
+            return {k: v for k, v in cached_fields.items() if k in custom_sources}
+
+        try:
+            tokens = await get_location_tokens_with_refresh(ghl_location_id)
+            if not tokens or not tokens.get("access_token"):
+                raise ValueError("No valid GHL token available")
+
+            async with GHLClient(tokens["access_token"], ghl_location_id) as client:
+                object_defs = await client.list_objects()
+
+            fresh_fields: Dict[str, str] = {}
+            for obj in object_defs or []:
+                key = obj.get("key")
+                if not isinstance(key, str) or not key:
+                    continue
+
+                normalized_key = key if key.startswith("custom_objects.") else f"custom_objects.{key}"
+                primary_display = obj.get("primaryDisplayProperty") or ""
+                display_field = _extract_custom_object_field_key(primary_display)
+                if display_field:
+                    fresh_fields[normalized_key] = display_field
+
+            _custom_object_display_cache[ghl_location_id] = (
+                time.monotonic() + CUSTOM_OBJECT_METADATA_TTL_SECONDS,
+                fresh_fields,
+            )
+            while len(_custom_object_display_cache) > CUSTOM_OBJECT_METADATA_MAX_LOCATIONS:
+                _custom_object_display_cache.pop(next(iter(_custom_object_display_cache)))
+
+            return {k: v for k, v in fresh_fields.items() if k in custom_sources}
+        except Exception as e:
+            if stale_fields:
+                logger.warning(
+                    "Failed to refresh custom object display field cache for %s, using stale data: %s",
+                    ghl_location_id,
+                    e,
+                )
+                return {k: v for k, v in stale_fields.items() if k in custom_sources}
+
+            logger.warning(f"Failed to resolve custom object display fields for merge history: {e}")
+            return {}
 
 
 def _extract_custom_object_field_key(field_key: str) -> Optional[str]:
@@ -82,17 +171,19 @@ async def get_merge_stats(
     """Get merge statistics by status."""
     supabase = get_supabase()
 
-    # Get counts by status
-    all_merges = supabase.table("merges").select("status").eq("location_id", user.location_id).execute()
+    completed = _count_merges(supabase, user.location_id, "completed")
+    failed = _count_merges(supabase, user.location_id, "failed")
+    rolled_back = _count_merges(supabase, user.location_id, "rolled_back")
+    rolled_back_partial = _count_merges(supabase, user.location_id, "rolled_back_partial")
+    total = _count_merges(supabase, user.location_id)
 
-    stats = {"completed": 0, "failed": 0, "rolled_back": 0, "total": 0}
-    for merge in all_merges.data:
-        status = merge.get("status", "unknown")
-        if status in stats:
-            stats[status] += 1
-        stats["total"] += 1
-
-    return stats
+    return {
+        "completed": completed,
+        "failed": failed,
+        "rolled_back": rolled_back,
+        "rolled_back_partial": rolled_back_partial,
+        "total": total,
+    }
 
 
 @router.get("/stats/detailed")
@@ -105,54 +196,120 @@ async def get_detailed_merge_stats(
     """Get detailed merge statistics including time series data."""
     supabase = get_supabase()
 
-    # Get all merges with timestamps and rule info
-    all_merges = supabase.table("merges").select(
-        "id, status, created_at, match_pairs(rule_id, match_rules(id, name))"
-    ).eq("location_id", user.location_id).execute()
-
     # Calculate date range
     end_date = datetime.utcnow().date()
     start_date = end_date - timedelta(days=days - 1)
+    window_start = f"{start_date.isoformat()}T00:00:00"
+    window_end = f"{end_date.isoformat()}T23:59:59"
 
     # Initialize daily counts
     daily_data: Dict[str, Dict[str, int]] = {}
     current = start_date
     while current <= end_date:
         date_str = current.isoformat()
-        daily_data[date_str] = {"completed": 0, "failed": 0, "rolled_back": 0}
+        daily_data[date_str] = {
+            "completed": 0,
+            "failed": 0,
+            "rolled_back": 0,
+            "rolled_back_partial": 0,
+        }
         current += timedelta(days=1)
 
-    # Calculate stats
-    stats = {"completed": 0, "failed": 0, "rolled_back": 0, "total": 0}
-    merges_by_rule: Dict[str, Dict] = defaultdict(lambda: {"name": "", "completed": 0, "failed": 0, "rolled_back": 0})
+    # Summary counts are computed directly in DB to avoid loading all rows.
+    stats = {
+        "completed": _count_merges(supabase, user.location_id, "completed"),
+        "failed": _count_merges(supabase, user.location_id, "failed"),
+        "rolled_back": _count_merges(supabase, user.location_id, "rolled_back"),
+        "rolled_back_partial": _count_merges(supabase, user.location_id, "rolled_back_partial"),
+        "total": _count_merges(supabase, user.location_id),
+    }
 
-    for merge in all_merges.data:
-        status = merge.get("status", "unknown")
-        created_at = merge.get("created_at")
+    # Time-series is constrained to the requested window.
+    scanned_window_rows = 0
+    page_offset = 0
 
-        # Count total stats
-        if status in stats:
-            stats[status] += 1
-        stats["total"] += 1
+    while True:
+        page_result = (
+            supabase.table("merges")
+            .select("status, created_at")
+            .eq("location_id", user.location_id)
+            .gte("created_at", window_start)
+            .lte("created_at", window_end)
+            .order("created_at", desc=True)
+            .range(page_offset, page_offset + MERGE_STATS_PAGE_SIZE - 1)
+            .execute()
+        )
+        merge_rows = page_result.data or []
+        if not merge_rows:
+            break
 
-        # Parse date and add to daily data if within range
-        if created_at:
-            try:
-                merge_date = datetime.fromisoformat(created_at.replace("Z", "+00:00")).date()
-                date_str = merge_date.isoformat()
-                if date_str in daily_data and status in daily_data[date_str]:
-                    daily_data[date_str][status] += 1
-            except (ValueError, AttributeError):
-                pass
+        scanned_window_rows += len(merge_rows)
+        for merge in merge_rows:
+            status = merge.get("status", "unknown")
+            created_at = merge.get("created_at")
 
-        # Count by rule
-        match_pair = merge.get("match_pairs")
-        if match_pair and match_pair.get("match_rules"):
-            rule_id = match_pair["match_rules"]["id"]
-            rule_name = match_pair["match_rules"]["name"]
-            merges_by_rule[rule_id]["name"] = rule_name
-            if status in merges_by_rule[rule_id]:
-                merges_by_rule[rule_id][status] += 1
+            # Parse date and add to daily data if within range.
+            if created_at:
+                try:
+                    merge_date = datetime.fromisoformat(created_at.replace("Z", "+00:00")).date()
+                    date_str = merge_date.isoformat()
+                    if date_str in daily_data and status in daily_data[date_str]:
+                        daily_data[date_str][status] += 1
+                except (ValueError, AttributeError):
+                    pass
+
+        if len(merge_rows) < MERGE_STATS_PAGE_SIZE:
+            break
+        page_offset += MERGE_STATS_PAGE_SIZE
+
+    # Preserve previous behavior: by-rule counts are all-time for the location.
+    merges_by_rule: Dict[str, Dict] = defaultdict(
+        lambda: {
+            "name": "",
+            "completed": 0,
+            "failed": 0,
+            "rolled_back": 0,
+            "rolled_back_partial": 0,
+        }
+    )
+    scanned_rule_rows = 0
+    page_offset = 0
+
+    while True:
+        page_result = (
+            supabase.table("merges")
+            .select("status, match_pairs(rule_id, match_rules(id, name))")
+            .eq("location_id", user.location_id)
+            .order("created_at", desc=True)
+            .range(page_offset, page_offset + MERGE_STATS_PAGE_SIZE - 1)
+            .execute()
+        )
+        merge_rows = page_result.data or []
+        if not merge_rows:
+            break
+
+        scanned_rule_rows += len(merge_rows)
+        for merge in merge_rows:
+            status = merge.get("status", "unknown")
+            match_pair = merge.get("match_pairs")
+            if match_pair and match_pair.get("match_rules"):
+                rule_id = match_pair["match_rules"]["id"]
+                rule_name = match_pair["match_rules"]["name"]
+                merges_by_rule[rule_id]["name"] = rule_name
+                if status in merges_by_rule[rule_id]:
+                    merges_by_rule[rule_id][status] += 1
+
+        if len(merge_rows) < MERGE_STATS_PAGE_SIZE:
+            break
+        page_offset += MERGE_STATS_PAGE_SIZE
+
+    logger.info(
+        "Detailed merge stats for location %s scanned window_rows=%s and by_rule_rows=%s (days=%s)",
+        user.location_id,
+        scanned_window_rows,
+        scanned_rule_rows,
+        days,
+    )
 
     # Convert daily data to sorted list
     time_series = [
@@ -194,7 +351,10 @@ async def list_merges(
     user: AuthenticatedUser = Depends(get_user),
     limit: int = 50,
     offset: int = 0,
-    status: Optional[str] = Query(None, description="Filter by status (completed, failed, rolled_back)"),
+    status: Optional[str] = Query(
+        None,
+        description="Filter by status (completed, failed, rolled_back, rolled_back_partial)",
+    ),
     rule_id: Optional[str] = Query(None, description="Filter by rule ID"),
     search: Optional[str] = Query(None, description="Search by master_record_name"),
     date_from: Optional[str] = Query(None, description="ISO date start filter"),
@@ -275,29 +435,10 @@ async def list_merges(
 
     custom_display_field_by_object: Dict[str, str] = {}
     if custom_sources:
-        try:
-            tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
-            if not tokens or not tokens.get("access_token"):
-                raise ValueError("No valid GHL token available")
-
-            async with GHLClient(tokens["access_token"], user.ghl_location_id) as client:
-                object_defs = await client.list_objects()
-
-            for obj in object_defs:
-                key = obj.get("key")
-                if not isinstance(key, str) or not key:
-                    continue
-
-                normalized_key = key if key.startswith("custom_objects.") else f"custom_objects.{key}"
-                if normalized_key not in custom_sources:
-                    continue
-
-                primary_display = obj.get("primaryDisplayProperty") or ""
-                display_field = _extract_custom_object_field_key(primary_display)
-                if display_field:
-                    custom_display_field_by_object[normalized_key] = display_field
-        except Exception as e:
-            logger.warning(f"Failed to resolve custom object display fields for merge history: {e}")
+        custom_display_field_by_object = await _get_custom_display_fields_for_sources(
+            user.ghl_location_id,
+            custom_sources,
+        )
 
     # Flatten the rule info for easier frontend consumption
     data = []
@@ -388,12 +529,17 @@ async def execute_merge_route(
             internal_location_id=ctx.location_id,
             preserve_alternates=body.preserve_alternates,
             field_preservation_mappings=mappings_dicts,
+            plan=ctx.plan,
         )
         return result
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        logger.error(f"Merge failed for match {body.match_id}: {str(e)}")
+    except ValueError:
+        logger.warning("Merge request rejected due to validation constraints")
+        raise HTTPException(
+            status_code=404,
+            detail="Merge could not be completed for this match.",
+        )
+    except Exception:
+        logger.error("Merge failed for match request")
         raise HTTPException(status_code=500, detail="Merge failed. Please try again.")
 
 
@@ -454,8 +600,12 @@ async def rollback_merge_route(
             internal_location_id=ctx.location_id,
         )
         return result
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"Rollback failed for merge {merge_id}: {str(e)}")
+    except ValueError:
+        logger.warning("Rollback request rejected due to validation constraints")
+        raise HTTPException(
+            status_code=400,
+            detail="Rollback could not be completed for this merge.",
+        )
+    except Exception:
+        logger.error("Rollback failed for merge request")
         raise HTTPException(status_code=500, detail="Rollback failed. Please try again.")

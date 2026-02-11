@@ -7,7 +7,7 @@ from typing import List, Dict, Optional
 from datetime import datetime
 
 from app.db.supabase import get_supabase
-from app.services.merge_service import execute_merge
+from app.services.merge_service import execute_merge, compute_merge_selections
 from app.services.billing_service import check_merge_quota
 from app.services.auth_service import get_location_tokens, refresh_ghl_token
 
@@ -91,78 +91,6 @@ async def is_cancellation_requested(job_id: str) -> bool:
     return result.data.get("cancel_requested", False) if result.data else False
 
 
-def compute_merge_selections(
-    record_a: Dict,
-    record_b: Dict,
-    strategy: str,
-    overwrite_blanks: bool = False,
-    source_object: str = "contacts",
-) -> tuple[str, Dict[str, str]]:
-    """
-    Compute master record ID and field selections based on merge strategy.
-    Returns (master_id, field_selections).
-    """
-    if source_object == "contacts":
-        fields = [
-            "firstName", "lastName", "email", "phone", "tags",
-            "address1", "city", "state", "postalCode", "companyName",
-        ]
-    else:
-        # Non-contact merges (companies/opportunities/custom objects) should use dynamic fields.
-        internal_fields = {
-            "id", "_raw", "dateAdded", "dateUpdated", "createdAt", "updatedAt",
-            "locationId", "location_id", "contact", "pipeline", "contacts",
-            "opportunities", "relationships",
-        }
-        all_fields = set(record_a.keys()) | set(record_b.keys())
-        fields = [f for f in all_fields if f not in internal_fields and not f.startswith("_")]
-
-    id_a = record_a.get("id", "")
-    id_b = record_b.get("id", "")
-
-    # Determine master based on strategy
-    if strategy == "recent":
-        # Most recently created/updated is master
-        date_a = record_a.get("dateUpdated") or record_a.get("dateAdded") or ""
-        date_b = record_b.get("dateUpdated") or record_b.get("dateAdded") or ""
-        master_id = id_a if date_a >= date_b else id_b
-    elif strategy == "standard":
-        # Record with more filled fields is master
-        def count_filled(record: Dict) -> int:
-            return sum(1 for f in fields if record.get(f))
-        master_id = id_a if count_filled(record_a) >= count_filled(record_b) else id_b
-    elif strategy == "oldest":
-        # Oldest record is master
-        date_a = record_a.get("dateAdded") or ""
-        date_b = record_b.get("dateAdded") or ""
-        master_id = id_a if date_a <= date_b else id_b
-    else:
-        # Default: standard - first record is master
-        master_id = id_a
-
-    # Compute field selections
-    master = record_a if master_id == id_a else record_b
-    duplicate = record_b if master_id == id_a else record_a
-
-    selections = {}
-    for field in fields:
-        master_val = master.get(field)
-        dup_val = duplicate.get(field)
-
-        # Normalize empty values
-        master_empty = master_val is None or master_val == "" or master_val == []
-        dup_empty = dup_val is None or dup_val == "" or dup_val == []
-
-        if master_empty and not dup_empty and not overwrite_blanks:
-            # Fill blank master field from duplicate
-            selections[field] = "b" if master_id == id_a else "a"
-        else:
-            # Keep master value
-            selections[field] = "a" if master_id == id_a else "b"
-
-    return master_id, selections
-
-
 async def process_single_merge(
     match_id: str,
     rules_cache: Dict[str, Dict],
@@ -171,6 +99,7 @@ async def process_single_merge(
     tenant_id: str,
     internal_location_id: str,
     semaphore: asyncio.Semaphore,
+    plan: str,
 ) -> Dict:
     """Process a single merge operation with rate limiting."""
     async with semaphore:
@@ -241,6 +170,7 @@ async def process_single_merge(
                 internal_location_id=internal_location_id,
                 preserve_alternates=field_preservation.get("enabled", False),
                 field_preservation_mappings=mappings,
+                plan=plan,
             )
 
             return {"match_id": match_id, "success": True, "merge_id": result.get("id")}
@@ -377,6 +307,7 @@ async def execute_bulk_merge(
                     tenant_id=tenant_id,
                     internal_location_id=location_id,
                     semaphore=semaphore,
+                    plan=plan,
                 )
                 for mid in chunk
             ]

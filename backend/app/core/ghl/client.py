@@ -725,11 +725,16 @@ class GHLClient:
             return []
         return response.json().get("associations", [])
 
-    async def get_relations_for_record(self, record_id: str) -> List[Dict[str, Any]]:
+    async def get_relations_for_record(
+        self,
+        record_id: str,
+        fail_on_error: bool = False,
+    ) -> List[Dict[str, Any]]:
         """Get all related records for a specific record.
 
         Args:
             record_id: The ID of the record (contact, opportunity, etc.)
+            fail_on_error: Raise on non-2xx instead of returning empty list.
 
         Returns list of related records with their data.
         """
@@ -739,6 +744,9 @@ class GHLClient:
         )
         if response.status_code >= 400:
             logger.warning(f"[GHL] Get relations failed: {response.status_code} - {response.text}")
+            if fail_on_error:
+                error_detail = response.text
+                raise Exception(f"GHL API error ({response.status_code}): {error_detail}")
             return []
         return response.json().get("relations", [])
 
