@@ -163,7 +163,14 @@ def get_field_value(record: dict, field: str) -> str:
             for cf in custom_fields:
                 if isinstance(cf, dict):
                     cf_id = cf.get("id") or cf.get("key") or cf.get("fieldKey")
+                    # Direct match on ID/key
                     if cf_id == field:
+                        cf_value = cf.get("value") or cf.get("fieldValue")
+                        if cf_value is not None:
+                            return str(cf_value)
+                    # Also match by suffix for prefixed keys
+                    # e.g., field="secondary_website" matches key="business.secondary_website"
+                    if cf_id and "." in cf_id and cf_id.rsplit(".", 1)[-1] == field:
                         cf_value = cf.get("value") or cf.get("fieldValue")
                         if cf_value is not None:
                             return str(cf_value)

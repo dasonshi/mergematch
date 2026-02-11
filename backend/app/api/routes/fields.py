@@ -96,19 +96,22 @@ def normalize_object_field(field: Dict[str, Any], use_key_as_id: bool = False) -
 
     Args:
         field: The field definition from GHL API
-        use_key_as_id: If True, extract the field key from fieldKey (e.g., 'transaction_id'
-                       from 'custom_objects.transactions.transaction_id') instead of using
-                       the GHL field ID. This is needed for custom objects where records
-                       store data with the key, not the ID.
+        use_key_as_id: If True, extract the property key from fieldKey (e.g., 'website'
+                       from 'business.website', 'transaction_id' from
+                       'custom_objects.transactions.transaction_id') instead of using
+                       the GHL field ID. Required for companies, opportunities, and
+                       custom objects where records store data by key, not GHL ID.
     """
     field_key = field.get("fieldKey", "")
 
     if use_key_as_id and field_key:
-        # For custom objects, keep the full property key (supports dotted keys)
+        # Extract property key that matches how records actually store data
+        # e.g., 'business.website' -> 'website'
         # e.g., 'custom_objects.pets.my_textbox_list.option_a' -> 'my_textbox_list.option_a'
-        field_id = extract_custom_object_field_key(field_key)
+        field_id = extract_property_key(field_key)
     else:
-        # For standard objects, use the GHL ID
+        # For contacts, use the GHL ID (contacts store custom fields in
+        # customFields array keyed by GHL ID)
         field_id = field.get("id") or field_key.split(".")[-1]
 
     return {
@@ -120,15 +123,31 @@ def normalize_object_field(field: Dict[str, Any], use_key_as_id: bool = False) -
     }
 
 
-def extract_custom_object_field_key(field_key: str) -> str:
-    """Extract the property key from a custom object field key."""
+def extract_property_key(field_key: str) -> str:
+    """Extract the property key from any object field key.
+
+    Strips the object type prefix so the ID matches how records store properties:
+    - custom_objects.transactions.transaction_id -> transaction_id
+    - custom_objects.pets.my_textbox_list.option_a -> my_textbox_list.option_a
+    - business.website -> website
+    - business.secondary_website -> secondary_website
+    - opportunity.name -> name
+    - contact.email -> email
+    """
     if not field_key:
         return ""
     if field_key.startswith("custom_objects."):
         parts = field_key.split(".")
         if len(parts) >= 3:
             return ".".join(parts[2:])
+    # Handle standard object prefixes (business.X, opportunity.X, contact.X)
+    if "." in field_key:
+        return field_key.split(".", 1)[1]
     return field_key
+
+
+# Keep backward-compatible alias
+extract_custom_object_field_key = extract_property_key
 
 
 @router.get("/pipelines")
@@ -210,11 +229,13 @@ async def get_object_fields(
 
             elif object_type == "companies":
                 # Try to fetch business object schema
+                # Use key-based IDs because company records store properties by
+                # short name (e.g., "website") not GHL field IDs
                 try:
                     schema = await client.get_object_schema("business", fetch_properties=True)
                     fields = schema.get("fields", [])
                     if fields:
-                        return [normalize_object_field(f) for f in fields]
+                        return [normalize_object_field(f, use_key_as_id=True) for f in fields]
                 except Exception:
                     pass  # Fall back to standard fields
                 return standard_fields
