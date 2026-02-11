@@ -4,7 +4,7 @@ Only accessible via secret header from Render Cron Jobs.
 """
 from fastapi import APIRouter, HTTPException, Header
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Dict, Any, Tuple
 import logging
 import uuid
 
@@ -13,6 +13,8 @@ from app.db.supabase import get_supabase
 from app.services.matching_service import run_scan
 from app.services.auth_service import get_location_tokens_with_refresh
 from app.services.billing_service import get_plan_features
+from app.services.bulk_merge_service import compute_merge_selections
+from app.services.merge_service import execute_merge
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -42,8 +44,9 @@ def should_run_now(
 
     - hourly: run if last scan > 1 hour ago
     - daily: run if last scan > 24 hours ago
-    - weekly: run if last scan > 7 days ago AND correct day
-    - monthly: run if last scan > 30 days ago
+    - weekly: run if last scan > 7 days ago, on configured weekday/time
+    - biweekly: run if last scan > 14 days ago, on configured weekday/time
+    - monthly: run on configured day-of-month/time, after ~1 month elapsed
     """
     if schedule_frequency == "manual":
         return False
@@ -62,50 +65,156 @@ def should_run_now(
 
     elapsed = now - last_scan
 
+    def _matches_scheduled_hour() -> bool:
+        if not schedule_time:
+            return True
+        try:
+            target_hour = int(schedule_time.split(":")[0])
+            return now.hour == target_hour
+        except Exception:
+            return True
+
+    def _scheduled_weekday() -> Optional[int]:
+        """Convert schedule_day to Python weekday (Mon=0..Sun=6)."""
+        if not schedule_day:
+            return None
+
+        try:
+            raw_day = int(schedule_day)
+            # Frontend sends 0=Sunday..6=Saturday.
+            if 0 <= raw_day <= 6:
+                return (raw_day + 6) % 7
+        except ValueError:
+            pass
+
+        day_map = {
+            "monday": 0, "tuesday": 1, "wednesday": 2,
+            "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6
+        }
+        return day_map.get(str(schedule_day).lower())
+
     if schedule_frequency == "hourly":
         return elapsed >= timedelta(hours=1)
 
     elif schedule_frequency == "daily":
         if elapsed < timedelta(hours=23):  # Give 1 hour buffer
             return False
-        # Optionally check schedule_time (HH:MM)
-        if schedule_time:
-            try:
-                target_hour = int(schedule_time.split(":")[0])
-                if now.hour != target_hour:
-                    return False
-            except Exception:
-                pass
-        return True
+        return _matches_scheduled_hour()
 
     elif schedule_frequency == "weekly":
         if elapsed < timedelta(days=6, hours=23):
             return False
-        # Check schedule_day (0=Monday, 6=Sunday or day name)
-        if schedule_day:
-            try:
-                # Try parsing as int first
-                target_day = int(schedule_day)
-                if now.weekday() != target_day:
-                    return False
-            except ValueError:
-                # Try parsing as day name
-                day_map = {
-                    "monday": 0, "tuesday": 1, "wednesday": 2,
-                    "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6
-                }
-                target_day = day_map.get(schedule_day.lower())
-                if target_day is not None and now.weekday() != target_day:
-                    return False
-        return True
+        target_weekday = _scheduled_weekday()
+        if target_weekday is not None and now.weekday() != target_weekday:
+            return False
+        return _matches_scheduled_hour()
 
     elif schedule_frequency == "biweekly":
-        return elapsed >= timedelta(days=14)
+        if elapsed < timedelta(days=13, hours=23):
+            return False
+        target_weekday = _scheduled_weekday()
+        if target_weekday is not None and now.weekday() != target_weekday:
+            return False
+        return _matches_scheduled_hour()
 
     elif schedule_frequency == "monthly":
-        return elapsed >= timedelta(days=30)
+        # Use 27-day floor so short months can still run near intended cadence.
+        if elapsed < timedelta(days=27):
+            return False
+        if schedule_day:
+            try:
+                target_dom = int(schedule_day)
+                if now.day != target_dom:
+                    return False
+            except ValueError:
+                pass
+        return _matches_scheduled_hour()
 
     return False
+
+
+def _normalized_auto_threshold(rule: Dict[str, Any]) -> float:
+    """Return auto-merge threshold as a 0-1 decimal."""
+    threshold_raw = float(rule.get("auto_merge_threshold", 0.95))
+    return threshold_raw / 100 if threshold_raw > 1 else threshold_raw
+
+
+async def _auto_merge_high_confidence_matches(
+    *,
+    rule: Dict[str, Any],
+    access_token: str,
+    ghl_location_id: str,
+    tenant_id: str,
+    internal_location_id: str,
+) -> Tuple[int, int]:
+    """
+    Auto-merge pending matches for a rule above its threshold.
+    Returns (merged_count, failed_count).
+    """
+    supabase = get_supabase()
+    rule_id = rule["id"]
+    source_object = rule.get("source_object", "contacts")
+    merge_strategy = rule.get("merge_strategy", "standard")
+    merge_settings = rule.get("merge_settings") or {}
+    overwrite_blanks = bool(merge_settings.get("overwrite_blanks", False))
+
+    preservation = merge_settings.get("field_preservation") or {}
+    preserve_alternates = bool(preservation.get("enabled"))
+    field_preservation_mappings = preservation.get("mappings") or []
+    if not preserve_alternates:
+        field_preservation_mappings = None
+
+    auto_threshold = _normalized_auto_threshold(rule)
+
+    matches_result = (
+        supabase.table("match_pairs")
+        .select("id, record_a_data, record_b_data")
+        .eq("location_id", internal_location_id)
+        .eq("rule_id", rule_id)
+        .eq("status", "pending")
+        .gte("confidence_score", auto_threshold)
+        .order("confidence_score", desc=True)
+        .execute()
+    )
+
+    matches = matches_result.data or []
+    if not matches:
+        return 0, 0
+
+    merged_count = 0
+    failed_count = 0
+
+    for match in matches:
+        record_a = match.get("record_a_data") or {}
+        record_b = match.get("record_b_data") or {}
+        match_id = match["id"]
+
+        master_id, selections = compute_merge_selections(
+            record_a,
+            record_b,
+            merge_strategy,
+            overwrite_blanks,
+            source_object,
+        )
+
+        try:
+            await execute_merge(
+                match_id=match_id,
+                master_record_id=master_id,
+                field_selections=selections,
+                access_token=access_token,
+                ghl_location_id=ghl_location_id,
+                tenant_id=tenant_id,
+                internal_location_id=internal_location_id,
+                preserve_alternates=preserve_alternates,
+                field_preservation_mappings=field_preservation_mappings,
+            )
+            merged_count += 1
+        except Exception as e:
+            failed_count += 1
+            logger.warning(f"Auto-merge skipped for match {match_id}: {e}")
+
+    return merged_count, failed_count
 
 
 @router.post("/process-scheduled-scans")
@@ -206,7 +315,19 @@ async def process_scheduled_scans(
                 access_token=tokens["access_token"],
                 tenant_id=tenant_id,
                 internal_location_id=internal_location_id,
+                plan=plan,
             )
+
+            auto_merged = 0
+            auto_merge_failed = 0
+            if features.auto_merge:
+                auto_merged, auto_merge_failed = await _auto_merge_high_confidence_matches(
+                    rule=rule,
+                    access_token=tokens["access_token"],
+                    ghl_location_id=ghl_location_id,
+                    tenant_id=tenant_id,
+                    internal_location_id=internal_location_id,
+                )
 
             # Update job execution with results
             supabase.table("job_executions").update({
@@ -215,7 +336,7 @@ async def process_scheduled_scans(
                 "records_scanned": result.get("records_scanned", 0),
                 "matches_found": result.get("matches_found", 0),
                 "matches_stored": result.get("matches_stored", 0),
-                "auto_merged": result.get("auto_merged", 0),
+                "auto_merged": auto_merged,
             }).eq("id", job_id).execute()
 
             # Update last_scan_at
@@ -228,6 +349,8 @@ async def process_scheduled_scans(
                 "rule_name": rule_name,
                 "job_id": job_id,
                 "matches_found": result.get("matches_found", 0),
+                "auto_merged": auto_merged,
+                "auto_merge_failed": auto_merge_failed,
                 "records_scanned": result.get("records_scanned", 0),
             })
 
