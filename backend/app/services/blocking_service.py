@@ -83,11 +83,21 @@ def compute_blocking_keys(contact: Dict) -> Dict:
     """
     first_name = str(contact.get("firstName", "") or "")
     last_name = str(contact.get("lastName", "") or "")
+    display_name = str(
+        contact.get("name")
+        or contact.get("contactName")
+        or contact.get("companyName")
+        or contact.get("company")
+        or ""
+    )
     email = str(contact.get("email", "") or "")
     phone = str(contact.get("phone", "") or "")
 
-    # Combined name for soundex
+    # Combined name for soundex. Fall back to generic display/name fields
+    # so companies/custom objects with a single "name" property can use blocking.
     full_name = f"{first_name} {last_name}".strip()
+    if not full_name:
+        full_name = display_name
 
     # Normalized name prefix (first 3 chars)
     normalized_name = normalize_name(full_name)
@@ -255,10 +265,15 @@ def get_candidate_pairs_sql(
                 add_pairs_from_group(group)
 
     if uses_name:
-        # For exact name matching, use prefix
-        # For fuzzy name matching, use soundex (more permissive)
         if uses_fuzzy_name:
+            # Use BOTH Soundex and name prefix for fuzzy matching.
+            # Soundex alone misses abbreviations (e.g., "Corp" vs "Inc" produce
+            # different codes). Prefix blocking catches same-root variations.
+            # candidate_pairs is a Set so duplicates are auto-deduplicated.
             for group in by_soundex.values():
+                if len(group) > 1:
+                    add_pairs_from_group(group)
+            for group in by_prefix.values():
                 if len(group) > 1:
                     add_pairs_from_group(group)
         else:
