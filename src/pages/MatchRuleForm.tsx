@@ -514,89 +514,74 @@ export default function MatchRuleForm() {
     },
   });
 
-  // Populate form when editing
+  // Populate form when editing — everything EXCEPT fields (which depend on fieldOptions)
   useEffect(() => {
-    if (existingRule) {
-      setRuleName(existingRule.name);
-      setObjectType(existingRule.source_object);
-      setFields(existingRule.match_fields.map((f: MatchField) => {
-        const normalizedField = normalizeRuleFieldPath(f.field);
-        const normalizedMatchAgainst = normalizeRuleFieldPath(f.match_against);
-        const fixed = FIXED_ALGORITHM_FIELDS[normalizedField] || FIXED_ALGORITHM_FIELDS[f.field];
-        return {
-          name: normalizedField,
-          matchType: fixed ? fixed.algorithm : f.algorithm,
-          operator: f.operator || "AND",
-          matchAgainst: normalizedMatchAgainst || undefined,
-        };
-      }));
-      setStrategy(existingRule.merge_strategy || "standard");
-      setFrequency(existingRule.schedule_frequency || "manual");
+    if (!existingRule) return;
 
-      // Load schedule time and day fields
-      if (existingRule.schedule_time) {
-        setScheduleTime(normalizeHourlyScheduleTime(existingRule.schedule_time));
-      }
-      if (existingRule.schedule_day) {
-        const freq = existingRule.schedule_frequency || "manual";
-        if (freq === "weekly" || freq === "biweekly") {
-          setScheduleDayOfWeek(existingRule.schedule_day);
-        } else if (freq === "monthly") {
-          setScheduleDayOfMonth(existingRule.schedule_day);
-        }
-      }
+    setRuleName(existingRule.name);
+    setObjectType(existingRule.source_object); // triggers field query refetch
+    setStrategy(existingRule.merge_strategy || "standard");
+    setFrequency(existingRule.schedule_frequency || "manual");
 
-      // Load related records config from merge_settings
-      const mergeSettings = existingRule.merge_settings;
-      const relatedRecords = mergeSettings?.related_records;
-      if (relatedRecords) {
-        setRelatedRecordsConfig({
-          notes: relatedRecords.notes || "copy_to_master",
-          tasks: relatedRecords.tasks || "copy_to_master",
-          opportunities: relatedRecords.opportunities || "keep_all",
-          opportunities_custom_logic: relatedRecords.opportunities_custom_logic || undefined,
-        });
+    // Load schedule time and day fields
+    if (existingRule.schedule_time) {
+      setScheduleTime(normalizeHourlyScheduleTime(existingRule.schedule_time));
+    }
+    if (existingRule.schedule_day) {
+      const freq = existingRule.schedule_frequency || "manual";
+      if (freq === "weekly" || freq === "biweekly") {
+        setScheduleDayOfWeek(existingRule.schedule_day);
+      } else if (freq === "monthly") {
+        setScheduleDayOfMonth(existingRule.schedule_day);
       }
+    }
 
-      // Load strategy settings
-      if (mergeSettings?.overwrite_blanks !== undefined) {
-        setOverwriteBlanks(mergeSettings.overwrite_blanks);
-      }
-      if (mergeSettings?.field_preservation?.mappings) {
-        setFieldPreservationMappings(mergeSettings.field_preservation.mappings);
-      }
+    // Load related records config from merge_settings
+    const mergeSettings = existingRule.merge_settings;
+    const relatedRecords = mergeSettings?.related_records;
+    if (relatedRecords) {
+      setRelatedRecordsConfig({
+        notes: relatedRecords.notes || "copy_to_master",
+        tasks: relatedRecords.tasks || "copy_to_master",
+        opportunities: relatedRecords.opportunities || "keep_all",
+        opportunities_custom_logic: relatedRecords.opportunities_custom_logic || undefined,
+      });
+    }
+
+    // Load strategy settings
+    if (mergeSettings?.overwrite_blanks !== undefined) {
+      setOverwriteBlanks(mergeSettings.overwrite_blanks);
+    }
+    if (mergeSettings?.field_preservation?.mappings) {
+      setFieldPreservationMappings(mergeSettings.field_preservation.mappings);
     }
   }, [existingRule]);
 
-  // Reconcile hydrated fields against loaded object-field options.
-  // This covers older rules where stored match field values don't exactly match current field option IDs.
+  // Populate fields only when fieldOptions are loaded for the CORRECT object type.
+  // This prevents the race condition where stale contact fieldOptions corrupt
+  // opportunity/company/custom object field values during edit hydration.
   useEffect(() => {
     if (!isEditing || !existingRule || fieldOptions.length === 0) return;
+    // Don't populate fields until fieldOptions correspond to the rule's object type
+    if (objectType !== existingRule.source_object) return;
 
-    setFields((prev) => {
-      let changed = false;
-
-      const next = prev.map((field) => {
-        const resolvedName = resolveFieldId(field.name, fieldOptions);
-        const resolvedMatchAgainst = field.matchAgainst
-          ? resolveFieldId(field.matchAgainst, fieldOptions)
-          : undefined;
-
-        if (resolvedName !== field.name || resolvedMatchAgainst !== field.matchAgainst) {
-          changed = true;
-          return {
-            ...field,
-            name: resolvedName,
-            matchAgainst: resolvedMatchAgainst,
-          };
-        }
-
-        return field;
-      });
-
-      return changed ? next : prev;
-    });
-  }, [isEditing, existingRule, fieldOptions]);
+    setFields(existingRule.match_fields.map((f: MatchField) => {
+      const resolved = resolveFieldId(
+        normalizeRuleFieldPath(f.field),
+        fieldOptions
+      );
+      const normalizedMatchAgainst = f.match_against
+        ? resolveFieldId(normalizeRuleFieldPath(f.match_against), fieldOptions)
+        : undefined;
+      const fixed = FIXED_ALGORITHM_FIELDS[resolved] || FIXED_ALGORITHM_FIELDS[f.field];
+      return {
+        name: resolved,
+        matchType: fixed ? fixed.algorithm : f.algorithm,
+        operator: f.operator || "AND",
+        matchAgainst: normalizedMatchAgainst || undefined,
+      };
+    }));
+  }, [isEditing, existingRule, fieldOptions, objectType]);
 
   const addField = (operator: "AND" | "OR" = "AND") => {
     setFields([...fields, { name: "", matchType: "exact", operator }]);

@@ -869,43 +869,40 @@ async def execute_merge(
                         review_threshold = float(rule_check.data.get("review_threshold", 0.70)) * 100
 
                         if match_fields:
-                            logger.info(
-                                "Re-validating candidate pair before merge (fields=%d)",
-                                len(match_fields),
-                            )
-
-                            # Debug: log field values being compared
-                            from app.services.matching_service import get_field_value
-                            for mf in match_fields:
-                                fid = mf.get("field_id", "?")
-                                val_a = get_field_value(record_a_data, fid)
-                                val_b = get_field_value(record_b_data, fid)
+                            # Skip re-validation if all match fields have empty field IDs
+                            # (safety net for rules corrupted by the field selector bug)
+                            usable_fields = [f for f in match_fields if f.get("field")]
+                            if not usable_fields:
+                                logger.warning(
+                                    "Skipping re-validation: no usable field IDs in match_fields"
+                                )
+                            else:
                                 logger.info(
-                                    "Re-validation field %s: a=%r, b=%r",
-                                    fid, val_a[:100] if val_a else val_a, val_b[:100] if val_b else val_b,
+                                    "Re-validating candidate pair before merge (fields=%d)",
+                                    len(usable_fields),
                                 )
 
-                            is_match, confidence, _field_scores = compare_records(
-                                record_a_data, record_b_data, match_fields
-                            )
-                            logger.info(
-                                "Re-validation result: is_match=%s, confidence=%.1f",
-                                is_match,
-                                confidence,
-                            )
-                            if not is_match or confidence < review_threshold:
-                                supabase.table("match_pairs").update({
-                                    "status": "stale",
-                                    "confidence_score": confidence / 100,
-                                }).eq("id", match_id).execute()
-                                raise ValueError(
-                                    f"These records no longer match after re-validation "
-                                    f"(confidence: {confidence:.0f}%, threshold: {review_threshold:.0f}%). "
-                                    "The match has been marked as stale."
+                                is_match, confidence, _field_scores = compare_records(
+                                    record_a_data, record_b_data, match_fields
                                 )
-                            logger.info(
-                                f"Re-validated pair before merge: confidence={confidence:.1f}%"
-                            )
+                                logger.info(
+                                    "Re-validation result: is_match=%s, confidence=%.1f",
+                                    is_match,
+                                    confidence,
+                                )
+                                if not is_match or confidence < review_threshold:
+                                    supabase.table("match_pairs").update({
+                                        "status": "stale",
+                                        "confidence_score": confidence / 100,
+                                    }).eq("id", match_id).execute()
+                                    raise ValueError(
+                                        f"These records no longer match after re-validation "
+                                        f"(confidence: {confidence:.0f}%, threshold: {review_threshold:.0f}%). "
+                                        "The match has been marked as stale."
+                                    )
+                                logger.info(
+                                    f"Re-validated pair before merge: confidence={confidence:.1f}%"
+                                )
             else:
                 # Couldn't fetch fresh data — proceed with stored snapshots
                 record_a_data = match.data.get("record_a_data", {})
