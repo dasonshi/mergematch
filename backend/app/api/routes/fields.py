@@ -76,6 +76,12 @@ STANDARD_FIELDS = {
         {"id": "name", "name": "Opportunity Name", "fieldKey": "opportunity.name", "dataType": "TEXT", "isCustom": False},
         {"id": "monetaryValue", "name": "Value", "fieldKey": "opportunity.monetaryValue", "dataType": "MONETARY", "isCustom": False},
         {"id": "status", "name": "Status", "fieldKey": "opportunity.status", "dataType": "TEXT", "isCustom": False},
+        {"id": "pipelineId", "name": "Pipeline", "fieldKey": "opportunity.pipelineId", "dataType": "TEXT", "isCustom": False},
+        {"id": "pipelineStageId", "name": "Pipeline Stage", "fieldKey": "opportunity.pipelineStageId", "dataType": "TEXT", "isCustom": False},
+        {"id": "contactId", "name": "Contact", "fieldKey": "opportunity.contactId", "dataType": "TEXT", "isCustom": False},
+        {"id": "assignedTo", "name": "Assigned To", "fieldKey": "opportunity.assignedTo", "dataType": "TEXT", "isCustom": False},
+        {"id": "source", "name": "Source", "fieldKey": "opportunity.source", "dataType": "TEXT", "isCustom": False},
+        {"id": "lostReasonId", "name": "Lost Reason", "fieldKey": "opportunity.lostReasonId", "dataType": "TEXT", "isCustom": False},
     ],
 }
 
@@ -116,6 +122,7 @@ def normalize_object_field(field: Dict[str, Any], use_key_as_id: bool = False) -
 
     return {
         "id": field_id,
+        "sourceId": field.get("id"),
         "name": field.get("name", "Unknown Field"),
         "fieldKey": field_key,
         "dataType": field.get("dataType", "TEXT"),
@@ -241,7 +248,17 @@ async def get_object_fields(
                 return standard_fields
 
             elif object_type == "opportunities":
-                # Fetch opportunity custom fields
+                # Prefer opportunity schema fields for broad coverage (standard + custom)
+                # and key-based IDs that match opportunity record payload keys.
+                try:
+                    schema = await client.get_object_schema("opportunity", fetch_properties=True)
+                    fields = schema.get("fields", [])
+                    if fields:
+                        return [normalize_object_field(f, use_key_as_id=True) for f in fields]
+                except Exception:
+                    pass
+
+                # Fall back to opportunity custom fields endpoint.
                 try:
                     custom_fields = await client.get_custom_fields(model="opportunity")
                     normalized_custom = [

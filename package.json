@@ -13,7 +13,8 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:ui": "vitest --ui",
-    "prepare": "husky"
+    "prepare": "husky",
+    "test:backend": "cd backend/tests && ../.venv/bin/python -m unittest test_core_flows_integration -v"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

@@ -25,6 +25,7 @@ export function MergeHistoryCard({
   const { locationId } = useLocation();
   const columns = createMergeHistoryColumns({
     locationId,
+    includeDuplicateColumn: true,
     includeDateColumn: true,
     dateHeader: "Date",
     onRestore: onRollback,
@@ -46,7 +47,7 @@ export function MergeHistoryCard({
           loading={isLoading}
           maxHeight="256px"
           stickyHeader
-          minWidth="550px"
+          minWidth="650px"
           emptyState={
             <div className="p-8 text-center">
               <p className="text-muted-foreground">No merges performed yet.</p>

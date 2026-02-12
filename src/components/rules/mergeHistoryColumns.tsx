@@ -46,6 +46,10 @@ function getMasterRecordUrl(item: MergeHistoryRow, locationId?: string) {
   });
 }
 
+function isRolledBackStatus(status: string) {
+  return status === "rolled_back" || status === "rolled_back_partial";
+}
+
 export function createMergeHistoryColumns({
   locationId,
   includeDuplicateColumn = false,
@@ -67,9 +71,10 @@ export function createMergeHistoryColumns({
               href={url}
               target="_blank"
               rel="noopener noreferrer"
-              className="font-medium text-foreground hover:text-primary hover:underline"
+              className="group inline-flex items-center gap-1 font-medium text-foreground hover:text-primary hover:underline"
             >
               {getMasterRecordLabel(item)}
+              <ExternalLink className="h-3.5 w-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
             </a>
           );
         }
@@ -83,35 +88,36 @@ export function createMergeHistoryColumns({
       header: "Duplicate",
       hideOnMobile: true,
       accessor: (item) => {
+        const isRestored = isRolledBackStatus(item.status) && Boolean(item.restored_record_id);
         const restoredUrl =
-          item.status === "rolled_back" && item.restored_record_id && locationId
+          isRestored && locationId
             ? getGhlRecordUrl(locationId, item.source_object || "contacts", item.restored_record_id, {
                 pipelineId: item.master_pipeline_id,
               })
             : null;
         const duplicateLabel =
-          item.status === "rolled_back" && item.restored_record_id
+          isRestored
             ? `${item.restored_record_id.slice(0, 8)}...`
             : item.duplicate_record_id
               ? `${item.duplicate_record_id.slice(0, 8)}...`
               : "—";
 
-        return (
-          <div className="flex items-center gap-2">
-            <span className="text-muted-foreground">{duplicateLabel}</span>
-            {restoredUrl && (
-              <a
-                href={restoredUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary hover:text-primary/80"
-                title="View restored record"
-              >
-                <ExternalLink className="h-4 w-4" />
-              </a>
-            )}
-          </div>
-        );
+        if (restoredUrl) {
+          return (
+            <a
+              href={restoredUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group inline-flex items-center gap-1 text-muted-foreground hover:text-primary hover:underline"
+              title="View restored duplicate record"
+            >
+              <span>{duplicateLabel}</span>
+              <ExternalLink className="h-3.5 w-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
+            </a>
+          );
+        }
+
+        return <span className="text-muted-foreground">{duplicateLabel}</span>;
       },
     });
   }

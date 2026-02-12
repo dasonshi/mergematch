@@ -181,7 +181,8 @@ export default function MergeDetail() {
   const masterCrmUrl = merge.status === "completed"
     ? (getCrmUrl(merge.master_record_id, masterSnapshot) || getSnapshotUrl(masterSnapshot))
     : null;
-  const restoredCrmUrl = merge.status === "rolled_back" && merge.restored_record_id
+  const isRolledBack = merge.status === "rolled_back" || merge.status === "rolled_back_partial";
+  const restoredCrmUrl = isRolledBack && merge.restored_record_id
     ? getCrmUrl(merge.restored_record_id, duplicateSnapshot)
     : null;
   const masterRecordName = merge.master_record_display_name
@@ -373,41 +374,73 @@ export default function MergeDetail() {
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Master Record (Kept)</p>
               <div className="flex items-center gap-2 mt-1">
                 <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
-                <span className="font-medium">
-                  {masterRecordName}
-                </span>
+                {masterCrmUrl ? (
+                  <a
+                    href={masterCrmUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 font-medium hover:text-primary hover:underline"
+                  >
+                    {masterRecordName}
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                ) : (
+                  <span className="font-medium">{masterRecordName}</span>
+                )}
               </div>
               <p className="text-xs text-muted-foreground font-mono mt-1">
-                ID: {merge.master_record_id}
+                {masterCrmUrl ? (
+                  <a
+                    href={masterCrmUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-primary hover:underline"
+                  >
+                    ID: {merge.master_record_id}
+                  </a>
+                ) : (
+                  <>ID: {merge.master_record_id}</>
+                )}
               </p>
             </div>
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Duplicate Record ({merge.status === "rolled_back" ? "Restored" : "Deleted"})
+                Duplicate Record ({isRolledBack ? "Restored" : "Deleted"})
               </p>
               <div className="flex items-center gap-2 mt-1">
-                {merge.status === "rolled_back" ? (
+                {isRolledBack ? (
                   <RotateCcw className="h-4 w-4 text-blue-500" />
                 ) : (
                   <X className="h-4 w-4 text-red-500" />
                 )}
-                <span className="font-medium">
-                  {duplicateRecordName}
-                </span>
-                {restoredCrmUrl && (
+                {restoredCrmUrl ? (
                   <a
                     href={restoredCrmUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+                    className="inline-flex items-center gap-1 font-medium hover:text-primary hover:underline"
                   >
-                    View Record <ExternalLink className="h-3 w-3" />
+                    {duplicateRecordName}
+                    <ExternalLink className="h-3.5 w-3.5" />
                   </a>
+                ) : (
+                  <span className="font-medium">{duplicateRecordName}</span>
                 )}
               </div>
               <p className="text-xs text-muted-foreground font-mono mt-1">
-                {merge.status === "rolled_back" && merge.restored_record_id ? (
-                  <>New ID: {merge.restored_record_id}</>
+                {isRolledBack && merge.restored_record_id ? (
+                  restoredCrmUrl ? (
+                    <a
+                      href={restoredCrmUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:text-primary hover:underline"
+                    >
+                      New ID: {merge.restored_record_id}
+                    </a>
+                  ) : (
+                    <>New ID: {merge.restored_record_id}</>
+                  )
                 ) : (
                   <>ID: {merge.duplicate_record_id}</>
                 )}
@@ -613,18 +646,32 @@ export default function MergeDetail() {
         <Button variant="outline" asChild>
           <Link to="/history">Back to History</Link>
         </Button>
-        {masterCrmUrl && (
-          <Button variant="outline" asChild>
-            <a
-              href={masterCrmUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <ExternalLink className="mr-2 h-4 w-4" />
-              View Master Record
-            </a>
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {restoredCrmUrl && (
+            <Button variant="outline" asChild>
+              <a
+                href={restoredCrmUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <ExternalLink className="mr-2 h-4 w-4" />
+                View Restored Record
+              </a>
+            </Button>
+          )}
+          {masterCrmUrl && (
+            <Button variant="outline" asChild>
+              <a
+                href={masterCrmUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <ExternalLink className="mr-2 h-4 w-4" />
+                View Master Record
+              </a>
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );

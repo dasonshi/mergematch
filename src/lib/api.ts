@@ -603,6 +603,7 @@ export interface JobExecution {
 
 export interface ObjectField {
   id: string;
+  sourceId?: string;
   name: string;
   fieldKey: string;
   dataType: string;

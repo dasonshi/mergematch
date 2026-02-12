@@ -91,14 +91,19 @@ function normalizeRuleFieldPath(fieldPath?: string): string {
 
   // Legacy/custom prefixes from older rule payloads.
   normalized = normalized.replace(/^customField\./, "");
+  normalized = normalized.replace(/^customFields\./, "");
   normalized = normalized.replace(/^custom_objects\.[^.]+\./, "");
-  normalized = normalized.replace(/^(contact|business|opportunity)\./, "");
+  normalized = normalized.replace(
+    /^(contact|contacts|business|businesses|company|companies|opportunity|opportunities)\./,
+    ""
+  );
 
   return normalized;
 }
 
 type FieldOption = {
   id: string;
+  sourceId?: string;
   name: string;
   isCustom: boolean;
   dataType: string;
@@ -113,14 +118,73 @@ function canonicalFieldKey(fieldPath?: string): string {
     .toLowerCase() || "";
 }
 
+const FIELD_ID_ALIASES: Record<string, string> = {
+  // Contact/company aliases.
+  first_name: "firstName",
+  firstname: "firstName",
+  last_name: "lastName",
+  lastname: "lastName",
+  full_name: "name",
+  company: "companyName",
+  company_name: "companyName",
+  business_name: "name",
+  email_address: "email",
+  phone_number: "phone",
+  website_url: "website",
+  postal_code: "postalCode",
+  zip: "postalCode",
+  zip_code: "postalCode",
+  address_1: "address1",
+  dob: "dateOfBirth",
+
+  // Opportunity legacy/canonical aliases.
+  amount: "monetaryValue",
+  value: "monetaryValue",
+  monetary_value: "monetaryValue",
+  pipeline: "pipelineId",
+  pipeline_id: "pipelineId",
+  stage: "pipelineStageId",
+  pipeline_stage: "pipelineStageId",
+  pipeline_stage_id: "pipelineStageId",
+  contact: "contactId",
+  contact_id: "contactId",
+  owner: "assignedTo",
+  assignee: "assignedTo",
+  assigned_to: "assignedTo",
+};
+
 function resolveFieldId(fieldPath: string, options: FieldOption[]): string {
   if (!fieldPath) return "";
 
   const normalized = normalizeRuleFieldPath(fieldPath);
 
-  // Fast path: direct id match.
-  const direct = options.find((option) => option.id === normalized || option.id === fieldPath);
+  // Fast path: direct id/sourceId match.
+  const direct = options.find(
+    (option) =>
+      option.id === normalized ||
+      option.id === fieldPath ||
+      option.sourceId === normalized ||
+      option.sourceId === fieldPath
+  );
   if (direct) return direct.id;
+
+  const directAlias = FIELD_ID_ALIASES[normalized.toLowerCase()];
+  if (directAlias && options.some((option) => option.id === directAlias)) {
+    return directAlias;
+  }
+
+  const tail = normalized.split(".").pop() || normalized;
+  const directTail = options.find(
+    (option) =>
+      option.id === tail ||
+      option.sourceId === tail
+  );
+  if (directTail) return directTail.id;
+
+  const tailAlias = FIELD_ID_ALIASES[tail.toLowerCase()];
+  if (tailAlias && options.some((option) => option.id === tailAlias)) {
+    return tailAlias;
+  }
 
   // Match against known field keys returned by API (important for custom objects).
   const byFieldKey = options.find((option) => {
@@ -336,6 +400,7 @@ export default function MatchRuleForm() {
   const baseFieldOptions: FieldOption[] = fetchedFields?.length
     ? fetchedFields.map(f => ({
         id: f.id,
+        sourceId: f.sourceId,
         name: f.name,
         isCustom: f.isCustom,
         dataType: f.dataType || 'TEXT',
