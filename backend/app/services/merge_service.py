@@ -74,7 +74,7 @@ OPPORTUNITY_ALLOWED_FIELDS = {
 # Common read-only/metadata keys that should never be sent in update/create payloads.
 NON_MUTABLE_RECORD_FIELDS = {
     "id", "_raw", "dateAdded", "dateUpdated", "createdAt", "updatedAt",
-    "locationId", "location_id",
+    "createdBy", "updatedBy", "locationId", "location_id",
 }
 
 NON_CONTACT_DYNAMIC_EXCLUDE_FIELDS = NON_MUTABLE_RECORD_FIELDS | {
