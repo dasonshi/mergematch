@@ -1358,7 +1358,8 @@ async def execute_merge(
 
     except httpx.HTTPStatusError as e:
         status_code = e.response.status_code if e.response is not None else "unknown"
-        logger.error("Merge failed due to upstream API error (status=%s)", status_code)
+        response_body = e.response.text[:500] if e.response is not None else "no response"
+        logger.error("Merge failed due to upstream API error (status=%s): %s", status_code, response_body)
         supabase.table("merges").update({
             "status": "failed",
             "error_message": f"Upstream API error (status={status_code})",
