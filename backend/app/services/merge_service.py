@@ -874,6 +874,17 @@ async def execute_merge(
                                 len(match_fields),
                             )
 
+                            # Debug: log field values being compared
+                            from app.services.matching_service import get_field_value
+                            for mf in match_fields:
+                                fid = mf.get("field_id", "?")
+                                val_a = get_field_value(record_a_data, fid)
+                                val_b = get_field_value(record_b_data, fid)
+                                logger.info(
+                                    "Re-validation field %s: a=%r, b=%r",
+                                    fid, val_a[:100] if val_a else val_a, val_b[:100] if val_b else val_b,
+                                )
+
                             is_match, confidence, _field_scores = compare_records(
                                 record_a_data, record_b_data, match_fields
                             )
