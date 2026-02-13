@@ -999,6 +999,11 @@ async def execute_merge(
             merged_fields["contactId"] = selected_contact_id
         merged_fields.pop("contact", None)
 
+    # Company custom fields can't go through the business API (returns
+    # "customFields not supported yet"), so we collect them here and send
+    # them via the Objects API after the main company update.
+    company_preserved_properties: dict = {}
+
     # Apply field preservation if enabled
     if preserve_alternates:
         # Use per-merge mappings if provided, otherwise fall back to rule settings
@@ -1034,6 +1039,27 @@ async def execute_merge(
                             source_field,
                             target_field,
                         )
+            elif is_company:
+                # Companies don't support customFields on the business API;
+                # collect for a separate Objects API call after the main update.
+                for mapping in mappings:
+                    source_field = mapping.get("source")
+                    target_field = mapping.get("target")
+
+                    if not source_field or not target_field:
+                        continue
+
+                    value_to_preserve = mapping.get("value")
+                    if value_to_preserve is None:
+                        value_to_preserve = duplicate_data.get(source_field)
+
+                    if value_to_preserve:
+                        company_preserved_properties[target_field] = value_to_preserve
+                        logger.info(
+                            "Preserving company custom field from '%s' to '%s' (via Objects API)",
+                            source_field,
+                            target_field,
+                        )
             else:
                 custom_fields = merged_fields.get("customFields", [])
                 if not isinstance(custom_fields, list):
@@ -1054,10 +1080,18 @@ async def execute_merge(
 
                     # Only preserve if there's a non-empty value
                     if value_to_preserve:
-                        custom_fields.append({
-                            "id": target_field,  # GHL API expects 'id' for custom field identifier
-                            "field_value": value_to_preserve
-                        })
+                        # Contacts use GHL field IDs ("id"), while opportunities
+                        # use property keys ("key") for custom field identification.
+                        if is_contact:
+                            custom_fields.append({
+                                "id": target_field,
+                                "field_value": value_to_preserve,
+                            })
+                        else:
+                            custom_fields.append({
+                                "key": target_field,
+                                "field_value": value_to_preserve,
+                            })
                         logger.info(
                             "Preserving alternate custom field mapping from '%s' to '%s'",
                             source_field,
@@ -1251,6 +1285,16 @@ async def execute_merge(
                         len(update_payload),
                     )
                     await client.update_company(master_record_id, update_payload)
+                # Company custom fields must go through Objects API
+                # (business API doesn't support them)
+                if company_preserved_properties:
+                    await client.update_custom_object_record(
+                        "business", master_record_id, company_preserved_properties
+                    )
+                    logger.info(
+                        "Preserved %d company custom field(s) via Objects API",
+                        len(company_preserved_properties),
+                    )
             elif is_opportunity:
                 update_payload = _build_payload(
                     merged_fields,
