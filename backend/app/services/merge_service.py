@@ -986,6 +986,19 @@ async def execute_merge(
         elif overwrite_blanks:
             merged_fields[field] = ""
 
+    # For opportunities, translate "contact" selection into "contactId"
+    if is_opportunity and "contact" in field_selections:
+        contact_source = field_selections["contact"]
+        if contact_source == "a":
+            selected_contact_id = record_a_data.get("contactId")
+        elif contact_source == "b":
+            selected_contact_id = record_b_data.get("contactId")
+        else:
+            selected_contact_id = None
+        if selected_contact_id:
+            merged_fields["contactId"] = selected_contact_id
+        merged_fields.pop("contact", None)
+
     # Apply field preservation if enabled
     if preserve_alternates:
         # Use per-merge mappings if provided, otherwise fall back to rule settings
