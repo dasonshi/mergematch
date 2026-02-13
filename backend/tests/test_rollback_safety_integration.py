@@ -46,6 +46,7 @@ class _FakeGHLClient:
         target_object_key: str,
         target_record_id: str,
         association_id: str,
+        pipeline_id: str = None,
     ):
         self.created_relations.append(
             {
@@ -54,6 +55,7 @@ class _FakeGHLClient:
                 "target_object_key": target_object_key,
                 "target_record_id": target_record_id,
                 "association_id": association_id,
+                "pipeline_id": pipeline_id,
             }
         )
         return {"ok": True}

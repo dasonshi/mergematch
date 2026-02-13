@@ -757,6 +757,7 @@ class GHLClient:
         target_object_key: str,
         target_record_id: str,
         association_id: str,
+        pipeline_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create a relation between two records.
 
@@ -766,6 +767,7 @@ class GHLClient:
             target_object_key: Object type of target record
             target_record_id: ID of target record
             association_id: The association definition ID
+            pipeline_id: Required for opportunity-contact associations
 
         Returns created relation.
         """
@@ -775,6 +777,8 @@ class GHLClient:
             "firstRecordId": source_record_id,
             "secondRecordId": target_record_id,
         }
+        if pipeline_id:
+            payload["pipelineId"] = pipeline_id
         response = await self._client.post("/associations/relations", json=payload)
         if response.status_code >= 400:
             error_detail = response.text

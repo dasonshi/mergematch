@@ -1666,6 +1666,7 @@ async def rollback_merge(
                     target_object_key = relation.get("secondObjectKey") or relation.get("targetObjectKey")
                     target_record_id = relation.get("secondRecordId") or relation.get("targetRecordId")
                     association_id = relation.get("associationId")
+                    pipeline_id = relation.get("pipelineId")
 
                     if old_duplicate_id:
                         if source_record_id == old_duplicate_id:
@@ -1701,6 +1702,7 @@ async def rollback_merge(
                             target_object_key=target_object_key,
                             target_record_id=target_record_id,
                             association_id=association_id,
+                            pipeline_id=pipeline_id,
                         )
                         relations_restored += 1
                     except Exception:
