@@ -5,7 +5,6 @@ from typing import List, Dict, Any, Optional, Set, Tuple
 from difflib import SequenceMatcher
 import re
 import unicodedata
-import uuid
 import os
 
 from app.core.ghl.client import GHLClient
@@ -551,6 +550,20 @@ async def run_scan(
     if stale_count > 0:
         logger.info(f"Cleaned up {stale_count} stale match pairs during scan")
 
+    # Build a set of resolved pairs so we never re-open merged/rejected matches
+    resolved_pairs: Set[Tuple[str, str]] = set()
+    existing_resolved = supabase.table("match_pairs").select(
+        "record_a_id, record_b_id"
+    ).eq("rule_id", rule_id).eq("location_id", internal_location_id).in_(
+        "status", ["merged", "rejected", "auto_approved"]
+    ).execute()
+    for match in existing_resolved.data:
+        pair = tuple(sorted([match["record_a_id"], match["record_b_id"]]))
+        resolved_pairs.add(pair)
+
+    if resolved_pairs:
+        logger.info(f"Skipping {len(resolved_pairs)} resolved pairs (merged/rejected/auto_approved)")
+
     if len(all_contacts) < 2:
         return {
             "matches_found": 0,
@@ -611,15 +624,18 @@ async def run_scan(
                     logger.info(f"  Field scores: {field_scores}")
 
                 if is_match and confidence >= review_threshold:
+                    # Skip resolved pairs (merged/rejected/auto_approved)
+                    pair_key_sorted = tuple(sorted([id_a, id_b]))
+                    if pair_key_sorted in resolved_pairs:
+                        continue
+
                     matches_found += 1
                     is_high_confidence = confidence >= auto_merge_threshold
                     if is_high_confidence:
                         high_confidence_count += 1
 
-                    # Store match immediately
-                    match_id = str(uuid.uuid4())
+                    # Store match via upsert (updates existing pending pair, inserts new)
                     match_data = {
-                        "id": match_id,
                         "tenant_id": tenant_id,
                         "location_id": internal_location_id,
                         "rule_id": rule_id,
@@ -635,7 +651,10 @@ async def run_scan(
                     }
 
                     try:
-                        result = supabase.table("match_pairs").insert(match_data).execute()
+                        result = supabase.table("match_pairs").upsert(
+                            match_data,
+                            on_conflict="location_id,rule_id,record_a_id,record_b_id",
+                        ).execute()
                         if result.data:
                             matches_stored += 1
                     except Exception as e:
@@ -716,15 +735,18 @@ async def run_scan(
                     logger.info(f"  Field scores: {field_scores}")
 
                 if is_match and confidence >= review_threshold:
+                    # Skip resolved pairs (merged/rejected/auto_approved)
+                    pair_key_sorted = tuple(sorted([id_a, id_b]))
+                    if pair_key_sorted in resolved_pairs:
+                        continue
+
                     matches_found += 1
                     is_high_confidence = confidence >= auto_merge_threshold
                     if is_high_confidence:
                         high_confidence_count += 1
 
-                    # Store match immediately to avoid accumulating in memory
-                    match_id = str(uuid.uuid4())
+                    # Store match via upsert (updates existing pending pair, inserts new)
                     match_data = {
-                        "id": match_id,
                         "tenant_id": tenant_id,
                         "location_id": internal_location_id,
                         "rule_id": rule_id,
@@ -740,7 +762,10 @@ async def run_scan(
                     }
 
                     try:
-                        result = supabase.table("match_pairs").insert(match_data).execute()
+                        result = supabase.table("match_pairs").upsert(
+                            match_data,
+                            on_conflict="location_id,rule_id,record_a_id,record_b_id",
+                        ).execute()
                         if result.data:
                             matches_stored += 1
                     except Exception as e:

@@ -407,7 +407,6 @@ async def check_duplicate(
         duplicate_id = contact_id_val
 
         match_data = {
-            "id": match_id,
             "tenant_id": user.tenant_id,
             "location_id": user.location_id,
             "rule_id": best_match["rule_id"],
@@ -423,9 +422,14 @@ async def check_duplicate(
         }
 
         try:
-            supabase.table("match_pairs").insert(match_data).execute()
+            upsert_result = supabase.table("match_pairs").upsert(
+                match_data,
+                on_conflict="location_id,rule_id,record_a_id,record_b_id",
+            ).execute()
+            if upsert_result.data:
+                match_id = upsert_result.data[0]["id"]
         except Exception:
-            logger.warning("Failed to insert match pair")
+            logger.warning("Failed to upsert match pair")
             # Continue anyway - merge can still work
 
         # Build field selections: prefer existing (master) record values
@@ -492,12 +496,10 @@ async def check_duplicate(
     # Store for manual review
     if best_match:
         supabase = get_supabase()
-        match_id = str(uuid.uuid4())
         new_contact_data = check_result.get("contact_data", {})
         contact_checked = check_result.get("contact_checked", {})
 
         match_data = {
-            "id": match_id,
             "tenant_id": user.tenant_id,
             "location_id": user.location_id,
             "rule_id": best_match["rule_id"],
@@ -513,7 +515,10 @@ async def check_duplicate(
         }
 
         try:
-            supabase.table("match_pairs").insert(match_data).execute()
+            supabase.table("match_pairs").upsert(
+                match_data,
+                on_conflict="location_id,rule_id,record_a_id,record_b_id",
+            ).execute()
         except Exception:
             logger.warning("Failed to store match for review")
 

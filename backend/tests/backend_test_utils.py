@@ -57,6 +57,12 @@ class FakeQuery:
         self._insert_payload = payload
         return self
 
+    def upsert(self, payload: Any, on_conflict: str = "") -> "FakeQuery":
+        self.action = "upsert"
+        self._insert_payload = payload
+        self._on_conflict = [c.strip() for c in on_conflict.split(",") if c.strip()]
+        return self
+
     def update(self, payload: dict[str, Any]) -> "FakeQuery":
         self.action = "update"
         self._update_payload = payload
@@ -160,6 +166,28 @@ class FakeQuery:
                 table.append(stored)
                 inserted.append(deepcopy(stored))
             return FakeResponse(data=inserted)
+
+        if self.action == "upsert":
+            payload = self._insert_payload
+            rows = payload if isinstance(payload, list) else [payload]
+            conflict_cols = getattr(self, "_on_conflict", [])
+            result_rows = []
+            for row in rows:
+                existing = None
+                if conflict_cols:
+                    for tbl_row in table:
+                        if all(tbl_row.get(c) == row.get(c) for c in conflict_cols):
+                            existing = tbl_row
+                            break
+                if existing is not None:
+                    existing.update(deepcopy(row))
+                    result_rows.append(deepcopy(existing))
+                else:
+                    stored = deepcopy(row)
+                    stored.setdefault("id", str(uuid.uuid4()))
+                    table.append(stored)
+                    result_rows.append(deepcopy(stored))
+            return FakeResponse(data=result_rows)
 
         if self.action == "update":
             update_payload = deepcopy(self._update_payload or {})
