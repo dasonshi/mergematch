@@ -111,17 +111,17 @@ class RollbackSafetyIntegrationTests(unittest.IsolatedAsyncioTestCase):
                         "data": {
                             "associations": [
                                 {
-                                    "sourceObjectKey": "custom_objects.vehicles",
-                                    "sourceRecordId": "dup-old-1",
-                                    "targetObjectKey": "contacts",
-                                    "targetRecordId": "contact-1",
+                                    "firstObjectKey": "custom_objects.vehicles",
+                                    "firstRecordId": "dup-old-1",
+                                    "secondObjectKey": "contacts",
+                                    "secondRecordId": "contact-1",
                                     "associationId": "assoc-1",
                                 },
                                 {
-                                    "sourceObjectKey": "custom_objects.vehicles",
-                                    "sourceRecordId": "other-record",
-                                    "targetObjectKey": "contacts",
-                                    "targetRecordId": "contact-2",
+                                    "firstObjectKey": "custom_objects.vehicles",
+                                    "firstRecordId": "other-record",
+                                    "secondObjectKey": "contacts",
+                                    "secondRecordId": "contact-2",
                                     "associationId": "assoc-2",
                                 },
                             ]

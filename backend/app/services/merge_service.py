@@ -1661,10 +1661,10 @@ async def rollback_merge(
                         logger.warning("Skipping malformed association snapshot row")
                         continue
 
-                    source_object_key = relation.get("sourceObjectKey")
-                    source_record_id = relation.get("sourceRecordId")
-                    target_object_key = relation.get("targetObjectKey")
-                    target_record_id = relation.get("targetRecordId")
+                    source_object_key = relation.get("firstObjectKey") or relation.get("sourceObjectKey")
+                    source_record_id = relation.get("firstRecordId") or relation.get("sourceRecordId")
+                    target_object_key = relation.get("secondObjectKey") or relation.get("targetObjectKey")
+                    target_record_id = relation.get("secondRecordId") or relation.get("targetRecordId")
                     association_id = relation.get("associationId")
 
                     if old_duplicate_id:

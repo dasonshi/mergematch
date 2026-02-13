@@ -771,11 +771,9 @@ class GHLClient:
         """
         payload = {
             "locationId": self.location_id,
-            "sourceObjectKey": source_object_key,
-            "sourceRecordId": source_record_id,
-            "targetObjectKey": target_object_key,
-            "targetRecordId": target_record_id,
             "associationId": association_id,
+            "firstRecordId": source_record_id,
+            "secondRecordId": target_record_id,
         }
         response = await self._client.post("/associations/relations", json=payload)
         if response.status_code >= 400:
