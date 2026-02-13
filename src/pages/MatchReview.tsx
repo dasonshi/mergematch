@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 import { useWarningPreferences } from "@/hooks/use-warning-preferences";
-import { api, FieldPreservationMapping, ObjectField, ObjectType } from "@/lib/api";
+import { api, FieldPreservationMapping, ObjectField, ObjectType, Pipeline } from "@/lib/api";
 import { StrategyId } from "@/lib/merge-strategies";
 import { LockedFeatureOverlay, UpgradeBadge } from "@/components/ui/upgrade-badge";
 import { useUpgradeModal } from "@/components/ui/upgrade-modal";
@@ -39,11 +39,20 @@ const COMPANY_STANDARD_FIELDS = [
   "name", "email", "phone", "website", "address1", "city", "state", "postalCode", "country"
 ];
 
+// Standard fields for opportunities
+const OPPORTUNITY_STANDARD_FIELDS = [
+  "name", "status", "monetaryValue", "pipelineId", "pipelineStageId",
+  "contact", "assignedTo", "source",
+];
+
 // Fields to exclude from display (internal/system fields)
 const EXCLUDED_FIELDS = [
   "id", "locationId", "businessId", "contactName", "followers",
   "dndSettings", "inboundDndSettings", "customFields", "additionalEmails",
-  "firstNameRaw", "lastNameRaw", "profilePhoto", "_raw"
+  "firstNameRaw", "lastNameRaw", "profilePhoto", "_raw",
+  "createdAt", "updatedAt", "lastStageChangeAt", "lastStatusChangeAt",
+  "lastActionDate", "isAttribute", "internalSource", "sort",
+  "relations", "attributions", "pipelineStageUId", "contactId",
 ];
 
 // Human-readable labels for fields
@@ -70,6 +79,11 @@ const fieldLabels: Record<string, string> = {
   type: "Type",
   fullName: "Full Name",
   name: "Name",
+  pipelineId: "Pipeline",
+  pipelineStageId: "Stage",
+  monetaryValue: "Value",
+  contact: "Contact",
+  lostReasonId: "Lost Reason",
 };
 
 const metadataFields = ["dateAdded", "dateUpdated"];
@@ -124,6 +138,13 @@ export default function MatchReview() {
     queryKey: ["availableObjects", locationId],
     queryFn: () => api.getAvailableObjects(),
     enabled: !!locationId,
+  });
+
+  // Fetch pipelines for resolving pipeline/stage IDs to names
+  const { data: pipelines = [] } = useQuery<Pipeline[]>({
+    queryKey: ["pipelines", locationId],
+    queryFn: () => api.getPipelines(),
+    enabled: !!locationId && rule?.source_object === "opportunities",
   });
 
   // Get the displayField for the current object type
@@ -241,13 +262,14 @@ export default function MatchReview() {
     const objectType = rule?.source_object;
     if (objectType === "contacts") return CONTACT_STANDARD_FIELDS;
     if (objectType === "companies") return COMPANY_STANDARD_FIELDS;
+    if (objectType === "opportunities") return OPPORTUNITY_STANDARD_FIELDS;
     // For custom objects, use match fields as "standard" if no standard fields exist
     // This ensures custom object fields are shown prominently
     return [];
   }, [rule?.source_object]);
 
   const { standardFields, ruleFields, otherFields } = useMemo(() => {
-    const isCustomObject = rule?.source_object && !["contacts", "companies"].includes(rule.source_object);
+    const isCustomObject = rule?.source_object && !["contacts", "companies", "opportunities"].includes(rule.source_object);
 
     // For custom objects, match fields become the "standard" (primary) fields
     if (isCustomObject) {
@@ -389,6 +411,21 @@ export default function MatchReview() {
     [formatDisplayValue, getResolvedValue]
   );
 
+  // Resolve pipeline/stage IDs to human-readable names
+  const resolvePipelineValue = useCallback((field: string, value: unknown): string | null => {
+    if (!pipelines.length || typeof value !== "string") return null;
+    if (field === "pipelineId") {
+      return pipelines.find(p => p.id === value)?.name || null;
+    }
+    if (field === "pipelineStageId") {
+      for (const p of pipelines) {
+        const stage = p.stages.find(s => s.id === value);
+        if (stage) return stage.name;
+      }
+    }
+    return null;
+  }, [pipelines]);
+
   // Helper to get field label - check fieldOptions first for custom object fields
   const getFieldLabel = (field: string) => {
     // Check if we have field metadata from the API
@@ -399,10 +436,11 @@ export default function MatchReview() {
 
   const getResultValue = (field: string): string => {
     const source = selections[field] || masterId;
-    const formatted = source === "a"
-      ? getResolvedDisplayValue(recordA, field)
-      : getResolvedDisplayValue(recordB, field);
-    return formatted || "(empty)";
+    const rawValue = source === "a"
+      ? getResolvedValue(recordA, field)
+      : getResolvedValue(recordB, field);
+    const resolved = resolvePipelineValue(field, rawValue);
+    return resolved || formatDisplayValue(rawValue) || "(empty)";
   };
 
   const formatRecordLabel = (record: Record<string, unknown>, recordId: string): string => {
@@ -475,8 +513,8 @@ export default function MatchReview() {
   const renderFieldRow = (field: string, isRuleField: boolean) => {
     const valueA = getResolvedValue(recordA, field);
     const valueB = getResolvedValue(recordB, field);
-    const displayValueA = formatDisplayValue(valueA);
-    const displayValueB = formatDisplayValue(valueB);
+    const displayValueA = resolvePipelineValue(field, valueA) ?? formatDisplayValue(valueA);
+    const displayValueB = resolvePipelineValue(field, valueB) ?? formatDisplayValue(valueB);
 
     // Determine if A or B is selected
     const isASelected = selections[field] === "a";
