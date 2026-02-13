@@ -126,7 +126,7 @@ def normalize_object_field(field: Dict[str, Any], use_key_as_id: bool = False) -
         "name": field.get("name", "Unknown Field"),
         "fieldKey": field_key,
         "dataType": field.get("dataType", "TEXT"),
-        "isCustom": not field.get("standard", True),  # Assume custom if not marked standard
+        "isCustom": not field.get("standard", False),  # Assume custom if not marked standard
     }
 
 
