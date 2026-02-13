@@ -1705,9 +1705,13 @@ async def rollback_merge(
                             pipeline_id=pipeline_id,
                         )
                         relations_restored += 1
-                    except Exception:
-                        partial_failures.append("Failed to restore association.")
-                        logger.warning("Failed to restore association")
+                    except Exception as exc:
+                        if "duplicate relation" in str(exc).lower():
+                            relations_restored += 1
+                            logger.info("Association already exists (duplicate); counting as restored")
+                        else:
+                            partial_failures.append("Failed to restore association.")
+                            logger.warning("Failed to restore association")
 
                 logger.info(f"Restored {relations_restored}/{len(associations_snapshot)} associations")
 
