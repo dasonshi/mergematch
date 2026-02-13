@@ -266,12 +266,20 @@ export default function MatchReview() {
   };
 
   // Get all fields from both records (excluding system fields), including custom field keys
-  const allFields = useMemo(() => new Set([
-    ...Object.keys(recordA),
-    ...Object.keys(recordB),
-    ...extractCustomFieldKeys(recordA),
-    ...extractCustomFieldKeys(recordB),
-  ].filter(f => !EXCLUDED_FIELDS.includes(f))), [recordA, recordB]);
+  // Also include schema-defined custom fields so empty fields still appear in review
+  const allFields = useMemo(() => {
+    const schemaCustomFieldIds = fieldOptions
+      .filter(f => f.isCustom)
+      .map(f => f.fieldKey || f.id);
+
+    return new Set([
+      ...Object.keys(recordA),
+      ...Object.keys(recordB),
+      ...extractCustomFieldKeys(recordA),
+      ...extractCustomFieldKeys(recordB),
+      ...schemaCustomFieldIds,
+    ].filter(f => !EXCLUDED_FIELDS.includes(f)));
+  }, [recordA, recordB, fieldOptions]);
 
   // Categorize fields
   const ruleFieldSet = useMemo(() => getRuleFields(rule), [rule]);
