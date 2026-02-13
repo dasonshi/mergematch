@@ -3,6 +3,7 @@ Merge service for executing contact merges via GHL API.
 """
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
+import asyncio
 import uuid
 import logging
 import httpx
@@ -1790,12 +1791,19 @@ async def rollback_merge(
                     if is_custom_object:
                         restore_properties = _extract_custom_object_properties(master_snapshot)
                         if restore_properties:
-                            try:
-                                await client.update_custom_object_record(schema_key, master_record_id, restore_properties)
-                                logger.info(f"Restored master custom object {master_record_id} to original state")
-                            except Exception:
+                            master_restored = False
+                            for attempt in range(2):
+                                try:
+                                    await client.update_custom_object_record(schema_key, master_record_id, restore_properties)
+                                    logger.info(f"Restored master custom object {master_record_id} to original state")
+                                    master_restored = True
+                                    break
+                                except Exception as exc:
+                                    logger.warning("Master restore attempt %d failed: %s", attempt + 1, exc)
+                                    if attempt < 1:
+                                        await asyncio.sleep(2)
+                            if not master_restored:
                                 partial_failures.append("Failed to restore master custom object.")
-                                logger.warning("Failed to restore master record")
                     elif is_company:
                         restore_master_data = _build_payload(
                             master_snapshot,
@@ -1807,9 +1815,9 @@ async def rollback_merge(
                             try:
                                 await client.update_company(master_record_id, restore_master_data)
                                 logger.info(f"Restored master company {master_record_id} to original state")
-                            except Exception:
+                            except Exception as exc:
                                 partial_failures.append("Failed to restore master company.")
-                                logger.warning("Failed to restore master record")
+                                logger.warning("Failed to restore master record: %s", exc)
                         master_cf = (master_snapshot or {}).get("customFields") or []
                         master_custom_props = {
                             f["key"]: f.get("valueString", f.get("value"))
@@ -1819,9 +1827,9 @@ async def rollback_merge(
                             try:
                                 await client.update_custom_object_record("business", master_record_id, master_custom_props)
                                 logger.info("Restored %d custom field(s) on master company %s", len(master_custom_props), master_record_id)
-                            except Exception:
+                            except Exception as exc:
                                 partial_failures.append("Failed to restore master company custom fields.")
-                                logger.warning("Failed to restore custom fields on master company %s", master_record_id)
+                                logger.warning("Failed to restore custom fields on master company %s: %s", master_record_id, exc)
                     elif is_opportunity:
                         restore_master_data = _build_payload(
                             master_snapshot,
@@ -1833,9 +1841,9 @@ async def rollback_merge(
                             try:
                                 await client.update_opportunity(master_record_id, restore_master_data)
                                 logger.info(f"Restored master opportunity {master_record_id} to original state")
-                            except Exception:
+                            except Exception as exc:
                                 partial_failures.append("Failed to restore master opportunity.")
-                                logger.warning("Failed to restore master record")
+                                logger.warning("Failed to restore master record: %s", exc)
                     else:
                         restore_master_data = _build_payload(
                             master_snapshot,
@@ -1846,9 +1854,9 @@ async def rollback_merge(
                             try:
                                 await client.update_contact(master_record_id, restore_master_data)
                                 logger.info(f"Restored master record {master_record_id} to original state")
-                            except Exception:
+                            except Exception as exc:
                                 partial_failures.append("Failed to restore master contact.")
-                                logger.warning("Failed to restore master record")
+                                logger.warning("Failed to restore master record: %s", exc)
             else:
                 partial_failures.append("Master snapshot missing; master record state was not restored.")
 
