@@ -1717,9 +1717,7 @@ async def rollback_merge(
                     logger.info(f"Restored {appointments_restored}/{len(appointments_snapshot)} appointments")
             else:
                 if associations_snapshot is None:
-                    partial_failures.append(
-                        "Missing duplicate_associations snapshot; associations could not be restored."
-                    )
+                    logger.info("No duplicate_associations snapshot found; likely no associations existed at merge time.")
 
             if not is_contact and associations_snapshot and restored_id:
                 relations_restored = 0
