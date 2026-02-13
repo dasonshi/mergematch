@@ -248,10 +248,29 @@ export default function MatchReview() {
     );
   }, [recordA, recordB]);
 
-  // Get all fields from both records (excluding system fields)
+  // Extract custom field keys from a record's customFields array/object
+  const extractCustomFieldKeys = (record: Record<string, unknown>): string[] => {
+    const cf = record.customFields ?? record.customField;
+    if (!cf) return [];
+    if (Array.isArray(cf)) {
+      return cf
+        .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
+        .map(item => {
+          const id = (item.id ?? item.key ?? item.fieldKey) as string | undefined;
+          return id?.replace(/^customField\./, "") ?? "";
+        })
+        .filter(Boolean);
+    }
+    if (typeof cf === "object") return Object.keys(cf as Record<string, unknown>);
+    return [];
+  };
+
+  // Get all fields from both records (excluding system fields), including custom field keys
   const allFields = useMemo(() => new Set([
     ...Object.keys(recordA),
-    ...Object.keys(recordB)
+    ...Object.keys(recordB),
+    ...extractCustomFieldKeys(recordA),
+    ...extractCustomFieldKeys(recordB),
   ].filter(f => !EXCLUDED_FIELDS.includes(f))), [recordA, recordB]);
 
   // Categorize fields
