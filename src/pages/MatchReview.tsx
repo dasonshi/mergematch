@@ -822,15 +822,15 @@ export default function MatchReview() {
                 // Check if current source value exists in options (by id or fieldKey)
                 const sourceInOptions = mapping.source && findField(mapping.source);
 
-                // Only custom fields can be targets (standard fields can't receive values via customFields API)
-                const customFields = preservableFields.filter(f =>
-                  f.id !== mapping.source && f.fieldKey !== mapping.source && f.isCustom
+                // All fields except the selected source can be targets
+                const targetFields = preservableFields.filter(f =>
+                  f.id !== mapping.source && f.fieldKey !== mapping.source
                 );
 
-                const compatibleCustom = customFields.filter(f =>
+                const compatibleTargets = targetFields.filter(f =>
                   isTypeCompatible(sourceType, f.dataType || 'TEXT')
                 );
-                const incompatibleCustom = customFields.filter(f =>
+                const incompatibleTargets = targetFields.filter(f =>
                   !isTypeCompatible(sourceType, f.dataType || 'TEXT')
                 );
 
@@ -911,21 +911,21 @@ export default function MatchReview() {
                             {getFieldDisplayName(mapping.target)}
                           </SelectItem>
                         )}
-                        {/* Custom Fields - Compatible */}
-                        {compatibleCustom.map((opt) => (
+                        {/* Compatible fields */}
+                        {compatibleTargets.map((opt) => (
                           <SelectItem key={opt.id} value={opt.id}>
                             {opt.name}
                           </SelectItem>
                         ))}
 
-                        {/* Incompatible Custom Fields */}
-                        {incompatibleCustom.length > 0 && (
+                        {/* Incompatible fields */}
+                        {incompatibleTargets.length > 0 && (
                           <>
                             <SelectSeparator />
                             <SelectItem value="_sep_" disabled className="text-muted-foreground text-xs">
                               ── Incompatible types ──
                             </SelectItem>
-                            {incompatibleCustom.map((opt) => (
+                            {incompatibleTargets.map((opt) => (
                               <SelectItem key={opt.id} value={opt.id} disabled className="text-muted-foreground">
                                 {opt.name} ({opt.dataType}) - {getIncompatibilityReason(opt.dataType)}
                               </SelectItem>
@@ -933,10 +933,10 @@ export default function MatchReview() {
                           </>
                         )}
 
-                        {/* Info about targets */}
-                        {compatibleCustom.length === 0 && incompatibleCustom.length === 0 && (
+                        {/* Empty state */}
+                        {compatibleTargets.length === 0 && incompatibleTargets.length === 0 && (
                           <SelectItem value="_none_" disabled className="text-muted-foreground text-xs italic">
-                            No custom fields — create one in GHL to use this feature
+                            No available target fields
                           </SelectItem>
                         )}
                       </SelectContent>
