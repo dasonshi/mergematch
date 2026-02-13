@@ -284,7 +284,7 @@ export default function MatchReview() {
   const allFields = useMemo(() => {
     const schemaCustomFieldIds = fieldOptions
       .filter(f => f.isCustom && f.isWritable !== false)
-      .map(f => f.fieldKey || f.id);
+      .map(f => f.id);
 
     const allFieldKeys = new Set([
       ...Object.keys(recordA),
@@ -314,70 +314,51 @@ export default function MatchReview() {
     );
   }, [recordA, recordB, fieldOptions, writableFieldIds]);
 
-  // Categorize fields
+  // Keep ruleFieldSet for badge logic
   const ruleFieldSet = useMemo(() => getRuleFields(rule), [rule]);
 
-  // Get standard fields based on object type
-  const standardFieldsForObject = useMemo(() => {
-    const objectType = rule?.source_object;
-    if (objectType === "contacts") return CONTACT_STANDARD_FIELDS;
-    if (objectType === "companies") return COMPANY_STANDARD_FIELDS;
-    if (objectType === "opportunities") return OPPORTUNITY_STANDARD_FIELDS;
-    // For custom objects, use match fields as "standard" if no standard fields exist
-    // This ensures custom object fields are shown prominently
-    return [];
-  }, [rule?.source_object]);
+  // Categorize fields: standard first, then custom, max 10 primary
+  const { primaryFields, additionalFields } = useMemo(() => {
+    // Writable standard fields (in schema order)
+    const writableStandard = fieldOptions
+      .filter(f => !f.isCustom && f.isWritable !== false)
+      .map(f => f.id)
+      .filter(f => allFields.has(f) || hasResolvableFieldValue(f));
 
-  const { standardFields, ruleFields, otherFields } = useMemo(() => {
-    const isCustomObject = rule?.source_object && !["contacts", "companies", "opportunities"].includes(rule.source_object);
+    // Writable custom fields (in schema order)
+    const writableCustom = fieldOptions
+      .filter(f => f.isCustom && f.isWritable !== false)
+      .map(f => f.id)
+      .filter(f => allFields.has(f) || hasResolvableFieldValue(f));
 
-    // For custom objects, match fields become the "standard" (primary) fields
-    if (isCustomObject) {
-      const matchFieldNames = rule?.match_fields?.map(f => f.field) || [];
-      // Combine match fields with other fields to ensure we show something useful
-      // Limit to 10 fields total for the "Standard" view
-      const allAvailableFields = [...allFields];
-      const matchSpecific = matchFieldNames.filter((f) => allFields.has(f) || hasResolvableFieldValue(f));
-
-      // If we have few match fields, pull in other fields to populate the view
-      const extraFields = allAvailableFields
-        .filter(f => !matchFieldNames.includes(f) && !metadataFields.includes(f))
-        .slice(0, 10 - matchSpecific.length); // Fill up to 10 fields
-
-      const combinedStandard = [...matchSpecific, ...extraFields];
-
-      const other = allAvailableFields.filter(f =>
-        !combinedStandard.includes(f) && !metadataFields.includes(f)
-      );
-
-      return { standardFields: combinedStandard, ruleFields: [], otherFields: other };
-    }
-
-    // For standard objects (contacts, companies)
-    const standard = standardFieldsForObject.filter((f) => allFields.has(f) || hasResolvableFieldValue(f));
-    const ruleSpecific = [...ruleFieldSet].filter(f =>
-      (allFields.has(f) || hasResolvableFieldValue(f)) && !standardFieldsForObject.includes(f)
+    // Include any record fields not in schema (fallback)
+    const schemaFieldIds = new Set(fieldOptions.map(f => f.id));
+    const extraRecordFields = [...allFields].filter(f =>
+      !schemaFieldIds.has(f) && !metadataFields.includes(f)
     );
-    const other = [...allFields].filter(f =>
-      !standardFieldsForObject.includes(f) && !ruleFieldSet.has(f) && !metadataFields.includes(f)
-    );
-    return { standardFields: standard, ruleFields: ruleSpecific, otherFields: other };
-  }, [allFields, hasResolvableFieldValue, ruleFieldSet, standardFieldsForObject, rule]);
+
+    // Standard first, then custom, then extras - take first 10
+    const ordered = [...writableStandard, ...writableCustom, ...extraRecordFields];
+
+    return {
+      primaryFields: ordered.slice(0, 10),
+      additionalFields: ordered.slice(10),
+    };
+  }, [fieldOptions, allFields, hasResolvableFieldValue]);
 
   // Fields to display (for selection logic)
   const displayFields = useMemo(() => {
-    const base = [...standardFields, ...ruleFields];
     if (showAllFields) {
-      return [...base, ...otherFields];
+      return [...primaryFields, ...additionalFields];
     }
-    return base;
-  }, [standardFields, ruleFields, otherFields, showAllFields]);
+    return primaryFields;
+  }, [primaryFields, additionalFields, showAllFields]);
 
   // Compute which record should be master based on rule's strategy
   const computeInitialMaster = (): "a" | "b" => {
     if (!match || !rule) return "a";
     const strategy = (rule.merge_strategy || "standard") as StrategyId;
-    const allFieldsList = [...standardFields, ...ruleFields, ...otherFields];
+    const allFieldsList = [...primaryFields, ...additionalFields];
     const countResolvedNonBlank = (record: Record<string, unknown>) =>
       allFieldsList.reduce((count, field) => (
         normalizeDisplayValue(getFieldRawValue(record, field)) ? count + 1 : count
@@ -402,7 +383,7 @@ export default function MatchReview() {
   // Get default field selections - prefer master's values, fall back to duplicate only if master is blank
   const getDefaultSelections = (forMaster: "a" | "b") => {
     const overwriteBlanks = rule?.merge_settings?.overwrite_blanks ?? false;
-    const allFieldsList = [...standardFields, ...ruleFields, ...otherFields];
+    const allFieldsList = [...primaryFields, ...additionalFields];
 
     const masterRecord = forMaster === "a" ? recordA : recordB;
     const duplicateRecord = forMaster === "a" ? recordB : recordA;
@@ -760,23 +741,11 @@ export default function MatchReview() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {/* Standard Fields */}
-                {standardFields.map((field) => renderFieldRow(field, false))}
+                {/* Primary Fields (first 10: standard first, then custom) */}
+                {primaryFields.map((field) => renderFieldRow(field, ruleFieldSet.has(field)))}
 
-                {/* Rule Fields (if any beyond standard) */}
-                {ruleFields.length > 0 && (
-                  <>
-                    <TableRow className="bg-muted/20">
-                      <TableCell colSpan={4} className="py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        Rule Logic Fields
-                      </TableCell>
-                    </TableRow>
-                    {ruleFields.map((field) => renderFieldRow(field, true))}
-                  </>
-                )}
-
-                {/* Expandable Other Fields */}
-                {otherFields.length > 0 && (
+                {/* Expandable Additional Fields */}
+                {additionalFields.length > 0 && (
                   <>
                     <TableRow>
                       <TableCell colSpan={4} className="p-0">
@@ -787,12 +756,12 @@ export default function MatchReview() {
                           {showAllFields ? (
                             <>
                               <ChevronUp className="h-4 w-4" />
-                              Hide {otherFields.length} additional fields
+                              Hide {additionalFields.length} additional fields
                             </>
                           ) : (
                             <>
                               <ChevronDown className="h-4 w-4" />
-                              Show {otherFields.length} additional fields
+                              Show {additionalFields.length} additional fields
                             </>
                           )}
                         </button>
@@ -805,7 +774,7 @@ export default function MatchReview() {
                             Additional Fields
                           </TableCell>
                         </TableRow>
-                        {otherFields.map((field) => renderFieldRow(field, false))}
+                        {additionalFields.map((field) => renderFieldRow(field, ruleFieldSet.has(field)))}
                       </>
                     )}
                   </>
@@ -820,7 +789,7 @@ export default function MatchReview() {
             <span><span className="text-primary">[Value] ✓</span> = Selected</span>
             <span className="italic">(empty)</span> = No value
             <span><Star className="h-3 w-3 inline text-yellow-500 fill-yellow-500" /> = Master record</span>
-            {ruleFields.length > 0 && (
+            {[...primaryFields, ...additionalFields].some(f => ruleFieldSet.has(f)) && (
               <span><Badge variant="outline" className="text-xs px-1.5 py-0 border-primary-subtle-border text-primary-subtle-foreground bg-primary-subtle">Rule</Badge> = Used in match logic</span>
             )}
           </div>
