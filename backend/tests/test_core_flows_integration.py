@@ -721,6 +721,163 @@ class TestCoreFlows(unittest.IsolatedAsyncioTestCase):
         )
         self._assert_rollback_ok(result, supabase, "custom_object")
 
+    # ══════════════════════════════════════════════════════════════════════════
+    # 6. End-to-End Merge → Rollback (4 tests)
+    # ══════════════════════════════════════════════════════════════════════════
+
+    async def _run_merge_then_rollback(
+        self, source_object, record_a, record_b,
+        ghl_setup, field_selections, expected_ghl_type,
+    ):
+        """Execute a real merge, then rollback using the snapshots it created."""
+        supabase = self._seed_merge_tables(source_object, record_a, record_b)
+        ghl_setup()
+
+        modules = _make_merge_modules(supabase, FakeGHLClient)
+
+        with temporary_modules(modules):
+            mod = load_source_module(f"e2e_{source_object}", MERGE_SERVICE_PATH)
+
+            # Step 1: Execute merge
+            merge_result = await mod.execute_merge(
+                match_id="pair-1",
+                master_record_id=record_a["id"],
+                field_selections=field_selections,
+                access_token="token",
+                ghl_location_id=GHL_LOCATION_ID,
+                tenant_id=TENANT_ID,
+                internal_location_id=LOCATION_ID,
+                plan="pro",
+            )
+
+            # Verify merge completed
+            self._assert_merge_completed(
+                merge_result, supabase, expected_ghl_type,
+                record_a["id"], record_b["id"],
+            )
+
+            # Step 2: Reset GHL client instances so rollback gets a fresh one
+            FakeGHLClient.instances = []
+
+            # Step 3: Rollback using the merge ID created by execute_merge
+            merge_id = supabase.tables["merges"][0]["id"]
+            rollback_result = await mod.rollback_merge(
+                merge_id=merge_id,
+                access_token="token",
+                ghl_location_id=GHL_LOCATION_ID,
+                internal_location_id=LOCATION_ID,
+            )
+
+        return merge_result, rollback_result, supabase
+
+    def _assert_e2e_rollback(self, rollback_result, supabase, expected_create_type):
+        """Assert rollback succeeded using real snapshot data from the merge."""
+        self.assertIn(
+            rollback_result["status"], ("rolled_back", "rolled_back_partial"),
+        )
+        self.assertIsNotNone(rollback_result["restored_record_id"])
+
+        merge_row = supabase.tables["merges"][0]
+        self.assertIn(merge_row["status"], ("rolled_back", "rolled_back_partial"))
+        self.assertIsNotNone(merge_row.get("restored_record_id"))
+
+        # GHL create was called to restore the duplicate
+        client = FakeGHLClient.instances[0]
+        self.assertTrue(
+            any(c[0] == expected_create_type for c in client.created),
+            f"Expected create_{expected_create_type}() call",
+        )
+
+        # Match pair status reverted from "merged" to "pending"
+        pair = supabase.tables["match_pairs"][0]
+        self.assertEqual(pair["status"], "pending")
+
+    async def test_merge_then_rollback_contact(self):
+        a = {"id": "ca", "firstName": "Alice", "lastName": "Smith", "email": "a@x.com"}
+        b = {"id": "cb", "firstName": "Alicia", "lastName": "Smith", "email": "a@x.com"}
+
+        def setup():
+            FakeGHLClient._contacts = {r["id"]: r for r in (a, b)}
+
+        _, rollback, supabase = await self._run_merge_then_rollback(
+            "contacts", a, b, setup,
+            {"firstName": "a", "lastName": "a", "email": "a"}, "contact",
+        )
+        self._assert_e2e_rollback(rollback, supabase, "contact")
+
+    async def test_merge_then_rollback_company(self):
+        a = {"id": "coa", "name": "Acme Corp", "email": "info@acme.com",
+             "customFields": [{"key": "secondary_website", "valueString": "https://old.acme.com"}]}
+        b = {"id": "cob", "name": "Acme Corporation", "email": "info@acme.com",
+             "customFields": [{"key": "secondary_website", "valueString": "https://copy.acme.com"}]}
+
+        def setup():
+            FakeGHLClient._companies = {r["id"]: r for r in (a, b)}
+
+        _, rollback, supabase = await self._run_merge_then_rollback(
+            "companies", a, b, setup,
+            {"name": "a", "email": "a"}, "company",
+        )
+        self._assert_e2e_rollback(rollback, supabase, "company")
+
+        # Verify custom fields were restored via Objects API (not business API)
+        client = FakeGHLClient.instances[0]
+        co_updates = [u for u in client.updated if u[0] == "custom_object" and u[1] != "coa"]
+        self.assertTrue(
+            any("secondary_website" in (u[2] or {}) for u in co_updates),
+            "Expected update_custom_object_record() to restore custom fields on duplicate company",
+        )
+        master_cf_updates = [u for u in client.updated if u[0] == "custom_object" and u[1] == "coa"]
+        self.assertTrue(
+            any("secondary_website" in (u[2] or {}) for u in master_cf_updates),
+            "Expected update_custom_object_record() to restore custom fields on master company",
+        )
+
+    async def test_merge_then_rollback_opportunity(self):
+        a = {"id": "oa", "name": "Deal A", "monetaryValue": 1000, "status": "open"}
+        b = {"id": "ob", "name": "Deal A Copy", "monetaryValue": 500, "status": "open"}
+
+        def setup():
+            FakeGHLClient._opportunities = {r["id"]: r for r in (a, b)}
+
+        _, rollback, supabase = await self._run_merge_then_rollback(
+            "opportunities", a, b, setup,
+            {"name": "a", "monetaryValue": "a", "status": "a"}, "opportunity",
+        )
+        self._assert_e2e_rollback(rollback, supabase, "opportunity")
+
+    async def test_merge_then_rollback_custom_object(self):
+        # GHL API shape: properties nested
+        a_ghl = {"id": "xa", "properties": {"vin": "ABC", "make": "Toyota"},
+                 "createdAt": "2024-01-01", "updatedAt": "2024-01-02"}
+        b_ghl = {"id": "xb", "properties": {"vin": "ABC", "make": "Honda"},
+                 "createdAt": "2024-01-01", "updatedAt": "2024-01-01"}
+
+        # match_pair data uses normalized (flattened) form
+        a_norm = {"id": "xa", "vin": "ABC", "make": "Toyota",
+                  "dateAdded": "2024-01-01", "dateUpdated": "2024-01-02", "_raw": a_ghl}
+        b_norm = {"id": "xb", "vin": "ABC", "make": "Honda",
+                  "dateAdded": "2024-01-01", "dateUpdated": "2024-01-01", "_raw": b_ghl}
+
+        def setup():
+            FakeGHLClient._custom_records = {"xa": a_ghl, "xb": b_ghl}
+            FakeGHLClient._schemas = {
+                "custom_objects.vehicles": {"primaryDisplayProperty": ""},
+            }
+
+        _, rollback, supabase = await self._run_merge_then_rollback(
+            "custom_objects.vehicles", a_norm, b_norm, setup,
+            {"vin": "a", "make": "a"}, "custom_object",
+        )
+        self._assert_e2e_rollback(rollback, supabase, "custom_object")
+
+        # Verify schema key was passed to create_custom_object_record
+        client = FakeGHLClient.instances[0]
+        self.assertTrue(
+            any(c[0] == "custom_object" for c in client.created),
+            "Expected create_custom_object_record() call",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

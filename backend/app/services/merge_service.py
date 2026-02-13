@@ -1581,7 +1581,7 @@ async def rollback_merge(
                     duplicate_snapshot,
                     overwrite_blanks=False,
                     allowed_fields=COMPANY_ALLOWED_FIELDS,
-                    excluded_fields=NON_MUTABLE_RECORD_FIELDS,
+                    excluded_fields=NON_MUTABLE_RECORD_FIELDS | {"customFields"},
                 )
                 logger.info("Creating company from snapshot (%d fields)", len(restore_data))
                 restored_company = await client.create_company(restore_data)
@@ -1595,6 +1595,19 @@ async def rollback_merge(
                     ],
                 )
                 logger.info(f"Restored company created with ID: {restored_id}")
+                if restored_id:
+                    dup_cf = (duplicate_snapshot or {}).get("customFields") or []
+                    dup_custom_props = {
+                        f["key"]: f.get("valueString", f.get("value"))
+                        for f in dup_cf if f.get("key") and f.get("valueString", f.get("value")) is not None
+                    }
+                    if dup_custom_props:
+                        try:
+                            await client.update_custom_object_record("business", restored_id, dup_custom_props)
+                            logger.info("Restored %d custom field(s) on duplicate company %s", len(dup_custom_props), restored_id)
+                        except Exception:
+                            partial_failures.append("Failed to restore custom fields on duplicate company.")
+                            logger.warning("Failed to restore custom fields on duplicate company %s", restored_id)
             elif is_opportunity:
                 restore_data = _build_payload(
                     duplicate_snapshot,
@@ -1790,7 +1803,7 @@ async def rollback_merge(
                             master_snapshot,
                             overwrite_blanks=False,
                             allowed_fields=COMPANY_ALLOWED_FIELDS,
-                            excluded_fields=NON_MUTABLE_RECORD_FIELDS,
+                            excluded_fields=NON_MUTABLE_RECORD_FIELDS | {"customFields"},
                         )
                         if restore_master_data:
                             try:
@@ -1799,6 +1812,18 @@ async def rollback_merge(
                             except Exception:
                                 partial_failures.append("Failed to restore master company.")
                                 logger.warning("Failed to restore master record")
+                        master_cf = (master_snapshot or {}).get("customFields") or []
+                        master_custom_props = {
+                            f["key"]: f.get("valueString", f.get("value"))
+                            for f in master_cf if f.get("key") and f.get("valueString", f.get("value")) is not None
+                        }
+                        if master_custom_props:
+                            try:
+                                await client.update_custom_object_record("business", master_record_id, master_custom_props)
+                                logger.info("Restored %d custom field(s) on master company %s", len(master_custom_props), master_record_id)
+                            except Exception:
+                                partial_failures.append("Failed to restore master company custom fields.")
+                                logger.warning("Failed to restore custom fields on master company %s", master_record_id)
                     elif is_opportunity:
                         restore_master_data = _build_payload(
                             master_snapshot,
