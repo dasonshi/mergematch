@@ -38,11 +38,7 @@ export function getGhlRecordUrl(
   }
 
   if (objectType === "opportunities") {
-    const pipelineId = options?.pipelineId ? encodeURIComponent(options.pipelineId) : null;
-    if (pipelineId) {
-      return `${baseUrl}/${locationId}/opportunities/list/${pipelineId}?tab=Opportunity+Details&recordId=${encodedRecordId}`;
-    }
-    return `${baseUrl}/${locationId}/opportunities/list?recordId=${encodedRecordId}`;
+    return `${baseUrl}/${locationId}/opportunities/list/${encodedRecordId}?tab=Opportunity+Details`;
   }
 
   if (objectType.startsWith("custom_objects.")) {
