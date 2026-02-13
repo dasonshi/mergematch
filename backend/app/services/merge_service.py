@@ -1242,7 +1242,7 @@ async def execute_merge(
                 update_payload = _build_payload(
                     merged_fields,
                     overwrite_blanks=overwrite_blanks,
-                    excluded_fields=NON_CONTACT_DYNAMIC_EXCLUDE_FIELDS,
+                    allowed_fields=OPPORTUNITY_ALLOWED_FIELDS,
                 )
                 if update_payload:
                     logger.info(
