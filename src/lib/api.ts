@@ -608,6 +608,7 @@ export interface ObjectField {
   fieldKey: string;
   dataType: string;
   isCustom: boolean;
+  isWritable?: boolean;
 }
 
 export interface ObjectType {

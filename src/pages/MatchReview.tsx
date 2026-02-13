@@ -265,21 +265,54 @@ export default function MatchReview() {
     return [];
   };
 
+  // Build a set of writable field IDs from the API response
+  const writableFieldIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const f of fieldOptions) {
+      // Include field if it's explicitly marked writable, or if isWritable is undefined (legacy/fallback)
+      if (f.isWritable !== false) {
+        ids.add(f.id);
+        if (f.fieldKey) ids.add(f.fieldKey);
+      }
+    }
+    return ids;
+  }, [fieldOptions]);
+
   // Get all fields from both records (excluding system fields), including custom field keys
   // Also include schema-defined custom fields so empty fields still appear in review
+  // Filter to only include writable fields when we have field metadata
   const allFields = useMemo(() => {
     const schemaCustomFieldIds = fieldOptions
-      .filter(f => f.isCustom)
+      .filter(f => f.isCustom && f.isWritable !== false)
       .map(f => f.fieldKey || f.id);
 
-    return new Set([
+    const allFieldKeys = new Set([
       ...Object.keys(recordA),
       ...Object.keys(recordB),
       ...extractCustomFieldKeys(recordA),
       ...extractCustomFieldKeys(recordB),
       ...schemaCustomFieldIds,
-    ].filter(f => !EXCLUDED_FIELDS.includes(f)));
-  }, [recordA, recordB, fieldOptions]);
+    ]);
+
+    // Filter out excluded fields and non-writable fields
+    return new Set(
+      [...allFieldKeys].filter(f => {
+        if (EXCLUDED_FIELDS.includes(f)) return false;
+        // If we have field options with writability info, use it
+        if (fieldOptions.length > 0) {
+          // Allow field if it's in writableFieldIds, or if it's a custom field key we extracted
+          // (custom fields are always writable)
+          const isKnownWritable = writableFieldIds.has(f);
+          const isCustomFieldKey = schemaCustomFieldIds.includes(f);
+          const isExtractedCustomField = extractCustomFieldKeys(recordA).includes(f) ||
+                                          extractCustomFieldKeys(recordB).includes(f);
+          return isKnownWritable || isCustomFieldKey || isExtractedCustomField;
+        }
+        // No field options yet, allow all (will be filtered when data loads)
+        return true;
+      })
+    );
+  }, [recordA, recordB, fieldOptions, writableFieldIds]);
 
   // Categorize fields
   const ruleFieldSet = useMemo(() => getRuleFields(rule), [rule]);

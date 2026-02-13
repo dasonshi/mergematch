@@ -1,9 +1,14 @@
 from fastapi import APIRouter, HTTPException, Query, Depends
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Set
 import logging
 
 from app.core.ghl.client import GHLClient
 from app.core.deps import get_auth_context, AuthContext
+from app.services.merge_service import (
+    CONTACT_ALLOWED_UPDATE_FIELDS,
+    COMPANY_ALLOWED_FIELDS,
+    OPPORTUNITY_ALLOWED_FIELDS,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -44,6 +49,16 @@ async def get_object_stats(
             raise HTTPException(status_code=500, detail=f"Failed to get stats: {str(e)}")
 
 # Standard fields for each object type (fallback if API fails)
+# GHL's Objects/Schema API returns snake_case property keys for opportunity
+# standard fields, but GHL's Opportunities CRUD API uses camelCase in records.
+OPPORTUNITY_SCHEMA_TO_RECORD_KEY = {
+    "monetary_value": "monetaryValue",
+    "pipeline_id": "pipelineId",
+    "pipeline_stage_id": "pipelineStageId",
+    "assigned_to": "assignedTo",
+    "lost_reason": "lostReasonId",
+}
+
 STANDARD_FIELDS = {
     "contacts": [
         {"id": "email", "name": "Email", "fieldKey": "contact.email", "dataType": "EMAIL", "isCustom": False},
@@ -97,7 +112,11 @@ def normalize_custom_field(field: Dict[str, Any], object_type: str) -> Dict[str,
     }
 
 
-def normalize_object_field(field: Dict[str, Any], use_key_as_id: bool = False) -> Dict[str, Any]:
+def normalize_object_field(
+    field: Dict[str, Any],
+    use_key_as_id: bool = False,
+    allowed_fields: Optional[Set[str]] = None,
+) -> Dict[str, Any]:
     """Normalize a field from object schema response.
 
     Args:
@@ -107,6 +126,8 @@ def normalize_object_field(field: Dict[str, Any], use_key_as_id: bool = False) -
                        'custom_objects.transactions.transaction_id') instead of using
                        the GHL field ID. Required for companies, opportunities, and
                        custom objects where records store data by key, not GHL ID.
+        allowed_fields: If provided, determines isWritable based on field membership.
+                        Custom fields are always considered writable.
     """
     field_key = field.get("fieldKey", "")
 
@@ -120,13 +141,24 @@ def normalize_object_field(field: Dict[str, Any], use_key_as_id: bool = False) -
         # customFields array keyed by GHL ID)
         field_id = field.get("id") or field_key.split(".")[-1]
 
+    is_custom = not field.get("standard", False)  # Assume custom if not marked standard
+
+    # Determine writability: custom fields are always writable, standard fields
+    # must be in the allowlist
+    if allowed_fields is not None:
+        is_writable = is_custom or field_id in allowed_fields
+    else:
+        # If no allowlist provided (e.g., custom objects), all fields are writable
+        is_writable = True
+
     return {
         "id": field_id,
         "sourceId": field.get("id"),
         "name": field.get("name", "Unknown Field"),
         "fieldKey": field_key,
         "dataType": field.get("dataType", "TEXT"),
-        "isCustom": not field.get("standard", False),  # Assume custom if not marked standard
+        "isCustom": is_custom,
+        "isWritable": is_writable,
     }
 
 
@@ -225,14 +257,23 @@ async def get_object_fields(
                     custom_fields = await client.get_custom_fields(model="contact")
                     logger.info(f"Fetched {len(custom_fields)} custom fields for contacts")
                     normalized_custom = [
-                        normalize_custom_field(f, "contact")
+                        {**normalize_custom_field(f, "contact"), "isWritable": True}
                         for f in custom_fields
                     ]
-                    logger.info(f"Returning {len(standard_fields)} standard + {len(normalized_custom)} custom fields")
-                    return standard_fields + normalized_custom
+                    # Add isWritable to standard fields
+                    standard_with_writable = [
+                        {**f, "isWritable": f["id"] in CONTACT_ALLOWED_UPDATE_FIELDS or f.get("isCustom", False)}
+                        for f in standard_fields
+                    ]
+                    logger.info(f"Returning {len(standard_with_writable)} standard + {len(normalized_custom)} custom fields")
+                    return standard_with_writable + normalized_custom
                 except Exception as e:
                     logger.warning(f"Failed to fetch contact custom fields: {e}")
-                    return standard_fields
+                    # Add isWritable to standard fields fallback
+                    return [
+                        {**f, "isWritable": f["id"] in CONTACT_ALLOWED_UPDATE_FIELDS or f.get("isCustom", False)}
+                        for f in standard_fields
+                    ]
 
             elif object_type == "companies":
                 # Try to fetch business object schema
@@ -242,10 +283,21 @@ async def get_object_fields(
                     schema = await client.get_object_schema("business", fetch_properties=True)
                     fields = schema.get("fields", [])
                     if fields:
-                        return [normalize_object_field(f, use_key_as_id=True) for f in fields]
+                        return [
+                            normalize_object_field(
+                                f,
+                                use_key_as_id=True,
+                                allowed_fields=COMPANY_ALLOWED_FIELDS,
+                            )
+                            for f in fields
+                        ]
                 except Exception:
                     pass  # Fall back to standard fields
-                return standard_fields
+                # Add isWritable to standard fields fallback
+                return [
+                    {**f, "isWritable": f["id"] in COMPANY_ALLOWED_FIELDS or f.get("isCustom", False)}
+                    for f in standard_fields
+                ]
 
             elif object_type == "opportunities":
                 # Prefer opportunity schema fields for broad coverage (standard + custom)
@@ -254,7 +306,29 @@ async def get_object_fields(
                     schema = await client.get_object_schema("opportunity", fetch_properties=True)
                     fields = schema.get("fields", [])
                     if fields:
-                        return [normalize_object_field(f, use_key_as_id=True) for f in fields]
+                        # Build lookup of real dataTypes from STANDARD_FIELDS by record key
+                        std_type_by_id = {f["id"]: f["dataType"] for f in STANDARD_FIELDS["opportunities"]}
+
+                        normalized = []
+                        for f in fields:
+                            nf = normalize_object_field(
+                                f,
+                                use_key_as_id=True,
+                                allowed_fields=OPPORTUNITY_ALLOWED_FIELDS,
+                            )
+                            # Remap snake_case schema keys to camelCase record keys
+                            mapped_id = OPPORTUNITY_SCHEMA_TO_RECORD_KEY.get(nf["id"])
+                            if mapped_id:
+                                nf["id"] = mapped_id
+                                # Re-check writability after remapping
+                                nf["isWritable"] = nf["isCustom"] or mapped_id in OPPORTUNITY_ALLOWED_FIELDS
+                            # Fix STANDARD_FIELD dataType with real type from our definitions
+                            if nf["dataType"] == "STANDARD_FIELD":
+                                real_type = std_type_by_id.get(nf["id"])
+                                if real_type:
+                                    nf["dataType"] = real_type
+                            normalized.append(nf)
+                        return normalized
                 except Exception:
                     pass
 
@@ -262,20 +336,33 @@ async def get_object_fields(
                 try:
                     custom_fields = await client.get_custom_fields(model="opportunity")
                     normalized_custom = [
-                        normalize_custom_field(f, "opportunity")
+                        {**normalize_custom_field(f, "opportunity"), "isWritable": True}
                         for f in custom_fields
                     ]
-                    return standard_fields + normalized_custom
+                    # Add isWritable to standard fields fallback
+                    standard_with_writable = [
+                        {**f, "isWritable": f["id"] in OPPORTUNITY_ALLOWED_FIELDS or f.get("isCustom", False)}
+                        for f in standard_fields
+                    ]
+                    return standard_with_writable + normalized_custom
                 except Exception:
                     pass
-                return standard_fields
+                # Add isWritable to standard fields fallback
+                return [
+                    {**f, "isWritable": f["id"] in OPPORTUNITY_ALLOWED_FIELDS or f.get("isCustom", False)}
+                    for f in standard_fields
+                ]
 
             elif object_type.startswith("custom_objects."):
                 # Fetch custom object schema
                 # Use key-based IDs for custom objects (records use fieldKey, not ID)
+                # All custom object schema fields are considered writable
                 schema = await client.get_object_schema(object_type, fetch_properties=True)
                 fields = schema.get("fields", [])
-                return [normalize_object_field(f, use_key_as_id=True) for f in fields]
+                return [
+                    normalize_object_field(f, use_key_as_id=True, allowed_fields=None)
+                    for f in fields
+                ]
 
             else:
                 raise HTTPException(
