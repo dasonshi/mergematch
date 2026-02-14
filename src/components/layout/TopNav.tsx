@@ -142,6 +142,12 @@ export function TopNav() {
 
         {/* Right side items */}
         <div className="flex items-center gap-2 ml-auto">
+          {/* Support */}
+          <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-muted-foreground" onClick={() => setSupportOpen(true)}>
+            <MessageCircle className="h-4 w-4" />
+            <span className="hidden sm:inline text-xs">Support</span>
+          </Button>
+
           {/* Plan Badge */}
           <Badge
             variant="outline"
@@ -149,11 +155,6 @@ export function TopNav() {
           >
             {plan}
           </Badge>
-
-          {/* Support */}
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSupportOpen(true)}>
-            <MessageCircle className="h-4 w-4" />
-          </Button>
           <Dialog open={supportOpen} onOpenChange={setSupportOpen}>
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
