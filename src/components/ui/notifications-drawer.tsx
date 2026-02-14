@@ -153,7 +153,7 @@ export function NotificationsDrawer({ children }: NotificationsDrawerProps) {
                   <div className="flex gap-3">
                     <div
                       className={cn(
-                        "flex-shrink-0 rounded-full p-2",
+                        "flex-shrink-0 rounded-full p-1.5",
                         notification.metadata?.fail_count && notification.metadata.fail_count > 0
                           ? "bg-destructive/10 text-destructive"
                           : "bg-primary/10 text-primary"
