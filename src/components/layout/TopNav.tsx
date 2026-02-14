@@ -9,6 +9,8 @@ import {
   Bell,
   Menu,
   X,
+  MessageCircle,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +24,25 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
 interface NavItem {
   title: string;
   href: string;
@@ -39,9 +60,39 @@ const navItems: NavItem[] = [
 
 export function TopNav() {
   const routerLocation = useRouterLocation();
-  const { plan } = useLocation();
+  const { plan, locationId } = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const unreadCount = useUnreadNotificationCount();
+  const { toast } = useToast();
+  const [supportOpen, setSupportOpen] = useState(false);
+  const [supportForm, setSupportForm] = useState({ name: "", email: "", topic: "", message: "" });
+  const [supportSubmitting, setSupportSubmitting] = useState(false);
+
+  const handleSupportSubmit = async () => {
+    if (!supportForm.name || !supportForm.email || !supportForm.topic || !supportForm.message) {
+      toast({ title: "Please fill in all fields", variant: "destructive" });
+      return;
+    }
+    setSupportSubmitting(true);
+    try {
+      const res = await fetch(
+        "https://services.leadconnectorhq.com/hooks/gdzneuvA9mUJoRroCv4O/webhook-trigger/3d25db25-63fc-4cdd-962c-b95a93d256f7",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...supportForm, locationId }),
+        }
+      );
+      if (!res.ok) throw new Error("Failed to send");
+      setSupportForm({ name: "", email: "", topic: "", message: "" });
+      setSupportOpen(false);
+      toast({ title: "Message sent!", description: "We'll get back to you soon." });
+    } catch {
+      toast({ title: "Failed to send message", description: "Please try again later.", variant: "destructive" });
+    } finally {
+      setSupportSubmitting(false);
+    }
+  };
 
   const NavItems = ({ mobile = false }: { mobile?: boolean }) => (
     <>
@@ -98,6 +149,76 @@ export function TopNav() {
           >
             {plan}
           </Badge>
+
+          {/* Support */}
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSupportOpen(true)}>
+            <MessageCircle className="h-4 w-4" />
+          </Button>
+          <Dialog open={supportOpen} onOpenChange={setSupportOpen}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Contact Support</DialogTitle>
+                <DialogDescription>Send us a message and we'll get back to you as soon as possible.</DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-2">
+                <div className="grid gap-2">
+                  <Label htmlFor="support-name">Name</Label>
+                  <Input
+                    id="support-name"
+                    value={supportForm.name}
+                    onChange={(e) => setSupportForm((f) => ({ ...f, name: e.target.value }))}
+                    placeholder="Your name"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="support-email">Email</Label>
+                  <Input
+                    id="support-email"
+                    type="email"
+                    value={supportForm.email}
+                    onChange={(e) => setSupportForm((f) => ({ ...f, email: e.target.value }))}
+                    placeholder="you@example.com"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="support-topic">Topic</Label>
+                  <Select
+                    value={supportForm.topic}
+                    onValueChange={(val) => setSupportForm((f) => ({ ...f, topic: val }))}
+                  >
+                    <SelectTrigger id="support-topic">
+                      <SelectValue placeholder="Select a topic" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Match Rules">Match Rules</SelectItem>
+                      <SelectItem value="Scanning & Matches">Scanning & Matches</SelectItem>
+                      <SelectItem value="Merging & Rollback">Merging & Rollback</SelectItem>
+                      <SelectItem value="Billing & Subscription">Billing & Subscription</SelectItem>
+                      <SelectItem value="Bug Report">Bug Report</SelectItem>
+                      <SelectItem value="Feature Request">Feature Request</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="support-message">Message</Label>
+                  <Textarea
+                    id="support-message"
+                    value={supportForm.message}
+                    onChange={(e) => setSupportForm((f) => ({ ...f, message: e.target.value }))}
+                    placeholder="Describe your issue or question..."
+                    rows={4}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button onClick={handleSupportSubmit} disabled={supportSubmitting}>
+                  {supportSubmitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  Send Message
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           {/* Notifications */}
           <NotificationsDrawer>
