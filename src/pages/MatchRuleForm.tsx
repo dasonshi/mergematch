@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Plus, Trash2, Lock, Info, Loader2, ArrowRight, Check, HelpCircle, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -340,6 +340,7 @@ export default function MatchRuleForm() {
   // Strategy settings
   const [overwriteBlanks, setOverwriteBlanks] = useState(false);
   const [fieldPreservationMappings, setFieldPreservationMappings] = useState<FieldPreservationMapping[]>([]);
+  const hydratedEditFieldsKeyRef = useRef<string | null>(null);
 
   // Fetch existing rule when editing
   const { data: existingRule, isLoading: ruleLoading } = useQuery({
@@ -396,55 +397,59 @@ export default function MatchRuleForm() {
     { id: "abandoned", name: "Abandoned" },
   ];
 
-  // Use fetched fields or fallback to static fields
-  const baseFieldOptions: FieldOption[] = fetchedFields?.length
-    ? fetchedFields.map(f => ({
-        id: f.id,
-        sourceId: f.sourceId,
-        name: f.name,
-        isCustom: f.isCustom,
-        dataType: f.dataType || 'TEXT',
-        fieldKey: f.fieldKey,
-      }))
-    : (fallbackFields[objectType] || []).map(f => ({
-        ...f,
-        isCustom: false,
-        dataType: 'TEXT',
-        fieldKey: undefined,
-      }));
+  const fieldOptions = useMemo(() => {
+    // Use fetched fields or fallback to static fields
+    const baseFieldOptions: FieldOption[] = fetchedFields?.length
+      ? fetchedFields.map((f) => ({
+          id: f.id,
+          sourceId: f.sourceId,
+          name: f.name,
+          isCustom: f.isCustom,
+          dataType: f.dataType || "TEXT",
+          fieldKey: f.fieldKey,
+        }))
+      : (fallbackFields[objectType] || []).map((f) => ({
+          ...f,
+          isCustom: false,
+          dataType: "TEXT",
+          fieldKey: undefined,
+        }));
 
-  // Add synthetic fields (derived from other fields)
-  const syntheticFields: Array<{ id: string; name: string; isCustom: boolean; dataType: string; insertAfter: string; fieldKey?: string }> = [];
-  if (objectType === "contacts" || objectType === "companies") {
-    // Add Email Domain field after Email if email exists
-    const emailIndex = baseFieldOptions.findIndex(f => f.id === "email");
-    if (emailIndex >= 0) {
-      syntheticFields.push({ id: "emailDomain", name: "Email Domain", isCustom: false, dataType: "TEXT", insertAfter: "email" });
+    // Add synthetic fields (derived from other fields)
+    const syntheticFields: Array<{ id: string; name: string; isCustom: boolean; dataType: string; insertAfter: string; fieldKey?: string }> = [];
+    if (objectType === "contacts" || objectType === "companies") {
+      // Add Email Domain field after Email if email exists
+      const emailIndex = baseFieldOptions.findIndex((f) => f.id === "email");
+      if (emailIndex >= 0) {
+        syntheticFields.push({ id: "emailDomain", name: "Email Domain", isCustom: false, dataType: "TEXT", insertAfter: "email" });
+      }
     }
-  }
 
-  // Insert synthetic fields at appropriate positions
-  const fieldOptions = [...baseFieldOptions];
-  for (const sf of syntheticFields) {
-    const insertIndex = fieldOptions.findIndex(f => f.id === sf.insertAfter);
-    if (insertIndex >= 0) {
-      fieldOptions.splice(insertIndex + 1, 0, {
-        id: sf.id,
-        name: sf.name,
-        isCustom: sf.isCustom,
-        dataType: sf.dataType,
-        fieldKey: sf.fieldKey,
-      });
-    } else {
-      fieldOptions.push({
-        id: sf.id,
-        name: sf.name,
-        isCustom: sf.isCustom,
-        dataType: sf.dataType,
-        fieldKey: sf.fieldKey,
-      });
+    // Insert synthetic fields at appropriate positions
+    const mergedFieldOptions = [...baseFieldOptions];
+    for (const sf of syntheticFields) {
+      const insertIndex = mergedFieldOptions.findIndex((f) => f.id === sf.insertAfter);
+      if (insertIndex >= 0) {
+        mergedFieldOptions.splice(insertIndex + 1, 0, {
+          id: sf.id,
+          name: sf.name,
+          isCustom: sf.isCustom,
+          dataType: sf.dataType,
+          fieldKey: sf.fieldKey,
+        });
+      } else {
+        mergedFieldOptions.push({
+          id: sf.id,
+          name: sf.name,
+          isCustom: sf.isCustom,
+          dataType: sf.dataType,
+          fieldKey: sf.fieldKey,
+        });
+      }
     }
-  }
+
+    return mergedFieldOptions;
+  }, [fetchedFields, objectType]);
 
   // Build object types with tier requirements and availability
   const objectTypes = (fetchedObjects || [
@@ -564,6 +569,8 @@ export default function MatchRuleForm() {
     if (!isEditing || !existingRule || fieldOptions.length === 0) return;
     // Don't populate fields until fieldOptions correspond to the rule's object type
     if (objectType !== existingRule.source_object) return;
+    const hydrationKey = `${existingRule.id}:${existingRule.source_object}`;
+    if (hydratedEditFieldsKeyRef.current === hydrationKey) return;
 
     setFields(existingRule.match_fields.map((f: MatchField) => {
       const resolved = resolveFieldId(
@@ -581,6 +588,7 @@ export default function MatchRuleForm() {
         matchAgainst: normalizedMatchAgainst || undefined,
       };
     }));
+    hydratedEditFieldsKeyRef.current = hydrationKey;
   }, [isEditing, existingRule, fieldOptions, objectType]);
 
   const addField = (operator: "AND" | "OR" = "AND") => {
