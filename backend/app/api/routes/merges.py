@@ -152,6 +152,7 @@ def _extract_pipeline_id(snapshot: Optional[Dict[str, Any]]) -> Optional[str]:
 class FieldPreservationMapping(BaseModel):
     source: str
     target: str
+    value: Optional[str] = None
 
 
 class MergeRequest(BaseModel):
@@ -517,7 +518,10 @@ async def execute_merge_route(
         # Convert field_preservation_mappings to list of dicts if provided
         mappings_dicts = None
         if body.field_preservation_mappings:
-            mappings_dicts = [{"source": m.source, "target": m.target} for m in body.field_preservation_mappings]
+            mappings_dicts = [
+                {"source": m.source, "target": m.target, **({"value": m.value} if m.value is not None else {})}
+                for m in body.field_preservation_mappings
+            ]
 
         result = await execute_merge(
             match_id=body.match_id,

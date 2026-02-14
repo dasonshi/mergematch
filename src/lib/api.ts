@@ -679,6 +679,7 @@ export interface ForceResyncResponse {
 export interface FieldPreservationMapping {
   source: string;
   target: string;
+  value?: string;
 }
 
 export interface FieldPreservationSettings {

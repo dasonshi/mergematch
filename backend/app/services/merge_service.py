@@ -963,14 +963,6 @@ async def execute_merge(
         duplicate_data = record_a_data
         duplicate_id = record_a_id
 
-    # Build master record name for display
-    master_record_name = _build_record_name(
-        master_data,
-        master_record_id,
-        match_fields=rule_match_fields,
-        display_field=source_display_field,
-    )
-
     # Build the merged data based on field selections
     merged_fields = {}
     for field, source in field_selections.items():
@@ -986,6 +978,15 @@ async def execute_merge(
             merged_fields[field] = value
         elif overwrite_blanks:
             merged_fields[field] = ""
+
+    # Build master record name using the winning field values
+    merged_name_data = {**master_data, **merged_fields}
+    master_record_name = _build_record_name(
+        merged_name_data,
+        master_record_id,
+        match_fields=rule_match_fields,
+        display_field=source_display_field,
+    )
 
     # For opportunities, translate "contact" selection into "contactId"
     if is_opportunity and "contact" in field_selections:
