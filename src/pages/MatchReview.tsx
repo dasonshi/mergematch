@@ -134,7 +134,7 @@ export default function MatchReview() {
   });
 
   // Fetch available objects to get displayField for custom objects
-  const { data: availableObjects = [] } = useQuery<ObjectType[]>({
+  const { data: availableObjects = [], isLoading: availableObjectsLoading } = useQuery<ObjectType[]>({
     queryKey: ["availableObjects", locationId],
     queryFn: () => api.getAvailableObjects(),
     enabled: !!locationId,
@@ -626,7 +626,9 @@ export default function MatchReview() {
     );
   };
 
-  if (authLoading || matchLoading || !match) {
+  // For custom objects, also wait for availableObjects to load (provides displayField for record names)
+  const isCustomObjectLoading = rule?.source_object?.startsWith("custom_objects.") && availableObjectsLoading;
+  if (authLoading || matchLoading || !match || isCustomObjectLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />

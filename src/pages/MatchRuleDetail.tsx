@@ -107,7 +107,7 @@ export default function MatchRuleDetail() {
   });
 
   // Fetch available objects to get display names
-  const { data: availableObjects } = useQuery({
+  const { data: availableObjects, isLoading: availableObjectsLoading } = useQuery({
     queryKey: ["available-objects", locationId],
     queryFn: () => api.getAvailableObjects(),
     enabled: !!locationId,
@@ -501,7 +501,9 @@ export default function MatchRuleDetail() {
   };
 
   // Show loading while waiting for auth/location or rule data
-  if (authLoading || !locationId || ruleLoading || rulePending) {
+  // For custom objects, also wait for availableObjects to load (provides displayField for record names)
+  const isCustomObject = rule?.source_object?.startsWith("custom_objects.");
+  if (authLoading || !locationId || ruleLoading || rulePending || (isCustomObject && availableObjectsLoading)) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
