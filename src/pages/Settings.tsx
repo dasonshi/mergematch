@@ -131,7 +131,7 @@ export default function Settings() {
         <CardHeader className="bg-muted/30 border-b">
           <CardTitle className="text-lg font-bold">Connection</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
           <div className="flex items-start justify-between">
             <div className="space-y-3">
               <div className="flex items-center gap-2">
@@ -175,7 +175,7 @@ export default function Settings() {
         <CardHeader className="bg-muted/30 border-b">
           <CardTitle className="text-lg font-bold">Subscription</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-6 pt-6">
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">Current Plan:</span>
@@ -312,7 +312,7 @@ export default function Settings() {
           <CardTitle className="text-lg font-bold">White-Label</CardTitle>
           <CardDescription>Customize branding for your clients</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
           {!features.white_label ? (
             <div className="flex items-start gap-3 p-4 bg-muted/50 rounded-lg">
               <Lightbulb className="h-5 w-5 text-warning shrink-0 mt-0.5" />
