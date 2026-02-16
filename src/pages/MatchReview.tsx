@@ -758,7 +758,7 @@ export default function MatchReview() {
                           target="_blank"
                           rel="noopener noreferrer"
                           className="hover:text-foreground hover:underline inline-flex items-center gap-1"
-                          title={`Open ${formatRecordLabel(recordA, recordAId)} in GHL`}
+                          title={`Open ${formatRecordLabel(recordA, recordAId)} in CRM`}
                         >
                           {formatRecordLabel(recordA, recordAId)}
                           <ExternalLink className="h-3 w-3" />
@@ -782,7 +782,7 @@ export default function MatchReview() {
                           target="_blank"
                           rel="noopener noreferrer"
                           className="hover:text-foreground hover:underline inline-flex items-center gap-1"
-                          title={`Open ${formatRecordLabel(recordB, recordBId)} in GHL`}
+                          title={`Open ${formatRecordLabel(recordB, recordBId)} in CRM`}
                         >
                           {formatRecordLabel(recordB, recordBId)}
                           <ExternalLink className="h-3 w-3" />

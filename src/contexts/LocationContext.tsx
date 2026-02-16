@@ -230,7 +230,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       const isAgencyInstall = params.get('agency');
       if (installed === 'true' && isAgencyInstall === 'true' && !exchangeCode) {
         window.history.replaceState({}, '', window.location.pathname);
-        toast.success('App installed successfully! Open MergeMatch from within your GoHighLevel sub-account to get started.');
+        toast.success('App installed successfully! Open MergeMatch from within your sub-account to get started.');
         setTimeout(() => window.close(), 3000);
         setIsLoading(false);
         return;
