@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react';
+import { toast } from 'sonner';
 import { api } from '@/lib/api';
 
 type Plan = 'free' | 'starter' | 'pro' | 'agency';
@@ -225,13 +226,13 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Handle agency (bulk) install — no exchange code, just a success message
+      // Handle agency (bulk) install — show success toast and auto-close
       const isAgencyInstall = params.get('agency');
       if (installed === 'true' && isAgencyInstall === 'true' && !exchangeCode) {
-        setIsLoading(false);
-        setConnectionStatus('disconnected');
-        setError('App installed successfully! Open MergeMatch from within your GoHighLevel sub-account to get started.');
         window.history.replaceState({}, '', window.location.pathname);
+        toast.success('App installed successfully! Open MergeMatch from within your GoHighLevel sub-account to get started.');
+        setTimeout(() => window.close(), 3000);
+        setIsLoading(false);
         return;
       }
 
