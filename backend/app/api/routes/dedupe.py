@@ -64,7 +64,7 @@ async def authenticate_ghl_action(
     if not ghl_location_id:
         raise HTTPException(
             status_code=401,
-            detail="Authentication required. Provide Authorization header or location_id.",
+            detail="Authentication required. Provide Authorization header or GHL location_id parameter.",
         )
 
     supabase = get_supabase()
@@ -478,8 +478,8 @@ async def check_duplicate(
                 contacts_scanned=check_result.get("contacts_scanned", 0),
             )
 
-        except Exception:
-            logger.error("Auto-merge failed")
+        except Exception as e:
+            logger.error(f"Auto-merge failed: {e}", exc_info=True)
             # Fall through to pending_review status
             return DedupeCheckResponse(
                 status="pending_review",
@@ -519,8 +519,8 @@ async def check_duplicate(
                 match_data,
                 on_conflict="location_id,rule_id,record_a_id,record_b_id",
             ).execute()
-        except Exception:
-            logger.warning("Failed to store match for review")
+        except Exception as e:
+            logger.warning(f"Failed to store match for review: {e}", exc_info=True)
 
         return DedupeCheckResponse(
             status="pending_review",
