@@ -225,6 +225,16 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      // Handle agency (bulk) install — no exchange code, just a success message
+      const isAgencyInstall = params.get('agency');
+      if (installed === 'true' && isAgencyInstall === 'true' && !exchangeCode) {
+        setIsLoading(false);
+        setConnectionStatus('disconnected');
+        setError('App installed successfully! Open MergeMatch from within your GoHighLevel sub-account to get started.');
+        window.history.replaceState({}, '', window.location.pathname);
+        return;
+      }
+
       // If we got an exchange code from OAuth callback, exchange it for tokens
       // This is the secure POST redirect flow - tokens never appear in URL
       if (exchangeCode && installed === 'true') {

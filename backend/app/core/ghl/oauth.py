@@ -8,6 +8,7 @@ class GHLOAuth:
 
     AUTH_URL = "https://marketplace.gohighlevel.com/oauth/chooselocation"
     TOKEN_URL = "https://services.leadconnectorhq.com/oauth/token"
+    LOCATION_TOKEN_URL = "https://services.leadconnectorhq.com/oauth/locationToken"
 
     # Required scopes for MergeMatch
     SCOPES = [
@@ -56,7 +57,7 @@ class GHLOAuth:
             response.raise_for_status()
             return response.json()
 
-    async def refresh_token(self, refresh_token: str) -> dict:
+    async def refresh_token(self, refresh_token: str, user_type: str = "Location") -> dict:
         """Refresh an expired access token."""
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -66,8 +67,28 @@ class GHLOAuth:
                     "refresh_token": refresh_token,
                     "client_id": settings.GHL_CLIENT_ID,
                     "client_secret": settings.GHL_CLIENT_SECRET,
+                    "user_type": user_type,
+                    "redirect_uri": settings.GHL_REDIRECT_URI,
                 },
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            response.raise_for_status()
+            return response.json()
+
+    async def get_location_token(self, agency_token: str, company_id: str, location_id: str) -> dict:
+        """Exchange an agency (Company) token for a location-level token."""
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                self.LOCATION_TOKEN_URL,
+                data={
+                    "companyId": company_id,
+                    "locationId": location_id,
+                },
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Authorization": f"Bearer {agency_token}",
+                    "Version": "2021-07-28",
+                },
             )
             response.raise_for_status()
             return response.json()

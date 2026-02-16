@@ -7,6 +7,7 @@ import logging
 
 from app.config import settings
 from app.db.supabase import get_supabase
+from app.core.ghl.oauth import GHLOAuth
 
 logger = logging.getLogger(__name__)
 
@@ -276,6 +277,177 @@ async def get_location_tokens_with_refresh(ghl_location_id: str) -> Optional[dic
         "trial_ends_at": tenant.get("trial_ends_at"),
         "ghl_plan_id": tenant.get("ghl_plan_id"),
     }
+
+
+# ============================================================================
+# Agency (Company-level) Token functions
+# ============================================================================
+
+async def store_agency_tokens(
+    company_id: str,
+    access_token: str,
+    refresh_token: str,
+    expires_in: int,
+) -> dict:
+    """
+    Store agency-level OAuth tokens on the tenant record.
+    Used when an agency admin installs the app (bulk install) — no locationId is provided.
+    """
+    supabase = get_supabase()
+    expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
+
+    # Upsert tenant (may already exist from INSTALL webhook)
+    result = supabase.table("tenants").upsert({
+        "ghl_company_id": company_id,
+        "name": f"Company {company_id[:8]}",
+        "agency_access_token_encrypted": encrypt_token(access_token),
+        "agency_refresh_token_encrypted": encrypt_token(refresh_token),
+        "agency_token_expires_at": expires_at.isoformat(),
+    }, on_conflict="ghl_company_id").execute()
+
+    tenant = result.data[0] if result.data else None
+    if not tenant:
+        raise Exception("Failed to store agency tokens")
+
+    return {"tenant_id": tenant["id"], "company_id": company_id}
+
+
+async def get_agency_tokens(company_id: str) -> Optional[dict]:
+    """
+    Get decrypted agency tokens for a company.
+    Returns None if not stored.
+    """
+    supabase = get_supabase()
+
+    result = supabase.table("tenants").select(
+        "id, ghl_company_id, agency_access_token_encrypted, agency_refresh_token_encrypted, agency_token_expires_at"
+    ).eq("ghl_company_id", company_id).single().execute()
+
+    if not result.data or not result.data.get("agency_access_token_encrypted"):
+        return None
+
+    tenant = result.data
+    return {
+        "tenant_id": tenant["id"],
+        "company_id": tenant["ghl_company_id"],
+        "access_token": decrypt_token(tenant["agency_access_token_encrypted"]),
+        "refresh_token": decrypt_token(tenant["agency_refresh_token_encrypted"]),
+        "expires_at": tenant["agency_token_expires_at"],
+    }
+
+
+async def refresh_agency_token(company_id: str) -> Optional[dict]:
+    """
+    Refresh an expired agency (Company-level) token.
+    Returns updated token dict or None on failure.
+    """
+    tokens = await get_agency_tokens(company_id)
+    if not tokens:
+        logger.error(f"No agency tokens found for company {company_id}")
+        return None
+
+    try:
+        ghl_oauth = GHLOAuth()
+        new_tokens = await ghl_oauth.refresh_token(
+            tokens["refresh_token"], user_type="Company"
+        )
+
+        supabase = get_supabase()
+        expires_at = datetime.utcnow() + timedelta(
+            seconds=new_tokens.get("expires_in", 86400)
+        )
+
+        supabase.table("tenants").update({
+            "agency_access_token_encrypted": encrypt_token(new_tokens["access_token"]),
+            "agency_refresh_token_encrypted": encrypt_token(new_tokens["refresh_token"]),
+            "agency_token_expires_at": expires_at.isoformat(),
+        }).eq("ghl_company_id", company_id).execute()
+
+        logger.info(f"Refreshed agency token for company {company_id}")
+
+        return {
+            "tenant_id": tokens["tenant_id"],
+            "company_id": company_id,
+            "access_token": new_tokens["access_token"],
+            "refresh_token": new_tokens["refresh_token"],
+            "expires_at": expires_at.isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"Agency token refresh failed for {company_id}: {e}")
+        return None
+
+
+async def convert_agency_to_location_token(ghl_location_id: str) -> Optional[dict]:
+    """
+    Convert an agency token to a location-level token for a specific sub-account.
+    This is the lazy conversion triggered on first SSO access from a sub-account.
+
+    Returns location tokens in the same format as get_location_tokens(), or None on failure.
+    """
+    supabase = get_supabase()
+
+    # Look up the location to find its tenant
+    loc_result = supabase.table("locations").select(
+        "*, tenants(id, ghl_company_id, agency_access_token_encrypted, agency_token_expires_at)"
+    ).eq("ghl_location_id", ghl_location_id).single().execute()
+
+    if not loc_result.data:
+        logger.warning(f"Location {ghl_location_id} not found for agency token conversion")
+        return None
+
+    location = loc_result.data
+    tenant = location.get("tenants", {})
+    company_id = tenant.get("ghl_company_id")
+
+    if not company_id or not tenant.get("agency_access_token_encrypted"):
+        logger.warning(f"No agency tokens available for location {ghl_location_id}")
+        return None
+
+    # Check if agency token is expired and refresh if needed
+    agency_tokens = await get_agency_tokens(company_id)
+    if not agency_tokens:
+        return None
+
+    expires_at_str = agency_tokens["expires_at"]
+    if expires_at_str:
+        try:
+            expires_at_clean = str(expires_at_str).replace("+00:00", "").replace("Z", "")
+            expiry_time = datetime.fromisoformat(expires_at_clean)
+            if datetime.utcnow() >= (expiry_time - timedelta(minutes=5)):
+                logger.info(f"Agency token expired for {company_id}, refreshing...")
+                agency_tokens = await refresh_agency_token(company_id)
+                if not agency_tokens:
+                    return None
+        except Exception as e:
+            logger.warning(f"Could not parse agency token expiry: {e}")
+
+    # Call GHL to get location-level token
+    try:
+        ghl_oauth = GHLOAuth()
+        loc_token_data = await ghl_oauth.get_location_token(
+            agency_token=agency_tokens["access_token"],
+            company_id=company_id,
+            location_id=ghl_location_id,
+        )
+
+        # Store the location-level tokens
+        result = await store_oauth_tokens(
+            company_id=company_id,
+            location_id=ghl_location_id,
+            location_name=location.get("name", f"Location {ghl_location_id[:8]}"),
+            access_token=loc_token_data["access_token"],
+            refresh_token=loc_token_data["refresh_token"],
+            expires_in=loc_token_data.get("expires_in", 86400),
+        )
+
+        logger.info(f"Converted agency token to location token for {ghl_location_id}")
+
+        # Return in standard get_location_tokens format
+        return await get_location_tokens(ghl_location_id)
+
+    except Exception as e:
+        logger.error(f"Agency-to-location token conversion failed for {ghl_location_id}: {e}")
+        return None
 
 
 # ============================================================================

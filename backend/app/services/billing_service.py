@@ -259,10 +259,13 @@ async def handle_app_uninstall(
         return {"uninstalled": "location", "location_id": location_id}
 
     elif company_id:
-        # Agency-level uninstall - deactivate all locations
+        # Agency-level uninstall - deactivate all locations and clear agency tokens
         supabase.table("tenants").update({
             "billing_status": "cancelled",
             "uninstalled_at": now,
+            "agency_access_token_encrypted": None,
+            "agency_refresh_token_encrypted": None,
+            "agency_token_expires_at": None,
         }).eq("ghl_company_id", company_id).execute()
 
         # Also deactivate all locations for this tenant

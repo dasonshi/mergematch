@@ -34,6 +34,8 @@ from app.services.auth_service import (
     update_tokens,
     store_exchange_code,
     get_and_use_exchange_code,
+    store_agency_tokens,
+    convert_agency_to_location_token,
 )
 from app.services.billing_service import get_plan_features, get_upgrade_url
 
@@ -112,12 +114,31 @@ async def callback(
     ghl_location_id = tokens.get("locationId")
     company_id = tokens.get("companyId", ghl_location_id)
 
-    if not access_token or not ghl_location_id:
-        logger.warning(
-            "Invalid token response from OAuth exchange (access_token=%s, locationId=%s)",
-            "present" if access_token else "missing",
-            "present" if ghl_location_id else "missing",
-        )
+    if not access_token:
+        logger.warning("Invalid token response from OAuth exchange: access_token missing")
+        frontend_url = f"{settings.FRONTEND_URL}?error=invalid_token_response"
+        return RedirectResponse(url=frontend_url)
+
+    # Agency (bulk) install: companyId present but no locationId
+    if not ghl_location_id and company_id:
+        logger.info(f"Agency install detected for company {company_id} — storing agency tokens")
+        try:
+            await store_agency_tokens(
+                company_id=company_id,
+                access_token=access_token,
+                refresh_token=refresh_token,
+                expires_in=expires_in,
+            )
+        except Exception:
+            logger.error("Failed to store agency tokens")
+            frontend_url = f"{settings.FRONTEND_URL}?error=storage_failed"
+            return RedirectResponse(url=frontend_url)
+
+        frontend_url = f"{settings.FRONTEND_URL}?installed=true&agency=true"
+        return RedirectResponse(url=frontend_url)
+
+    if not ghl_location_id:
+        logger.warning("Invalid token response: no locationId or companyId")
         frontend_url = f"{settings.FRONTEND_URL}?error=invalid_token_response"
         return RedirectResponse(url=frontend_url)
 
@@ -527,6 +548,11 @@ async def app_context(request: Request, body: AppContextRequest):
 
     # Check if location has tokens stored
     tokens = await get_location_tokens(location_id)
+
+    # If no location tokens, try lazy conversion from agency token
+    if not tokens:
+        logger.info(f"No location tokens for {location_id}, attempting agency token conversion")
+        tokens = await convert_agency_to_location_token(location_id)
 
     if not tokens:
         raise HTTPException(
