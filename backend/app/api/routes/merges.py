@@ -604,11 +604,12 @@ async def rollback_merge_route(
             internal_location_id=ctx.location_id,
         )
         return result
-    except ValueError:
-        logger.warning("Rollback request rejected due to validation constraints")
+    except ValueError as e:
+        reason = str(e)
+        logger.warning(f"Rollback request rejected: {reason}")
         raise HTTPException(
             status_code=400,
-            detail="Rollback could not be completed for this merge.",
+            detail=reason or "Rollback could not be completed for this merge.",
         )
     except Exception:
         logger.error("Rollback failed for merge request")
