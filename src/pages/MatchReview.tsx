@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Star, AlertTriangle, Loader2, Save, ChevronDown, ChevronUp, Plus, Trash2, ArrowRight, Settings } from "lucide-react";
+import { ArrowLeft, Star, AlertTriangle, Loader2, Save, ChevronDown, ChevronUp, Plus, Trash2, ArrowRight, Settings, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
+import { cn, getGhlRecordUrl } from "@/lib/utils";
 import { useLocation } from "@/contexts/LocationContext";
 import { useToast } from "@/hooks/use-toast";
 import { useWarningPreferences } from "@/hooks/use-warning-preferences";
@@ -493,6 +493,35 @@ export default function MatchReview() {
     return shortId ? `${name} [${shortId}]` : name;
   };
 
+  // Build URLs to GHL records
+  const recordAUrl = locationId && recordAId
+    ? getGhlRecordUrl(locationId, rule?.source_object || "contacts", recordAId)
+    : null;
+
+  const recordBUrl = locationId && recordBId
+    ? getGhlRecordUrl(locationId, rule?.source_object || "contacts", recordBId)
+    : null;
+
+  // Get set of matching field names for quick lookup (used for row highlighting)
+  const matchingFieldNames = useMemo(() => {
+    const fields = rule?.match_fields || [];
+    return new Set(fields.map(f => f.field));
+  }, [rule?.match_fields]);
+
+  // Determine row highlight based on matching field status and value equality
+  const getRowHighlight = (fieldKey: string, valueA: unknown, valueB: unknown): string => {
+    const isMatchingField = matchingFieldNames.has(fieldKey);
+    const valuesEqual = JSON.stringify(valueA) === JSON.stringify(valueB);
+
+    if (isMatchingField) {
+      return "bg-blue-500/10"; // Blue for matching fields
+    }
+    if (!valuesEqual) {
+      return "bg-red-500/10"; // Red for differing values
+    }
+    return ""; // No highlight
+  };
+
   // Compute preservation preview - shows the LOSING value for each mapped field
   const preservationPreview = useMemo(() => {
     if (fieldPreservationMappings.length === 0) return [];
@@ -562,7 +591,7 @@ export default function MatchReview() {
     const isBSelected = selections[field] === "b";
 
     return (
-      <TableRow key={field}>
+      <TableRow key={field} className={getRowHighlight(field, valueA, valueB)}>
         <TableCell className="font-medium text-muted-foreground">
           <div className="flex items-center gap-2">
             {getFieldLabel(field)}
@@ -722,8 +751,21 @@ export default function MatchReview() {
                         {masterId === "a" ? "MASTER" : "DUPLICATE"}
                       </span>
                     </div>
-                    <div className="text-sm font-normal text-muted-foreground mt-1" title={recordAId}>
-                      {formatRecordLabel(recordA, recordAId)}
+                    <div className="text-sm font-normal text-muted-foreground mt-1">
+                      {recordAUrl ? (
+                        <a
+                          href={recordAUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="hover:text-foreground hover:underline inline-flex items-center gap-1"
+                          title={`Open ${formatRecordLabel(recordA, recordAId)} in GHL`}
+                        >
+                          {formatRecordLabel(recordA, recordAId)}
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      ) : (
+                        <span title={recordAId}>{formatRecordLabel(recordA, recordAId)}</span>
+                      )}
                     </div>
                   </TableHead>
                   <TableHead className="min-w-40">
@@ -733,8 +775,21 @@ export default function MatchReview() {
                         {masterId === "b" ? "MASTER" : "DUPLICATE"}
                       </span>
                     </div>
-                    <div className="text-sm font-normal text-muted-foreground mt-1" title={recordBId}>
-                      {formatRecordLabel(recordB, recordBId)}
+                    <div className="text-sm font-normal text-muted-foreground mt-1">
+                      {recordBUrl ? (
+                        <a
+                          href={recordBUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="hover:text-foreground hover:underline inline-flex items-center gap-1"
+                          title={`Open ${formatRecordLabel(recordB, recordBId)} in GHL`}
+                        >
+                          {formatRecordLabel(recordB, recordBId)}
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      ) : (
+                        <span title={recordBId}>{formatRecordLabel(recordB, recordBId)}</span>
+                      )}
                     </div>
                   </TableHead>
                   <TableHead className="min-w-40 bg-muted/50">
@@ -794,6 +849,8 @@ export default function MatchReview() {
             {[...primaryFields, ...additionalFields].some(f => ruleFieldSet.has(f)) && (
               <span><Badge variant="outline" className="text-xs px-1.5 py-0 border-primary-subtle-border text-primary-subtle-foreground bg-primary-subtle">Rule</Badge> = Used in match logic</span>
             )}
+            <span><span className="inline-block w-3 h-3 bg-blue-500/10 border border-blue-500/30 rounded-sm align-middle mr-1" /> = Matching field</span>
+            <span><span className="inline-block w-3 h-3 bg-red-500/10 border border-red-500/30 rounded-sm align-middle mr-1" /> = Values differ</span>
           </div>
         </CardContent>
       </Card>
