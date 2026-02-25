@@ -58,9 +58,13 @@ async def add_security_headers(request: Request, call_next):
     # Prevent MIME type sniffing
     response.headers["X-Content-Type-Options"] = "nosniff"
 
-    # Clickjacking protection - allow GHL iframe embedding
+    # Clickjacking protection - allow iframe embedding from all GHL domains
+    # Both gohighlevel.com (internal) and leadconnectorhq.com (white-label) must be allowed
     response.headers["Content-Security-Policy"] = (
-        "frame-ancestors 'self' https://app.gohighlevel.com https://*.gohighlevel.com"
+        "frame-ancestors 'self' "
+        "https://app.gohighlevel.com https://*.gohighlevel.com "
+        "https://app.leadconnectorhq.com https://*.leadconnectorhq.com "
+        "https://highlevel.com https://*.highlevel.com"
     )
 
     # XSS protection (legacy, but still useful)

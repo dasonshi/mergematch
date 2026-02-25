@@ -149,39 +149,65 @@ function extractLocationId(): string | null {
 }
 
 // Request encrypted user data from GHL parent via postMessage
+// Retries up to 3 times with increasing delays to handle slow parent loading
 async function requestGHLUserData(): Promise<string> {
-  return new Promise((resolve) => {
-    // Skip if not in iframe
-    if (window.parent === window) {
-      console.log('📤 Not in iframe, skipping postMessage');
-      resolve('');
-      return;
-    }
+  if (window.parent === window) {
+    console.log('📤 Not in iframe, skipping postMessage');
+    return '';
+  }
 
-    const timeout = setTimeout(() => {
-      console.warn('⏱️ GHL postMessage timeout - no response from parent');
-      resolve('');
-    }, 5000);
+  const MAX_ATTEMPTS = 3;
+  const TIMEOUTS = [3000, 4000, 5000]; // increasing timeout per attempt
 
-    const messageHandler = (event: MessageEvent) => {
-      // Validate origin
-      if (!isGHLOrigin(event.origin)) {
-        return;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const result = await new Promise<string>((resolve) => {
+      const timeout = setTimeout(() => {
+        window.removeEventListener('message', messageHandler);
+        console.warn(`⏱️ postMessage attempt ${attempt + 1}/${MAX_ATTEMPTS} timed out`);
+        resolve('');
+      }, TIMEOUTS[attempt]);
+
+      function messageHandler(event: MessageEvent) {
+        if (!isGHLOrigin(event.origin)) return;
+
+        if (event.data?.message === 'REQUEST_USER_DATA_RESPONSE') {
+          clearTimeout(timeout);
+          window.removeEventListener('message', messageHandler);
+          console.log('✅ Received user data response');
+          resolve(event.data.payload || '');
+        }
       }
 
+      window.addEventListener('message', messageHandler);
+      const targetOrigin = getParentGHLOrigin();
+      console.log(`📤 Sending REQUEST_USER_DATA (attempt ${attempt + 1})...`, { targetOrigin });
+      window.parent.postMessage({ message: 'REQUEST_USER_DATA' }, targetOrigin);
+    });
+
+    if (result) return result;
+  }
+
+  // All attempts failed — try with wildcard origin as last resort
+  // (handles case where parent origin doesn't match our known list)
+  return new Promise<string>((resolve) => {
+    const timeout = setTimeout(() => {
+      window.removeEventListener('message', messageHandler);
+      console.warn('⏱️ postMessage wildcard attempt timed out');
+      resolve('');
+    }, 3000);
+
+    function messageHandler(event: MessageEvent) {
       if (event.data?.message === 'REQUEST_USER_DATA_RESPONSE') {
         clearTimeout(timeout);
         window.removeEventListener('message', messageHandler);
-        console.log('✅ Received GHL user data response');
+        console.log('✅ Received user data response (wildcard)');
         resolve(event.data.payload || '');
       }
-    };
+    }
 
     window.addEventListener('message', messageHandler);
-    // SECURITY: Use specific GHL origin instead of wildcard '*'
-    const targetOrigin = getParentGHLOrigin();
-    console.log('📤 Sending REQUEST_USER_DATA to GHL parent...', { targetOrigin });
-    window.parent.postMessage({ message: 'REQUEST_USER_DATA' }, targetOrigin);
+    console.log('📤 Sending REQUEST_USER_DATA with wildcard origin (fallback)...');
+    window.parent.postMessage({ message: 'REQUEST_USER_DATA' }, '*');
   });
 }
 
