@@ -456,7 +456,7 @@ async def process_scheduled_scans(
         if not ghl_location_id:
             errors.append({
                 "rule_id": rule_id,
-                "error": "No GHL location ID found"
+                "error": "No CRM location ID found"
             })
             continue
 

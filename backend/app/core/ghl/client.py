@@ -154,7 +154,7 @@ class GHLClient:
             error_detail = response.text
             logger.error(f"[GHL] Update contact failed: {response.status_code} - {error_detail}")
             # Raise with actual GHL error message
-            raise Exception(f"GHL API error ({response.status_code}): {error_detail}")
+            raise Exception(f"CRM API error ({response.status_code}): {error_detail}")
         return response.json()
 
     async def delete_contact(self, contact_id: str) -> None:
@@ -163,7 +163,7 @@ class GHLClient:
         if response.status_code >= 400:
             error_detail = response.text
             logger.error(f"[GHL] Delete contact failed: {response.status_code} - {error_detail}")
-            raise Exception(f"GHL API error ({response.status_code}): {error_detail}")
+            raise Exception(f"CRM API error ({response.status_code}): {error_detail}")
 
     async def create_contact(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new contact (for rollback)."""
@@ -203,7 +203,7 @@ class GHLClient:
         if response.status_code >= 400:
             error_detail = response.text
             logger.error(f"[GHL] Create company failed: {response.status_code} - {error_detail}")
-            raise Exception(f"GHL API error ({response.status_code}): {error_detail}")
+            raise Exception(f"CRM API error ({response.status_code}): {error_detail}")
         return response.json()
 
     async def update_company(self, company_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -288,7 +288,7 @@ class GHLClient:
         if response.status_code >= 400:
             error_detail = response.text
             logger.error(f"[GHL] Create opportunity failed: {response.status_code} - {error_detail}")
-            raise Exception(f"GHL API error ({response.status_code}): {error_detail}")
+            raise Exception(f"CRM API error ({response.status_code}): {error_detail}")
         return response.json()
 
     async def update_opportunity(self, opportunity_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -303,7 +303,7 @@ class GHLClient:
         if response.status_code >= 400:
             error_detail = response.text
             logger.error(f"[GHL] Delete opportunity failed: {response.status_code} - {error_detail}")
-            raise Exception(f"GHL API error ({response.status_code}): {error_detail}")
+            raise Exception(f"CRM API error ({response.status_code}): {error_detail}")
 
     async def get_contact_opportunities(self, contact_id: str) -> List[Dict[str, Any]]:
         """Get all opportunities for a contact."""
@@ -386,7 +386,7 @@ class GHLClient:
         if response.status_code >= 400:
             error_detail = response.text
             logger.error(f"[GHL] Update appointment failed: {response.status_code} - {error_detail}")
-            raise Exception(f"GHL API error ({response.status_code}): {error_detail}")
+            raise Exception(f"CRM API error ({response.status_code}): {error_detail}")
         return response.json()
 
     # ==================== CUSTOM OBJECTS ====================
@@ -481,7 +481,7 @@ class GHLClient:
         if response.status_code >= 400:
             error_detail = response.text
             logger.error(f"[GHL] Update custom object failed: {response.status_code} - {error_detail}")
-            raise Exception(f"GHL API error ({response.status_code}): {error_detail}")
+            raise Exception(f"CRM API error ({response.status_code}): {error_detail}")
         return response.json()
 
     async def delete_custom_object_record(
@@ -498,7 +498,7 @@ class GHLClient:
         if response.status_code >= 400:
             error_detail = response.text
             logger.error(f"[GHL] Delete custom object failed: {response.status_code} - {error_detail}")
-            raise Exception(f"GHL API error ({response.status_code}): {error_detail}")
+            raise Exception(f"CRM API error ({response.status_code}): {error_detail}")
         return True
 
     async def create_custom_object_record(
@@ -518,7 +518,7 @@ class GHLClient:
         if response.status_code >= 400:
             error_detail = response.text
             logger.error(f"[GHL] Create custom object failed: {response.status_code} - {error_detail}")
-            raise Exception(f"GHL API error ({response.status_code}): {error_detail}")
+            raise Exception(f"CRM API error ({response.status_code}): {error_detail}")
         return response.json()
 
     # ==================== NOTES & TASKS (for reassignment) ====================
@@ -746,7 +746,7 @@ class GHLClient:
             logger.warning(f"[GHL] Get relations failed: {response.status_code} - {response.text}")
             if fail_on_error:
                 error_detail = response.text
-                raise Exception(f"GHL API error ({response.status_code}): {error_detail}")
+                raise Exception(f"CRM API error ({response.status_code}): {error_detail}")
             return []
         return response.json().get("relations", [])
 
@@ -783,7 +783,7 @@ class GHLClient:
         if response.status_code >= 400:
             error_detail = response.text
             logger.error(f"[GHL] Create relation failed: {response.status_code} - {error_detail}")
-            raise Exception(f"GHL API error ({response.status_code}): {error_detail}")
+            raise Exception(f"CRM API error ({response.status_code}): {error_detail}")
         return response.json()
 
     async def delete_relation(self, relation_id: str) -> None:
@@ -792,4 +792,4 @@ class GHLClient:
         if response.status_code >= 400:
             error_detail = response.text
             logger.error(f"[GHL] Delete relation failed: {response.status_code} - {error_detail}")
-            raise Exception(f"GHL API error ({response.status_code}): {error_detail}")
+            raise Exception(f"CRM API error ({response.status_code}): {error_detail}")

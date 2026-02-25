@@ -535,10 +535,16 @@ async def app_context(request: Request, body: AppContextRequest):
         except ValueError:
             raise HTTPException(status_code=401, detail="Invalid SSO data")
 
-    # Determine location ID from verified SSO data only
+    # Determine location ID: prefer verified SSO data, fall back to body.locationId
     location_id = None
     if user and user.get("activeLocation"):
         location_id = user["activeLocation"]
+
+    # Fallback: use locationId from request body (extracted from URL/referrer by frontend)
+    # This handles cases where SSO postMessage times out or isn't available
+    if not location_id and body.locationId:
+        logger.info(f"SSO data missing activeLocation, using fallback locationId from request")
+        location_id = body.locationId
 
     if not location_id:
         raise HTTPException(

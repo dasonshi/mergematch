@@ -750,7 +750,7 @@ async def execute_merge(
                     if e.response.status_code == 404:
                         supabase.table("match_pairs").update({"status": "stale"}).eq("id", match_id).execute()
                         raise ValueError(
-                            f"Custom object record {record_a_id} no longer exists in GHL. "
+                            f"Custom object record {record_a_id} no longer exists in your CRM. "
                             "The match has been marked as stale."
                         )
                     raise
@@ -770,7 +770,7 @@ async def execute_merge(
                     if e.response.status_code == 404:
                         supabase.table("match_pairs").update({"status": "stale"}).eq("id", match_id).execute()
                         raise ValueError(
-                            f"Custom object record {record_b_id} no longer exists in GHL. "
+                            f"Custom object record {record_b_id} no longer exists in your CRM. "
                             "The match has been marked as stale."
                         )
                     raise
@@ -782,7 +782,7 @@ async def execute_merge(
                     if e.response.status_code == 404:
                         supabase.table("match_pairs").update({"status": "stale"}).eq("id", match_id).execute()
                         raise ValueError(
-                            f"Company {record_a_id} no longer exists in GHL. "
+                            f"Company {record_a_id} no longer exists in your CRM. "
                             "The match has been marked as stale."
                         )
                     raise
@@ -794,7 +794,7 @@ async def execute_merge(
                     if e.response.status_code == 404:
                         supabase.table("match_pairs").update({"status": "stale"}).eq("id", match_id).execute()
                         raise ValueError(
-                            f"Company {record_b_id} no longer exists in GHL. "
+                            f"Company {record_b_id} no longer exists in your CRM. "
                             "The match has been marked as stale."
                         )
                     raise
@@ -806,7 +806,7 @@ async def execute_merge(
                     if e.response.status_code == 404:
                         supabase.table("match_pairs").update({"status": "stale"}).eq("id", match_id).execute()
                         raise ValueError(
-                            f"Opportunity {record_a_id} no longer exists in GHL. "
+                            f"Opportunity {record_a_id} no longer exists in your CRM. "
                             "The match has been marked as stale."
                         )
                     raise
@@ -818,7 +818,7 @@ async def execute_merge(
                     if e.response.status_code == 404:
                         supabase.table("match_pairs").update({"status": "stale"}).eq("id", match_id).execute()
                         raise ValueError(
-                            f"Opportunity {record_b_id} no longer exists in GHL. "
+                            f"Opportunity {record_b_id} no longer exists in your CRM. "
                             "The match has been marked as stale."
                         )
                     raise
@@ -831,7 +831,7 @@ async def execute_merge(
                     if e.response.status_code == 404:
                         supabase.table("match_pairs").update({"status": "stale"}).eq("id", match_id).execute()
                         raise ValueError(
-                            f"Contact {record_a_id} no longer exists in GHL. "
+                            f"Contact {record_a_id} no longer exists in your CRM. "
                             "The match has been marked as stale."
                         )
                     raise
@@ -843,7 +843,7 @@ async def execute_merge(
                     if e.response.status_code == 404:
                         supabase.table("match_pairs").update({"status": "stale"}).eq("id", match_id).execute()
                         raise ValueError(
-                            f"Contact {record_b_id} no longer exists in GHL. "
+                            f"Contact {record_b_id} no longer exists in your CRM. "
                             "The match has been marked as stale."
                         )
                     raise
@@ -1650,7 +1650,7 @@ async def rollback_merge(
                 logger.info(f"Restored contact created with ID: {restored_id}")
 
             if not restored_id:
-                raise ValueError("Rollback failed: GHL did not return a restored record ID.")
+                raise ValueError("Rollback failed: CRM did not return a restored record ID.")
 
             # Restore related records on the recreated contact (contacts only)
             notes_restored = 0

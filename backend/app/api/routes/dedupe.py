@@ -64,7 +64,7 @@ async def authenticate_ghl_action(
     if not ghl_location_id:
         raise HTTPException(
             status_code=401,
-            detail="Authentication required. Provide Authorization header or GHL location_id parameter.",
+            detail="Authentication required. Provide Authorization header or location_id parameter.",
         )
 
     supabase = get_supabase()
