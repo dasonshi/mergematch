@@ -94,11 +94,16 @@ async def get_location_tokens(location_id: str) -> Optional[dict]:
     supabase = get_supabase()
 
     # Join with tenants to get plan info
-    result = supabase.table("locations").select(
-        "*, tenants(id, plan, billing_status)"
-    ).eq("ghl_location_id", location_id).single().execute()
+    # Use maybe_single() with try/except because .single() throws on 0 rows
+    try:
+        result = supabase.table("locations").select(
+            "*, tenants(id, plan, billing_status)"
+        ).eq("ghl_location_id", location_id).maybe_single().execute()
+    except Exception as e:
+        logger.warning(f"get_location_tokens query failed for {location_id}: {e}")
+        return None
 
-    if not result.data:
+    if not result or not result.data:
         return None
 
     location = result.data
@@ -150,11 +155,15 @@ async def refresh_ghl_token(ghl_location_id: str) -> Optional[dict]:
     supabase = get_supabase()
 
     # Get current tokens
-    result = supabase.table("locations").select(
-        "*, tenants(id, plan, billing_status)"
-    ).eq("ghl_location_id", ghl_location_id).single().execute()
+    try:
+        result = supabase.table("locations").select(
+            "*, tenants(id, plan, billing_status)"
+        ).eq("ghl_location_id", ghl_location_id).maybe_single().execute()
+    except Exception as e:
+        logger.error(f"Location query failed for {ghl_location_id}: {e}")
+        return None
 
-    if not result.data:
+    if not result or not result.data:
         logger.error(f"Location not found: {ghl_location_id}")
         return None
 
@@ -226,11 +235,15 @@ async def get_location_tokens_with_refresh(ghl_location_id: str) -> Optional[dic
     supabase = get_supabase()
 
     # Get location with tokens
-    result = supabase.table("locations").select(
-        "*, tenants(id, plan, billing_status)"
-    ).eq("ghl_location_id", ghl_location_id).single().execute()
+    try:
+        result = supabase.table("locations").select(
+            "*, tenants(id, plan, billing_status)"
+        ).eq("ghl_location_id", ghl_location_id).maybe_single().execute()
+    except Exception as e:
+        logger.error(f"Location query failed for {ghl_location_id}: {e}")
+        return None
 
-    if not result.data:
+    if not result or not result.data:
         logger.error(f"Location not found in DB: {ghl_location_id}")
         return None
 
@@ -319,11 +332,15 @@ async def get_agency_tokens(company_id: str) -> Optional[dict]:
     """
     supabase = get_supabase()
 
-    result = supabase.table("tenants").select(
-        "id, ghl_company_id, agency_access_token_encrypted, agency_refresh_token_encrypted, agency_token_expires_at"
-    ).eq("ghl_company_id", company_id).single().execute()
+    try:
+        result = supabase.table("tenants").select(
+            "id, ghl_company_id, agency_access_token_encrypted, agency_refresh_token_encrypted, agency_token_expires_at"
+        ).eq("ghl_company_id", company_id).maybe_single().execute()
+    except Exception as e:
+        logger.warning(f"Agency tokens query failed for company {company_id}: {e}")
+        return None
 
-    if not result.data or not result.data.get("agency_access_token_encrypted"):
+    if not result or not result.data or not result.data.get("agency_access_token_encrypted"):
         return None
 
     tenant = result.data
@@ -377,34 +394,84 @@ async def refresh_agency_token(company_id: str) -> Optional[dict]:
         return None
 
 
-async def convert_agency_to_location_token(ghl_location_id: str) -> Optional[dict]:
+async def convert_agency_to_location_token(
+    ghl_location_id: str,
+    company_id: str = None,
+) -> Optional[dict]:
     """
     Convert an agency token to a location-level token for a specific sub-account.
     This is the lazy conversion triggered on first SSO access from a sub-account.
+
+    If the location record doesn't exist yet (e.g., agency install where INSTALL
+    webhook didn't include this sub-account), it will be created lazily.
+
+    Args:
+        ghl_location_id: The GHL location ID for the sub-account
+        company_id: Optional company ID from SSO data (used for lazy location creation)
 
     Returns location tokens in the same format as get_location_tokens(), or None on failure.
     """
     supabase = get_supabase()
 
     # Look up the location to find its tenant
-    loc_result = supabase.table("locations").select(
-        "*, tenants(id, ghl_company_id, agency_access_token_encrypted, agency_token_expires_at)"
-    ).eq("ghl_location_id", ghl_location_id).single().execute()
+    try:
+        loc_result = supabase.table("locations").select(
+            "*, tenants(id, ghl_company_id, agency_access_token_encrypted, agency_token_expires_at)"
+        ).eq("ghl_location_id", ghl_location_id).maybe_single().execute()
+    except Exception as e:
+        logger.warning(f"Location query failed for {ghl_location_id}: {e}")
+        loc_result = None
 
-    if not loc_result.data:
+    location = loc_result.data if loc_result else None
+    tenant = location.get("tenants", {}) if location else {}
+    resolved_company_id = tenant.get("ghl_company_id")
+
+    # If no location record exists, try to find tenant by companyId and create location lazily
+    if not location and company_id:
+        logger.info(f"Location {ghl_location_id} not found, attempting lazy creation via company {company_id}")
+        try:
+            tenant_result = supabase.table("tenants").select(
+                "id, ghl_company_id, agency_access_token_encrypted, agency_token_expires_at"
+            ).eq("ghl_company_id", company_id).maybe_single().execute()
+        except Exception as e:
+            logger.warning(f"Tenant query failed for company {company_id}: {e}")
+            tenant_result = None
+
+        tenant_data = tenant_result.data if tenant_result else None
+        if tenant_data and tenant_data.get("agency_access_token_encrypted"):
+            # Create the location record (lazy creation for this sub-account)
+            try:
+                loc_create = supabase.table("locations").upsert({
+                    "tenant_id": tenant_data["id"],
+                    "ghl_location_id": ghl_location_id,
+                    "name": f"Location {ghl_location_id[:8]}",
+                    "is_active": True,
+                }, on_conflict="tenant_id,ghl_location_id").execute()
+                if loc_create.data:
+                    location = loc_create.data[0]
+                    tenant = tenant_data
+                    resolved_company_id = company_id
+                    logger.info(f"Lazily created location record for {ghl_location_id}")
+            except Exception as e:
+                logger.error(f"Failed to create location record for {ghl_location_id}: {e}")
+                return None
+        else:
+            logger.warning(f"No agency tokens found for company {company_id}")
+            return None
+
+    if not location:
         logger.warning(f"Location {ghl_location_id} not found for agency token conversion")
         return None
 
-    location = loc_result.data
-    tenant = location.get("tenants", {})
-    company_id = tenant.get("ghl_company_id")
+    if not resolved_company_id:
+        resolved_company_id = tenant.get("ghl_company_id")
 
-    if not company_id or not tenant.get("agency_access_token_encrypted"):
+    if not resolved_company_id or not (tenant.get("agency_access_token_encrypted") if isinstance(tenant, dict) else False):
         logger.warning(f"No agency tokens available for location {ghl_location_id}")
         return None
 
     # Check if agency token is expired and refresh if needed
-    agency_tokens = await get_agency_tokens(company_id)
+    agency_tokens = await get_agency_tokens(resolved_company_id)
     if not agency_tokens:
         return None
 
@@ -414,8 +481,8 @@ async def convert_agency_to_location_token(ghl_location_id: str) -> Optional[dic
             expires_at_clean = str(expires_at_str).replace("+00:00", "").replace("Z", "")
             expiry_time = datetime.fromisoformat(expires_at_clean)
             if datetime.utcnow() >= (expiry_time - timedelta(minutes=5)):
-                logger.info(f"Agency token expired for {company_id}, refreshing...")
-                agency_tokens = await refresh_agency_token(company_id)
+                logger.info(f"Agency token expired for {resolved_company_id}, refreshing...")
+                agency_tokens = await refresh_agency_token(resolved_company_id)
                 if not agency_tokens:
                     return None
         except Exception as e:
@@ -426,13 +493,13 @@ async def convert_agency_to_location_token(ghl_location_id: str) -> Optional[dic
         ghl_oauth = GHLOAuth()
         loc_token_data = await ghl_oauth.get_location_token(
             agency_token=agency_tokens["access_token"],
-            company_id=company_id,
+            company_id=resolved_company_id,
             location_id=ghl_location_id,
         )
 
         # Store the location-level tokens
         result = await store_oauth_tokens(
-            company_id=company_id,
+            company_id=resolved_company_id,
             location_id=ghl_location_id,
             location_name=location.get("name", f"Location {ghl_location_id[:8]}"),
             access_token=loc_token_data["access_token"],

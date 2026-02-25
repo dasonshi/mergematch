@@ -556,9 +556,11 @@ async def app_context(request: Request, body: AppContextRequest):
     tokens = await get_location_tokens(location_id)
 
     # If no location tokens, try lazy conversion from agency token
+    # Pass companyId from SSO data so the conversion can lazily create the location record
     if not tokens:
-        logger.info(f"No location tokens for {location_id}, attempting agency token conversion")
-        tokens = await convert_agency_to_location_token(location_id)
+        sso_company_id = user.get("companyId") if user else None
+        logger.info(f"No location tokens for {location_id}, attempting agency token conversion (company={sso_company_id})")
+        tokens = await convert_agency_to_location_token(location_id, company_id=sso_company_id)
 
     if not tokens:
         raise HTTPException(
