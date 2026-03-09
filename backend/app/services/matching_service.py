@@ -520,11 +520,11 @@ async def run_scan(
         if hasattr(e, 'last_attempt') and e.last_attempt.exception():
             inner_error = e.last_attempt.exception()
             if hasattr(inner_error, 'response'):
-                error_msg = f"GHL API error {inner_error.response.status_code}: {inner_error.response.text[:200]}"
+                error_msg = f"CRM API error{inner_error.response.status_code}: {inner_error.response.text[:200]}"
             else:
                 error_msg = str(inner_error)
-        logger.error(f"Failed to fetch {source_object} from GHL: {error_msg}")
-        raise Exception(f"GHL API call failed: {error_msg}")
+        logger.error(f"Failed to fetch {source_object} from CRM: {error_msg}")
+        raise Exception(f"CRM API call failed: {error_msg}")
 
     logger.info(f"Scan: Fetched {len(all_contacts)} {source_object} total")
 
