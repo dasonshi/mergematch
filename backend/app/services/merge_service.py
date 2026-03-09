@@ -1650,7 +1650,7 @@ async def rollback_merge(
                 logger.info(f"Restored contact created with ID: {restored_id}")
 
             if not restored_id:
-                raise ValueError("Rollback failed: GHL did not return a restored record ID.")
+                raise ValueError("Rollback failed: CRM did not return a restored record ID.")
 
             # Restore related records on the recreated contact (contacts only)
             notes_restored = 0

@@ -71,7 +71,7 @@ async def _get_custom_display_fields_for_sources(
         try:
             tokens = await get_location_tokens_with_refresh(ghl_location_id)
             if not tokens or not tokens.get("access_token"):
-                raise ValueError("No valid GHL token available")
+                raise ValueError("No valid CRM token available")
 
             async with GHLClient(tokens["access_token"], ghl_location_id) as client:
                 object_defs = await client.list_objects()

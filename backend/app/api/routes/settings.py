@@ -106,7 +106,7 @@ async def get_custom_fields(
     """Get all custom fields from GHL for the location."""
     tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
     if not tokens:
-        raise HTTPException(status_code=401, detail="Unable to get GHL tokens")
+        raise HTTPException(status_code=401, detail="Unable to get CRM tokens")
 
     async with GHLClient(tokens["access_token"], user.ghl_location_id) as client:
         fields = await client.get_custom_fields(model="contact")
@@ -127,7 +127,7 @@ async def create_custom_field(
     """Create a new custom field in GHL."""
     tokens = await get_location_tokens_with_refresh(user.ghl_location_id)
     if not tokens:
-        raise HTTPException(status_code=401, detail="Unable to get GHL tokens")
+        raise HTTPException(status_code=401, detail="Unable to get CRM tokens")
 
     async with GHLClient(tokens["access_token"], user.ghl_location_id) as client:
         result = await client.create_custom_field(

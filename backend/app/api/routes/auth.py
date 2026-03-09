@@ -134,7 +134,7 @@ async def callback(
             frontend_url = f"{settings.FRONTEND_URL}?error=storage_failed"
             return RedirectResponse(url=frontend_url)
 
-        frontend_url = f"{settings.FRONTEND_URL}?installed=true&agency=true"
+        frontend_url = f"{settings.FRONTEND_URL}/install-success?installed=true&agency=true"
         return RedirectResponse(url=frontend_url)
 
     if not ghl_location_id:
@@ -195,7 +195,7 @@ async def callback(
     # Redirect with code only (no tokens in URL)
     # Always redirect to our frontend - it will handle the code exchange.
     # Don't redirect to GHL page as that would cause nesting if OAuth ran in iframe.
-    redirect_url = f"{settings.FRONTEND_URL}?installed=true&code={exchange_code}"
+    redirect_url = f"{settings.FRONTEND_URL}/install-success?installed=true&code={exchange_code}"
 
     return RedirectResponse(url=redirect_url)
 

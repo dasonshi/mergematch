@@ -96,7 +96,7 @@ async def get_location_tokens(location_id: str) -> Optional[dict]:
     # Join with tenants to get plan info
     result = supabase.table("locations").select(
         "*, tenants(id, plan, billing_status)"
-    ).eq("ghl_location_id", location_id).single().execute()
+    ).eq("ghl_location_id", location_id).maybe_single().execute()
 
     if not result.data:
         return None
@@ -152,7 +152,7 @@ async def refresh_ghl_token(ghl_location_id: str) -> Optional[dict]:
     # Get current tokens
     result = supabase.table("locations").select(
         "*, tenants(id, plan, billing_status)"
-    ).eq("ghl_location_id", ghl_location_id).single().execute()
+    ).eq("ghl_location_id", ghl_location_id).maybe_single().execute()
 
     if not result.data:
         logger.error(f"Location not found: {ghl_location_id}")
@@ -248,7 +248,7 @@ async def get_location_tokens_with_refresh(ghl_location_id: str) -> Optional[dic
     # Get location with tokens
     result = supabase.table("locations").select(
         "*, tenants(id, plan, billing_status)"
-    ).eq("ghl_location_id", ghl_location_id).single().execute()
+    ).eq("ghl_location_id", ghl_location_id).maybe_single().execute()
 
     if not result.data:
         logger.error(f"Location not found in DB: {ghl_location_id}")
@@ -341,7 +341,7 @@ async def get_agency_tokens(company_id: str) -> Optional[dict]:
 
     result = supabase.table("tenants").select(
         "id, ghl_company_id, agency_access_token_encrypted, agency_refresh_token_encrypted, agency_token_expires_at"
-    ).eq("ghl_company_id", company_id).single().execute()
+    ).eq("ghl_company_id", company_id).maybe_single().execute()
 
     if not result.data or not result.data.get("agency_access_token_encrypted"):
         return None
@@ -527,7 +527,7 @@ async def get_and_use_exchange_code(code: str) -> Optional[dict]:
         "code", code
     ).is_("used_at", "null").gte(
         "expires_at", datetime.utcnow().isoformat()
-    ).single().execute()
+    ).maybe_single().execute()
 
     if not result.data:
         logger.warning(f"Invalid or expired exchange code attempted")
