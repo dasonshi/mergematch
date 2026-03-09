@@ -1,5 +1,5 @@
 /**
- * GHL Custom Field Type Compatibility Matrix
+ * Custom Field Type Compatibility Matrix
  * Determines which source field types can be stored in which target custom field types
  *
  * Used by:

@@ -188,6 +188,26 @@ async def refresh_ghl_token(ghl_location_id: str) -> Optional[dict]:
 
             if response.status_code != 200:
                 logger.error(f"Token refresh failed: {response.status_code} - {response.text}")
+
+                # If the refresh token is permanently invalid, clear stored tokens
+                # so the location is marked as disconnected and the user is prompted
+                # to re-authorize instead of retrying a dead token on every request.
+                if response.status_code == 400:
+                    try:
+                        error_body = response.json()
+                        if error_body.get("error") == "invalid_grant":
+                            logger.warning(
+                                f"Refresh token permanently invalid for {ghl_location_id}, "
+                                "clearing stored tokens to mark location as disconnected"
+                            )
+                            supabase.table("locations").update({
+                                "access_token_encrypted": None,
+                                "refresh_token_encrypted": None,
+                                "token_expires_at": None,
+                            }).eq("ghl_location_id", ghl_location_id).execute()
+                    except Exception as e:
+                        logger.error(f"Failed to clear stale tokens for {ghl_location_id}: {e}")
+
                 return None
 
             token_data = response.json()
@@ -377,34 +397,51 @@ async def refresh_agency_token(company_id: str) -> Optional[dict]:
         return None
 
 
-async def convert_agency_to_location_token(ghl_location_id: str) -> Optional[dict]:
+async def convert_agency_to_location_token(ghl_location_id: str, company_id: str = None) -> Optional[dict]:
     """
     Convert an agency token to a location-level token for a specific sub-account.
     This is the lazy conversion triggered on first SSO access from a sub-account.
+
+    If no location record exists yet (common for agency installs), the tenant is looked
+    up directly by company_id and a new location record is created automatically.
 
     Returns location tokens in the same format as get_location_tokens(), or None on failure.
     """
     supabase = get_supabase()
 
-    # Look up the location to find its tenant
+    # Try to look up the location to find its tenant
     loc_result = supabase.table("locations").select(
         "*, tenants(id, ghl_company_id, agency_access_token_encrypted, agency_token_expires_at)"
-    ).eq("ghl_location_id", ghl_location_id).single().execute()
+    ).eq("ghl_location_id", ghl_location_id).maybe_single().execute()
 
-    if not loc_result.data:
-        logger.warning(f"Location {ghl_location_id} not found for agency token conversion")
+    location = loc_result.data if loc_result.data else None
+    tenant = location.get("tenants", {}) if location else None
+
+    # Resolve company_id: prefer from existing location→tenant, fall back to SSO-provided
+    resolved_company_id = (tenant.get("ghl_company_id") if tenant else None) or company_id
+
+    if not resolved_company_id:
+        logger.warning(f"No company ID available for agency token conversion of {ghl_location_id}")
         return None
 
-    location = loc_result.data
-    tenant = location.get("tenants", {})
-    company_id = tenant.get("ghl_company_id")
-
-    if not company_id or not tenant.get("agency_access_token_encrypted"):
+    # If location record exists but tenant has no agency tokens, check via company_id
+    if tenant and not tenant.get("agency_access_token_encrypted"):
         logger.warning(f"No agency tokens available for location {ghl_location_id}")
         return None
 
+    # If no location record exists, verify the tenant has agency tokens
+    if not location:
+        logger.info(f"No location record for {ghl_location_id}, looking up tenant by company {resolved_company_id}")
+        tenant_result = supabase.table("tenants").select(
+            "id, ghl_company_id, agency_access_token_encrypted, agency_token_expires_at"
+        ).eq("ghl_company_id", resolved_company_id).maybe_single().execute()
+
+        if not tenant_result.data or not tenant_result.data.get("agency_access_token_encrypted"):
+            logger.warning(f"No agency tokens found for company {resolved_company_id}")
+            return None
+
     # Check if agency token is expired and refresh if needed
-    agency_tokens = await get_agency_tokens(company_id)
+    agency_tokens = await get_agency_tokens(resolved_company_id)
     if not agency_tokens:
         return None
 
@@ -414,8 +451,8 @@ async def convert_agency_to_location_token(ghl_location_id: str) -> Optional[dic
             expires_at_clean = str(expires_at_str).replace("+00:00", "").replace("Z", "")
             expiry_time = datetime.fromisoformat(expires_at_clean)
             if datetime.utcnow() >= (expiry_time - timedelta(minutes=5)):
-                logger.info(f"Agency token expired for {company_id}, refreshing...")
-                agency_tokens = await refresh_agency_token(company_id)
+                logger.info(f"Agency token expired for {resolved_company_id}, refreshing...")
+                agency_tokens = await refresh_agency_token(resolved_company_id)
                 if not agency_tokens:
                     return None
         except Exception as e:
@@ -426,15 +463,16 @@ async def convert_agency_to_location_token(ghl_location_id: str) -> Optional[dic
         ghl_oauth = GHLOAuth()
         loc_token_data = await ghl_oauth.get_location_token(
             agency_token=agency_tokens["access_token"],
-            company_id=company_id,
+            company_id=resolved_company_id,
             location_id=ghl_location_id,
         )
 
-        # Store the location-level tokens
+        # Store the location-level tokens (creates location record if it doesn't exist)
+        location_name = location.get("name", f"Location {ghl_location_id[:8]}") if location else f"Location {ghl_location_id[:8]}"
         result = await store_oauth_tokens(
-            company_id=company_id,
+            company_id=resolved_company_id,
             location_id=ghl_location_id,
-            location_name=location.get("name", f"Location {ghl_location_id[:8]}"),
+            location_name=location_name,
             access_token=loc_token_data["access_token"],
             refresh_token=loc_token_data["refresh_token"],
             expires_in=loc_token_data.get("expires_in", 86400),

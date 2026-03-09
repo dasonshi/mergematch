@@ -58,9 +58,9 @@ async def add_security_headers(request: Request, call_next):
     # Prevent MIME type sniffing
     response.headers["X-Content-Type-Options"] = "nosniff"
 
-    # Clickjacking protection - allow GHL iframe embedding
+    # Clickjacking protection - allow CRM iframe embedding
     response.headers["Content-Security-Policy"] = (
-        "frame-ancestors 'self' https://app.gohighlevel.com https://*.gohighlevel.com"
+        "frame-ancestors 'self' https://app.leadconnectorhq.com https://*.leadconnectorhq.com https://app.gohighlevel.com https://*.gohighlevel.com"
     )
 
     # XSS protection (legacy, but still useful)

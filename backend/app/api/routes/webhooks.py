@@ -530,7 +530,7 @@ async def ghl_webhook(
     x_ghl_signature: str = Header(None),
 ):
     """
-    Receive webhooks from GoHighLevel.
+    Receive webhooks from the CRM platform.
 
     Handles:
     - Marketplace webhooks: INSTALL, UNINSTALL, PLAN_CHANGE

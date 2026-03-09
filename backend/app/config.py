@@ -25,13 +25,13 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str = "redis://localhost:6379"
 
-    # GoHighLevel
+    # CRM Platform (OAuth)
     GHL_CLIENT_ID: str = ""
     GHL_CLIENT_SECRET: str = ""
     GHL_REDIRECT_URI: str = "http://localhost:8000/auth/callback"
     GHL_WEBHOOK_SECRET: str = ""
-    GHL_APP_ID: str = ""  # Your GHL Marketplace app ID
-    GHL_APP_SHARED_SECRET: str = ""  # SSO shared secret from GHL Marketplace
+    GHL_APP_ID: str = ""  # Marketplace app ID
+    GHL_APP_SHARED_SECRET: str = ""  # SSO shared secret from Marketplace
     GHL_CUSTOM_PAGE_LINK_ID: str = ""  # Custom page link ID for redirect after OAuth
 
     # GHL Marketplace Plan IDs (set these after creating plans in marketplace)

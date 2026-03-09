@@ -59,40 +59,37 @@ const LocationContext = createContext<LocationContextType>({
   lastWebhookAt: null,
 });
 
-// GHL allowed origins for postMessage
-const GHL_ORIGINS = [
-  'https://app.gohighlevel.com',
+// Allowed origins for postMessage communication with the CRM parent frame
+const CRM_ORIGINS = [
   'https://app.leadconnectorhq.com',
+  'https://app.gohighlevel.com',
   'https://highlevel.com',
   'https://leadconnectorhq.com',
 ];
 
-// Primary GHL origin (most common)
-const PRIMARY_GHL_ORIGIN = 'https://app.gohighlevel.com';
+// Primary CRM origin
+const PRIMARY_CRM_ORIGIN = 'https://app.leadconnectorhq.com';
 
-function isGHLOrigin(origin: string): boolean {
-  return GHL_ORIGINS.some(allowed => origin.startsWith(allowed));
+function isCrmOrigin(origin: string): boolean {
+  return CRM_ORIGINS.some(allowed => origin.startsWith(allowed));
 }
 
-// Determine the parent GHL origin from referrer
-function getParentGHLOrigin(): string {
+// Determine the parent CRM origin from referrer
+function getParentCrmOrigin(): string {
   try {
     const referrer = document.referrer;
     if (referrer) {
       const referrerUrl = new URL(referrer);
       const referrerOrigin = referrerUrl.origin;
-      // Check if referrer matches a known GHL origin
-      const matchedOrigin = GHL_ORIGINS.find(allowed => referrerOrigin.startsWith(allowed));
+      const matchedOrigin = CRM_ORIGINS.find(allowed => referrerOrigin.startsWith(allowed));
       if (matchedOrigin) {
-        // Use the actual referrer origin (e.g., https://app.gohighlevel.com)
         return referrerOrigin;
       }
     }
   } catch {
     // Ignore URL parsing errors
   }
-  // Default to primary GHL origin
-  return PRIMARY_GHL_ORIGIN;
+  return PRIMARY_CRM_ORIGIN;
 }
 
 // Extract locationId from URL/referrer
@@ -105,7 +102,7 @@ function extractLocationId(): string | null {
     return queryLocationId;
   }
 
-  // 2. Check URL path (GHL pattern: /v2/location/{locationId}/...)
+  // 2. Check URL path (CRM pattern: /v2/location/{locationId}/...)
   const pathPatterns = [
     /\/v2\/location\/([a-zA-Z0-9]+)/,
     /\/location\/([a-zA-Z0-9]+)/,
@@ -148,39 +145,37 @@ function extractLocationId(): string | null {
   return null;
 }
 
-// Request encrypted user data from GHL parent via postMessage
-async function requestGHLUserData(): Promise<string> {
+// Request encrypted user data from CRM parent via postMessage
+async function requestCrmUserData(): Promise<string> {
   return new Promise((resolve) => {
     // Skip if not in iframe
     if (window.parent === window) {
-      console.log('📤 Not in iframe, skipping postMessage');
+      console.log('Not in iframe, skipping postMessage');
       resolve('');
       return;
     }
 
     const timeout = setTimeout(() => {
-      console.warn('⏱️ GHL postMessage timeout - no response from parent');
+      console.warn('postMessage timeout - no response from parent');
       resolve('');
     }, 5000);
 
     const messageHandler = (event: MessageEvent) => {
       // Validate origin
-      if (!isGHLOrigin(event.origin)) {
+      if (!isCrmOrigin(event.origin)) {
         return;
       }
 
       if (event.data?.message === 'REQUEST_USER_DATA_RESPONSE') {
         clearTimeout(timeout);
         window.removeEventListener('message', messageHandler);
-        console.log('✅ Received GHL user data response');
         resolve(event.data.payload || '');
       }
     };
 
     window.addEventListener('message', messageHandler);
-    // SECURITY: Use specific GHL origin instead of wildcard '*'
-    const targetOrigin = getParentGHLOrigin();
-    console.log('📤 Sending REQUEST_USER_DATA to GHL parent...', { targetOrigin });
+    // SECURITY: Use specific CRM origin instead of wildcard '*'
+    const targetOrigin = getParentCrmOrigin();
     window.parent.postMessage({ message: 'REQUEST_USER_DATA' }, targetOrigin);
   });
 }
@@ -279,14 +274,12 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Try SSO flow if in iframe (GHL custom page)
+      // Try SSO flow if in iframe (CRM custom page)
       const isInIframe = window.parent !== window;
 
       if (isInIframe) {
-        console.log('🔒 Running in GHL iframe - attempting SSO...');
-
-        // Request encrypted user data from GHL
-        const encryptedData = await requestGHLUserData();
+        // Request encrypted user data from CRM parent
+        const encryptedData = await requestCrmUserData();
         const fallbackLocationId = extractLocationId();
 
         // Call backend app-context endpoint
@@ -407,7 +400,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     // OAuth flow requires full page navigation - can't run in iframe
     // Open in new tab, or navigate parent if in iframe
     if (window.parent !== window) {
-      // In iframe - open in new tab (parent navigation blocked by GHL)
+      // In iframe - open in new tab (parent navigation blocked by CRM)
       window.open(installUrl, '_blank');
     } else {
       window.location.href = installUrl;

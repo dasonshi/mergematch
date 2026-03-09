@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 
 class GHLClient:
-    """GoHighLevel API Client with retry logic and rate limiting."""
+    """CRM API Client with retry logic and rate limiting."""
 
     BASE_URL = "https://services.leadconnectorhq.com"
     API_VERSION = "2021-07-28"

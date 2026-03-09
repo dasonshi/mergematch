@@ -358,12 +358,12 @@ async def check_feature_access(
 
 def get_upgrade_url(location_id: str) -> str:
     """
-    Get the GHL Marketplace URL for upgrading the plan.
+    Get the Marketplace URL for upgrading the plan.
     """
     app_id = settings.GHL_APP_ID
     if app_id:
-        return f"https://marketplace.gohighlevel.com/app/{app_id}?locationId={location_id}"
-    return "https://marketplace.gohighlevel.com"
+        return f"https://marketplace.leadconnectorhq.com/app/{app_id}?locationId={location_id}"
+    return "https://marketplace.leadconnectorhq.com"
 
 
 async def check_merge_quota(location_id: str, plan: str) -> Dict[str, Any]:

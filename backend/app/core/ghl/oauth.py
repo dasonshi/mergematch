@@ -4,9 +4,9 @@ from app.config import settings
 
 
 class GHLOAuth:
-    """Handle GoHighLevel OAuth flow."""
+    """Handle CRM platform OAuth flow."""
 
-    AUTH_URL = "https://marketplace.gohighlevel.com/oauth/chooselocation"
+    AUTH_URL = "https://marketplace.leadconnectorhq.com/oauth/chooselocation"
     TOKEN_URL = "https://services.leadconnectorhq.com/oauth/token"
     LOCATION_TOKEN_URL = "https://services.leadconnectorhq.com/oauth/locationToken"
 

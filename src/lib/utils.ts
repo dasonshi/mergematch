@@ -6,9 +6,9 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
- * Build a GHL (GoHighLevel) CRM URL for viewing a record.
+ * Build a CRM URL for viewing a record.
  *
- * @param locationId - The GHL location ID
+ * @param locationId - The CRM location ID
  * @param objectType - The object type (contacts, companies, opportunities, or custom object key)
  * @param recordId - The record ID
  * @param options - Optional context for object-specific URLs (e.g. opportunity pipeline)
@@ -26,7 +26,7 @@ export function getGhlRecordUrl(
 ): string | null {
   if (!locationId || !recordId) return null;
 
-  const baseUrl = "https://app.gohighlevel.com/v2/location";
+  const baseUrl = "https://app.leadconnectorhq.com/v2/location";
   const encodedRecordId = encodeURIComponent(recordId);
 
   if (objectType === "contacts") {
