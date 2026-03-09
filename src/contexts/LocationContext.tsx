@@ -234,8 +234,6 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       // If we got an exchange code from OAuth callback, exchange it for tokens
       // This is the secure POST redirect flow - tokens never appear in URL
       if (exchangeCode && installed === 'true') {
-        console.log('🔐 Got exchange code from OAuth callback, exchanging for tokens...');
-
         try {
           const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
           const response = await fetch(`${apiUrl}/auth/exchange-code`, {
@@ -246,7 +244,6 @@ export function LocationProvider({ children }: { children: ReactNode }) {
 
           if (response.ok) {
             const data = await response.json();
-            console.log('✅ Token exchange successful');
             api.setTokens({
               accessToken: data.access_token,
               refreshToken: data.refresh_token,
@@ -254,10 +251,18 @@ export function LocationProvider({ children }: { children: ReactNode }) {
             if (data.location_id) {
               localStorage.setItem('ghl_location_id', data.location_id);
             }
-            // Clear URL and continue - tokens are set, app will authenticate normally
             window.history.replaceState({}, '', window.location.pathname);
+
+            // If this is a standalone tab (not iframe), the user came here via
+            // OAuth redirect from the install flow. Show success and close so
+            // they return to the CRM tab where the app iframe will re-auth.
+            if (window.parent === window) {
+              toast.success('App installed successfully! You can close this tab.');
+              setTimeout(() => window.close(), 2000);
+              setIsLoading(false);
+              return;
+            }
           } else {
-            console.error('❌ Token exchange failed:', response.status);
             setError('Authentication failed. Please try again.');
             setConnectionStatus('error');
             window.history.replaceState({}, '', window.location.pathname);
@@ -265,7 +270,6 @@ export function LocationProvider({ children }: { children: ReactNode }) {
             return;
           }
         } catch (err) {
-          console.error('❌ Token exchange error:', err);
           setError('Authentication failed. Please try again.');
           setConnectionStatus('error');
           window.history.replaceState({}, '', window.location.pathname);
@@ -415,6 +419,20 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     api.setOnUnauthorized(markTokenExpired);
   }, [markTokenExpired]);
+
+  // Re-check auth when the tab regains focus (e.g. after OAuth completes in a new tab)
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (
+        document.visibilityState === 'visible' &&
+        (connectionStatus === 'disconnected' || connectionStatus === 'error')
+      ) {
+        checkAuth();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [connectionStatus, checkAuth]);
 
   return (
     <LocationContext.Provider value={{
