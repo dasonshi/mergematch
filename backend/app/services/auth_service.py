@@ -422,11 +422,14 @@ async def convert_agency_to_location_token(ghl_location_id: str, company_id: str
     supabase = get_supabase()
 
     # Try to look up the location to find its tenant
-    loc_result = supabase.table("locations").select(
-        "*, tenants(id, ghl_company_id, agency_access_token_encrypted, agency_token_expires_at)"
-    ).eq("ghl_location_id", ghl_location_id).maybe_single().execute()
+    try:
+        loc_result = supabase.table("locations").select(
+            "*, tenants(id, ghl_company_id, agency_access_token_encrypted, agency_token_expires_at)"
+        ).eq("ghl_location_id", ghl_location_id).maybe_single().execute()
+    except Exception:
+        loc_result = None
 
-    location = loc_result.data if loc_result.data else None
+    location = (loc_result.data if loc_result and loc_result.data else None)
     tenant = location.get("tenants", {}) if location else None
 
     # Resolve company_id: prefer from existing location→tenant, fall back to SSO-provided
@@ -444,11 +447,14 @@ async def convert_agency_to_location_token(ghl_location_id: str, company_id: str
     # If no location record exists, verify the tenant has agency tokens
     if not location:
         logger.info(f"No location record for {ghl_location_id}, looking up tenant by company {resolved_company_id}")
-        tenant_result = supabase.table("tenants").select(
-            "id, ghl_company_id, agency_access_token_encrypted, agency_token_expires_at"
-        ).eq("ghl_company_id", resolved_company_id).maybe_single().execute()
+        try:
+            tenant_result = supabase.table("tenants").select(
+                "id, ghl_company_id, agency_access_token_encrypted, agency_token_expires_at"
+            ).eq("ghl_company_id", resolved_company_id).maybe_single().execute()
+        except Exception:
+            tenant_result = None
 
-        if not tenant_result.data or not tenant_result.data.get("agency_access_token_encrypted"):
+        if not tenant_result or not tenant_result.data or not tenant_result.data.get("agency_access_token_encrypted"):
             logger.warning(f"No agency tokens found for company {resolved_company_id}")
             return None
 
