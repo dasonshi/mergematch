@@ -78,6 +78,12 @@ NON_MUTABLE_RECORD_FIELDS = {
     "createdBy", "updatedBy", "locationId", "location_id",
 }
 
+# Fields accepted by GHL's PUT /businesses/{id} endpoint.
+COMPANY_GHL_UPDATE_FIELDS = {
+    "name", "email", "phone", "website", "address", "city", "state",
+    "postalCode", "country", "description",
+}
+
 NON_CONTACT_DYNAMIC_EXCLUDE_FIELDS = NON_MUTABLE_RECORD_FIELDS | {
     "contact", "pipeline", "contacts", "opportunities", "relationships",
 }
@@ -1278,6 +1284,7 @@ async def execute_merge(
                 update_payload = _build_payload(
                     merged_fields,
                     overwrite_blanks=overwrite_blanks,
+                    allowed_fields=COMPANY_GHL_UPDATE_FIELDS,
                     excluded_fields=NON_MUTABLE_RECORD_FIELDS,
                 )
                 if update_payload:
