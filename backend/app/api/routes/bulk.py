@@ -98,7 +98,7 @@ async def start_bulk_merge(
         )
 
     # Check if we have enough quota for all merges
-    if quota["remaining"] < len(body.match_ids):
+    if quota["remaining"] >= 0 and quota["remaining"] < len(body.match_ids):
         logger.warning(
             f"Bulk merge may exceed quota: requesting {len(body.match_ids)}, "
             f"remaining {quota['remaining']}"

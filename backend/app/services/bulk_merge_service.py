@@ -143,7 +143,7 @@ async def process_single_merge(
             record_b = match.get("record_b_data", {})
 
             strategy = rule.get("merge_strategy", "standard")
-            overwrite_blanks = rule.get("merge_settings", {}).get("overwrite_blanks", False)
+            overwrite_blanks = (rule.get("merge_settings") or {}).get("overwrite_blanks", False)
 
             # Check if this is a custom object merge
             source_object = rule.get("source_object", "contacts")
@@ -155,7 +155,7 @@ async def process_single_merge(
 
             # Get field preservation mappings from rule if available
             mappings = None
-            field_preservation = rule.get("merge_settings", {}).get("field_preservation", {})
+            field_preservation = (rule.get("merge_settings") or {}).get("field_preservation") or {}
             if field_preservation.get("enabled"):
                 mappings = field_preservation.get("mappings", [])
 

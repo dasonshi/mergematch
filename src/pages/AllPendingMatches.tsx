@@ -60,7 +60,6 @@ export default function AllPendingMatches() {
 
   // Merge state - check localStorage on init to show correct button state immediately
   const BULK_JOB_KEY_INIT = 'bulkJob_allMatches';
-  const [showMergeAllDialog, setShowMergeAllDialog] = useState(false);
   const [bulkMergeProgress, setBulkMergeProgress] = useState(() => {
     const savedJobId = localStorage.getItem(BULK_JOB_KEY_INIT);
     return { current: 0, total: 0, inProgress: !!savedJobId };
@@ -209,11 +208,24 @@ export default function AllPendingMatches() {
 
         // Show completion toast
         if (status.status === 'completed') {
-          toast({
-            title: "Bulk Merge Complete",
-            description: `Successfully merged ${status.success_count} records.${status.failed_count > 0 ? ` ${status.failed_count} failed.` : ''}`,
-            variant: status.failed_count > 0 ? "destructive" : "default",
-          });
+          if (status.success_count === 0 && status.failed_count > 0) {
+            toast({
+              title: "Bulk Merge Failed",
+              description: `All ${status.failed_count} merges failed.`,
+              variant: "destructive",
+            });
+          } else if (status.failed_count > 0) {
+            toast({
+              title: "Bulk Merge Complete",
+              description: `Merged ${status.success_count} records. ${status.failed_count} failed.`,
+              variant: "destructive",
+            });
+          } else {
+            toast({
+              title: "Bulk Merge Complete",
+              description: `Successfully merged ${status.success_count} records.`,
+            });
+          }
         } else if (status.status === 'cancelled') {
           toast({
             title: "Merge Cancelled",
@@ -305,22 +317,6 @@ export default function AllPendingMatches() {
       toast({
         title: "Cancel Failed",
         description: error instanceof Error ? error.message : "Failed to cancel merge",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleMergeAll = async () => {
-    setShowMergeAllDialog(false);
-
-    try {
-      // Fetch all pending match IDs for the merge (not just the current page, respecting filters)
-      const matchIds = await fetchAllMatchingIds();
-      startBulkMerge(matchIds, ruleFilter !== "all" ? ruleFilter : undefined);
-    } catch (error) {
-      toast({
-        title: "Bulk Merge Failed",
-        description: error instanceof Error ? error.message : "Failed to load matching IDs",
         variant: "destructive",
       });
     }
@@ -449,43 +445,6 @@ export default function AllPendingMatches() {
             </SelectContent>
           </Select>
 
-          {/* Merge All Button (only show when nothing selected) */}
-          {selectedIds.size === 0 && !selectAllMatching && (
-            <>
-              <Button
-                size="sm"
-                variant={canAutoMerge ? "default" : "secondary"}
-                onClick={canAutoMerge ? () => setShowMergeAllDialog(true) : () => openUpgradeModal("auto_merge")}
-                disabled={canAutoMerge && (filteredMatches.length === 0 || bulkMergeProgress.inProgress)}
-              >
-                {bulkMergeProgress.inProgress ? (
-                  <>
-                    <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-                    {bulkMergeProgress.current}/{bulkMergeProgress.total}
-                  </>
-                ) : !canAutoMerge ? (
-                  <>
-                    <Crown className="mr-1.5 h-4 w-4" />
-                    Merge All
-                  </>
-                ) : (
-                  <>
-                    <Play className="mr-1.5 h-4 w-4" />
-                    Merge All
-                  </>
-                )}
-              </Button>
-              {bulkMergeProgress.inProgress && (
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={handleCancelBulkMerge}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              )}
-            </>
-          )}
         </div>
       </div>
 
@@ -587,27 +546,6 @@ export default function AllPendingMatches() {
           onPageSizeChange={setPageSize}
         />
       </Card>
-
-      {/* Merge All Dialog */}
-      <AlertDialog open={showMergeAllDialog} onOpenChange={setShowMergeAllDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Merge All Pending Matches?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will merge <span className="font-semibold">{totalCount.toLocaleString()}</span> pending matches
-              using each rule's configured merge strategy.
-              <br /><br />
-              Snapshots will be saved for 30-day rollback.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleMergeAll}>
-              Merge All ({totalCount.toLocaleString()})
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {/* Merge Selected Dialog */}
       <AlertDialog open={showMergeSelectedDialog} onOpenChange={setShowMergeSelectedDialog}>

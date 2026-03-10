@@ -392,11 +392,24 @@ export default function MatchRuleDetail() {
 
         // Show completion toast
         if (status.status === 'completed') {
-          toast({
-            title: "Bulk Merge Complete",
-            description: `Successfully merged ${status.success_count} records.${status.failed_count > 0 ? ` ${status.failed_count} failed.` : ''}`,
-            variant: status.failed_count > 0 ? "destructive" : "default",
-          });
+          if (status.success_count === 0 && status.failed_count > 0) {
+            toast({
+              title: "Bulk Merge Failed",
+              description: `All ${status.failed_count} merges failed.`,
+              variant: "destructive",
+            });
+          } else if (status.failed_count > 0) {
+            toast({
+              title: "Bulk Merge Complete",
+              description: `Merged ${status.success_count} records. ${status.failed_count} failed.`,
+              variant: "destructive",
+            });
+          } else {
+            toast({
+              title: "Bulk Merge Complete",
+              description: `Successfully merged ${status.success_count} records.`,
+            });
+          }
         } else if (status.status === 'cancelled') {
           toast({
             title: "Merge Cancelled",
