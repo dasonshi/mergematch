@@ -74,6 +74,16 @@ async def start_bulk_merge(
     if len(body.match_ids) > 10000:
         raise HTTPException(status_code=400, detail="Maximum 10000 matches per bulk operation")
 
+    # Verify all match_ids belong to this location
+    from app.db.supabase import get_supabase
+    supabase = get_supabase()
+    owned = supabase.table("match_pairs").select("id").eq(
+        "location_id", ctx.location_id
+    ).in_("id", body.match_ids).execute()
+    owned_ids = {r["id"] for r in (owned.data or [])}
+    if len(owned_ids) != len(body.match_ids):
+        raise HTTPException(status_code=403, detail="One or more match IDs do not belong to this location")
+
     # Check merge quota before starting
     quota = await check_merge_quota(ctx.location_id, ctx.plan)
     if not quota["allowed"]:

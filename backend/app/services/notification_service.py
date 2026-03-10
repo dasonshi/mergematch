@@ -99,12 +99,13 @@ async def get_unread_count(location_id: str) -> int:
     return result.count or 0
 
 
-async def mark_as_read(notification_id: str) -> dict:
+async def mark_as_read(notification_id: str, location_id: str) -> dict:
     """
     Mark a notification as read.
 
     Args:
         notification_id: The notification UUID
+        location_id: The internal location UUID (for tenant isolation)
 
     Returns:
         The updated notification record
@@ -113,7 +114,7 @@ async def mark_as_read(notification_id: str) -> dict:
 
     result = supabase.table("notifications").update({
         "read": True,
-    }).eq("id", notification_id).execute()
+    }).eq("id", notification_id).eq("location_id", location_id).execute()
 
     return result.data[0] if result.data else None
 

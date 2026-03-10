@@ -71,7 +71,7 @@ const CRM_ORIGINS = [
 const PRIMARY_CRM_ORIGIN = 'https://app.leadconnectorhq.com';
 
 function isCrmOrigin(origin: string): boolean {
-  return CRM_ORIGINS.some(allowed => origin.startsWith(allowed));
+  return CRM_ORIGINS.includes(origin);
 }
 
 // Determine the parent CRM origin from referrer
@@ -81,7 +81,7 @@ function getParentCrmOrigin(): string {
     if (referrer) {
       const referrerUrl = new URL(referrer);
       const referrerOrigin = referrerUrl.origin;
-      const matchedOrigin = CRM_ORIGINS.find(allowed => referrerOrigin.startsWith(allowed));
+      const matchedOrigin = CRM_ORIGINS.find(allowed => referrerOrigin === allowed);
       if (matchedOrigin) {
         return referrerOrigin;
       }
@@ -98,7 +98,7 @@ function extractLocationId(): string | null {
   const params = new URLSearchParams(window.location.search);
   const queryLocationId = params.get('locationId') || params.get('location_id');
   if (queryLocationId) {
-    console.log('📍 Found locationId in query params:', queryLocationId);
+    if (import.meta.env.DEV) console.log('📍 Found locationId in query params:', queryLocationId);
     return queryLocationId;
   }
 
@@ -110,7 +110,7 @@ function extractLocationId(): string | null {
   for (const pattern of pathPatterns) {
     const match = window.location.pathname.match(pattern);
     if (match) {
-      console.log('📍 Found locationId in URL path:', match[1]);
+      if (import.meta.env.DEV) console.log('📍 Found locationId in URL path:', match[1]);
       return match[1];
     }
   }
@@ -126,7 +126,7 @@ function extractLocationId(): string | null {
       for (const pattern of referrerPatterns) {
         const match = document.referrer.match(pattern);
         if (match) {
-          console.log('📍 Found locationId in referrer:', match[1]);
+          if (import.meta.env.DEV) console.log('📍 Found locationId in referrer:', match[1]);
           return match[1];
         }
       }
@@ -138,7 +138,7 @@ function extractLocationId(): string | null {
   // 4. Check localStorage as last resort
   const storedLocationId = localStorage.getItem('ghl_location_id');
   if (storedLocationId) {
-    console.log('📍 Using cached locationId:', storedLocationId);
+    if (import.meta.env.DEV) console.log('📍 Using cached locationId:', storedLocationId);
     return storedLocationId;
   }
 
@@ -299,7 +299,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
 
         if (response.ok) {
           const data = await response.json();
-          console.log('✅ SSO authentication successful:', data.location?.id);
+          if (import.meta.env.DEV) console.log('✅ SSO authentication successful:', data.location?.id);
 
           // Store JWT tokens from SSO response
           if (data.access_token && data.refresh_token) {
@@ -331,7 +331,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
           return;
         } else {
           const errorData = await response.json().catch(() => ({}));
-          console.warn('⚠️ SSO failed:', errorData);
+          if (import.meta.env.DEV) console.warn('⚠️ SSO failed:', errorData);
 
           if (response.status === 422 && errorData.detail?.error === 'app_not_installed') {
             setConnectionStatus('disconnected');

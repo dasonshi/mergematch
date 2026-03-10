@@ -303,7 +303,9 @@ async def exchange_code(request: Request, body: ExchangeCodeRequest):
 
 
 @router.get("/me")
+@limiter.limit(RATE_LIMIT_AUTH)
 async def get_current_location(
+    request: Request,
     # Flexible auth: accepts JWT OR legacy query param
     authorization: Optional[str] = Header(None, alias="Authorization"),
     location_id: str = Query(None, description="GHL Location ID (legacy, use JWT instead)"),
@@ -352,7 +354,9 @@ async def get_current_location(
 
 
 @router.post("/logout")
+@limiter.limit(RATE_LIMIT_AUTH)
 async def logout(
+    request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
     location_id: str = Query(None),
 ):
@@ -367,7 +371,9 @@ async def logout(
 
 
 @router.post("/disconnect")
+@limiter.limit(RATE_LIMIT_AUTH)
 async def disconnect(
+    request: Request,
     authorization: Optional[str] = Header(None, alias="Authorization"),
     location_id: str = Query(None),
 ):

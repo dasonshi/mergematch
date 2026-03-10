@@ -2,12 +2,13 @@
 Notification routes for MergeMatch.
 Handles in-app notifications for bulk operations.
 """
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Query, Depends, Request
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
 from app.core.security import AuthenticatedUser
 from app.core.deps import get_user
+from app.core.rate_limit import limiter, RATE_LIMIT_DEFAULT
 from app.db.supabase import get_supabase
 from app.services.notification_service import (
     get_notifications,
@@ -44,7 +45,9 @@ class UnreadCountResponse(BaseModel):
 
 
 @router.get("/", response_model=NotificationsListResponse)
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def list_notifications(
+    request: Request,
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     unread_only: bool = Query(False),
@@ -86,7 +89,9 @@ async def list_notifications(
 
 
 @router.get("/unread-count", response_model=UnreadCountResponse)
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def get_unread_notifications_count(
+    request: Request,
     user: AuthenticatedUser = Depends(get_user),
 ):
     """
@@ -98,14 +103,16 @@ async def get_unread_notifications_count(
 
 
 @router.patch("/{notification_id}/read")
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def mark_notification_read(
+    request: Request,
     notification_id: str,
     user: AuthenticatedUser = Depends(get_user),
 ):
     """
     Mark a notification as read.
     """
-    result = await mark_as_read(notification_id)
+    result = await mark_as_read(notification_id, user.location_id)
 
     if not result:
         raise HTTPException(status_code=404, detail="Notification not found")
@@ -114,7 +121,9 @@ async def mark_notification_read(
 
 
 @router.post("/mark-all-read")
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def mark_all_notifications_read(
+    request: Request,
     user: AuthenticatedUser = Depends(get_user),
 ):
     """
@@ -134,8 +143,10 @@ class CreateBulkMergeNotificationRequest(BaseModel):
 
 
 @router.post("/", response_model=NotificationResponse)
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def create_notification_route(
-    request: CreateBulkMergeNotificationRequest,
+    request: Request,
+    body: CreateBulkMergeNotificationRequest,
     user: AuthenticatedUser = Depends(get_user),
 ):
     """
@@ -143,10 +154,10 @@ async def create_notification_route(
     """
     notification = await create_bulk_merge_notification(
         location_id=user.location_id,
-        rule_id=request.rule_id,
-        rule_name=request.rule_name,
-        success_count=request.success_count,
-        fail_count=request.fail_count,
+        rule_id=body.rule_id,
+        rule_name=body.rule_name,
+        success_count=body.success_count,
+        fail_count=body.fail_count,
         tenant_id=user.tenant_id,
     )
 

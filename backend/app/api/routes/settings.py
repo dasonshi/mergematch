@@ -2,11 +2,12 @@
 Settings routes for MergeMatch.
 Handles location-level settings including merge strategies.
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from typing import List, Optional
 
 from app.core.security import get_current_user, AuthenticatedUser
+from app.core.rate_limit import limiter, RATE_LIMIT_DEFAULT
 from app.db.supabase import get_supabase
 from app.services.auth_service import get_location_tokens_with_refresh
 from app.core.ghl.client import GHLClient
@@ -37,7 +38,9 @@ class MergeStrategySettings(BaseModel):
 # ==================== ENDPOINTS ====================
 
 @router.get("/merge-strategy")
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def get_merge_strategy(
+    request: Request,
     user: AuthenticatedUser = Depends(get_current_user)
 ) -> MergeStrategySettings:
     """Get merge strategy settings for the location."""
@@ -66,7 +69,9 @@ async def get_merge_strategy(
 
 
 @router.put("/merge-strategy")
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def update_merge_strategy(
+    request: Request,
     body: MergeStrategySettings,
     user: AuthenticatedUser = Depends(get_current_user)
 ) -> MergeStrategySettings:
@@ -100,7 +105,9 @@ async def update_merge_strategy(
 # ==================== CUSTOM FIELDS ====================
 
 @router.get("/custom-fields")
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def get_custom_fields(
+    request: Request,
     user: AuthenticatedUser = Depends(get_current_user)
 ) -> List[dict]:
     """Get all custom fields from GHL for the location."""
@@ -120,7 +127,9 @@ class CreateCustomFieldRequest(BaseModel):
 
 
 @router.post("/custom-fields")
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def create_custom_field(
+    request: Request,
     body: CreateCustomFieldRequest,
     user: AuthenticatedUser = Depends(get_current_user)
 ) -> dict:

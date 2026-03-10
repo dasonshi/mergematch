@@ -75,7 +75,7 @@ class MatchRuleCreate(BaseModel):
     match_fields: List[MatchField]
     auto_merge_threshold: float = 95.0
     review_threshold: float = 70.0
-    merge_strategy: str = Field("standard", max_length=50)
+    merge_strategy: str = Field("oldest", max_length=50)
     schedule_frequency: str = Field("manual", max_length=50)
     schedule_time: Optional[str] = None  # HH:MM format (e.g., "06:00")
     schedule_day: Optional[str] = None   # Day of week (0-6) or day of month (1-28)
@@ -134,9 +134,9 @@ def _normalize_schedule_fields(rule: MatchRuleCreate) -> tuple[Optional[str], Op
             raise HTTPException(status_code=400, detail="schedule_time must be HH:MM format.")
         try:
             hour, minute = map(int, schedule_time.split(":"))
-            if not (0 <= hour <= 23 and 0 <= minute <= 59):
-                raise ValueError
-        except Exception:
+            from datetime import time as dt_time
+            dt_time(hour, minute)  # Validates ranges inherently
+        except (ValueError, TypeError):
             raise HTTPException(status_code=400, detail="schedule_time must be a valid time.")
 
         # Scheduled scans run on hourly cron boundaries, so persist top-of-hour values.
@@ -308,17 +308,34 @@ async def update_rule(
             detail="Upgrade to edit match rules."
         )
 
+    supabase = get_supabase()
+
+    # Fetch existing rule to compare matching criteria
+    existing = supabase.table("match_rules").select(
+        "match_fields, auto_merge_threshold, review_threshold, source_object"
+    ).eq("id", rule_id).eq("location_id", user.location_id).single().execute()
+
+    if not existing.data:
+        raise HTTPException(status_code=404, detail="Rule not found")
+
     # Convert percentage thresholds to decimals if > 1
     auto_threshold = rule.auto_merge_threshold / 100 if rule.auto_merge_threshold > 1 else rule.auto_merge_threshold
     review_threshold = rule.review_threshold / 100 if rule.review_threshold > 1 else rule.review_threshold
     merge_settings_payload = _build_merge_settings_payload(rule, schedule_timezone)
 
-    supabase = get_supabase()
+    # Detect if matching criteria changed
+    new_match_fields = [f.model_dump() for f in rule.match_fields]
+    criteria_changed = (
+        existing.data["match_fields"] != new_match_fields
+        or existing.data["auto_merge_threshold"] != auto_threshold
+        or existing.data["review_threshold"] != review_threshold
+        or existing.data["source_object"] != rule.source_object
+    )
 
     update_data = {
         "name": rule.name,
         "source_object": rule.source_object,
-        "match_fields": [f.model_dump() for f in rule.match_fields],
+        "match_fields": new_match_fields,
         "auto_merge_threshold": auto_threshold,
         "review_threshold": review_threshold,
         "merge_strategy": rule.merge_strategy,
@@ -334,7 +351,25 @@ async def update_rule(
     if not result.data:
         raise HTTPException(status_code=404, detail="Rule not found")
 
-    return result.data[0]
+    # If matching criteria changed, delete pending match pairs
+    deleted_count = 0
+    if criteria_changed:
+        delete_result = (
+            supabase.table("match_pairs")
+            .delete()
+            .eq("rule_id", rule_id)
+            .eq("location_id", user.location_id)
+            .eq("status", "pending")
+            .execute()
+        )
+        deleted_count = len(delete_result.data) if delete_result.data else 0
+        logger.info(f"Rule {rule_id} criteria changed - deleted {deleted_count} pending matches")
+
+    return {
+        **result.data[0],
+        "criteria_changed": criteria_changed,
+        "deleted_matches": deleted_count,
+    }
 
 
 @router.delete("/{rule_id}")

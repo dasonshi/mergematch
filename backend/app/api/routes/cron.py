@@ -5,6 +5,7 @@ Only accessible via secret header from Render Cron Jobs.
 from fastapi import APIRouter, HTTPException, Header
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, Tuple
+import hmac
 import logging
 import uuid
 import calendar
@@ -48,7 +49,7 @@ def verify_cron_secret(x_cron_secret: Optional[str]) -> bool:
         if settings.ENVIRONMENT == "development":
             return True
         raise HTTPException(status_code=401, detail="Cron secret not configured")
-    if not x_cron_secret or x_cron_secret != expected:
+    if not x_cron_secret or not hmac.compare_digest(x_cron_secret, expected):
         raise HTTPException(status_code=401, detail="Unauthorized")
     return True
 
