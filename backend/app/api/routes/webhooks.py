@@ -578,7 +578,12 @@ async def ghl_webhook(
             whitelabel_details=payload.get("whitelabelDetails"),
             company_name=payload.get("companyName"),
         )
-        logger.info(f"Install processed for location {payload.get('locationId')}")
+        logger.info(
+            "NEW INSTALL — location=%s company=%s plan=%s",
+            payload.get("locationId"),
+            payload.get("companyName") or payload.get("companyId"),
+            payload.get("planId", "unknown"),
+        )
         return {"received": True, "event": event_type, "result": result}
 
     elif event_type == "UNINSTALL":
@@ -586,7 +591,11 @@ async def ghl_webhook(
             location_id=payload.get("locationId"),
             company_id=payload.get("companyId"),
         )
-        logger.info(f"Uninstall processed for location {payload.get('locationId')}")
+        logger.info(
+            "UNINSTALL — location=%s company=%s",
+            payload.get("locationId"),
+            payload.get("companyId"),
+        )
         return {"received": True, "event": event_type, "result": result}
 
     elif event_type == "PLAN_CHANGE":
@@ -716,7 +725,12 @@ async def marketplace_webhook(
                 whitelabel_details=payload.get("whitelabelDetails"),
                 company_name=payload.get("companyName"),
             )
-            logger.info(f"Marketplace install processed for location {payload.get('locationId')}")
+            logger.info(
+                "NEW INSTALL — location=%s company=%s plan=%s",
+                payload.get("locationId"),
+                payload.get("companyName") or payload.get("companyId"),
+                payload.get("planId", "unknown"),
+            )
             return {"received": True, "event": event_type, "result": result}
 
         elif event_type == "UNINSTALL":
@@ -724,7 +738,11 @@ async def marketplace_webhook(
                 location_id=payload.get("locationId"),
                 company_id=payload.get("companyId"),
             )
-            logger.info(f"Marketplace uninstall processed for location {payload.get('locationId')}")
+            logger.info(
+                "UNINSTALL — location=%s company=%s",
+                payload.get("locationId"),
+                payload.get("companyId"),
+            )
             return {"received": True, "event": event_type, "result": result}
 
         elif event_type == "PLAN_CHANGE":

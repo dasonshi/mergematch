@@ -26,6 +26,7 @@
 | Type changes | `integration/frontend-backend.md` |
 | Database changes | `data-structures/database-schema.md` |
 | **Resume testing** | `testing/test-plan.md` |
+| Backend changes | Run `test_core_flows_integration` and `test_rollback_safety_integration` |
 
 ## Critical Invariants
 
@@ -43,6 +44,28 @@
 | `backend/` | FastAPI backend |
 | `src/` | React/TypeScript frontend |
 | `ghl-docs/` | GoHighLevel API reference |
+
+## Testing
+
+**Run tests after any backend changes:**
+
+```bash
+# All integration tests (rules, scanning, merging, rollback for all record types)
+cd backend/tests && ../.venv/bin/python -m unittest test_core_flows_integration -v
+
+# Rollback safety tests (association restore logic)
+cd backend/tests && ../.venv/bin/python -m unittest test_rollback_safety_integration -v
+
+# Run both
+cd backend/tests && ../.venv/bin/python -m unittest test_core_flows_integration test_rollback_safety_integration -v
+```
+
+| Test File | Coverage |
+|-----------|----------|
+| `backend/tests/test_core_flows_integration.py` | Rule CRUD, scan, merge, and rollback for contacts, companies, opportunities, custom objects |
+| `backend/tests/test_rollback_safety_integration.py` | Association restore safety during rollback (ensures only related associations are restored) |
+
+Tests use in-memory fakes (no external services needed). All tests must pass before pushing.
 
 ## Quick Commands
 
@@ -92,6 +115,11 @@ render logs -r srv-d59j6c0gjchc73ap4q00 --level error --limit 50 --output json
 # Query Axiom
 axiom query "['custom-object-importer'] | where hostname == 'mergematch' | take 50" -f table --start-time "2026-02-01T00:00:00Z"
 ```
+
+**Axiom Monitors** (email → david@savvysales.ai):
+- `nbKcKKvkVSJeHQBBm7` → "MergeMatch — New Install" (triggers on `NEW INSTALL` log)
+- `MmgmKWRwt3N04frXBg` → "MergeMatch — Uninstall" (triggers on `UNINSTALL` log)
+- Notifier: `oCCzANvP6FvANXUVU7`
 
 **Note:** If `render` CLI shows "token expired", run `render login` to re-authenticate.
 
