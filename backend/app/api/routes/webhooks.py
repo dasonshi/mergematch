@@ -579,7 +579,7 @@ async def ghl_webhook(
             company_name=payload.get("companyName"),
         )
         logger.info(
-            "NEW INSTALL — location=%s company=%s plan=%s",
+            "NEW INSTALL [MergeMatch] — location=%s company=%s plan=%s",
             payload.get("locationId"),
             payload.get("companyName") or payload.get("companyId"),
             payload.get("planId", "unknown"),
@@ -592,7 +592,7 @@ async def ghl_webhook(
             company_id=payload.get("companyId"),
         )
         logger.info(
-            "UNINSTALL — location=%s company=%s",
+            "UNINSTALL [MergeMatch] — location=%s company=%s",
             payload.get("locationId"),
             payload.get("companyId"),
         )
